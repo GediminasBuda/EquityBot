@@ -852,26 +852,32 @@ else:
             st.markdown(card_html, unsafe_allow_html=True)
 
         with btn_col:
-            # Two small buttons side by side via nested columns.
-            # Stays usable on mobile: the parent column wraps to full
-            # width and the two halves become two ~50% buttons.
-            b1, b2 = st.columns(2, gap="small")
+            # When expanded, only the ▴ collapse toggle lives up here —
+            # the ✕ "Remove from portfolio" button moves to the bottom
+            # of the detail panel so users don't confuse it with a
+            # "close chart" affordance next to the toggle.
             arrow = "▴" if is_expanded else "▾"
-            if b1.button(arrow, key=f"toggle_{ticker}",
-                         help="Expand / collapse",
-                         use_container_width=True):
-                if is_expanded:
+            if is_expanded:
+                if st.button(arrow, key=f"toggle_{ticker}",
+                             help="Collapse",
+                             use_container_width=True):
                     st.session_state.portfolio_expanded.discard(ticker)
-                else:
+                    st.rerun()
+            else:
+                # Collapsed: ▾ toggle + ✕ remove, side by side.
+                b1, b2 = st.columns(2, gap="small")
+                if b1.button(arrow, key=f"toggle_{ticker}",
+                             help="Expand",
+                             use_container_width=True):
                     st.session_state.portfolio_expanded.add(ticker)
-                st.rerun()
-            if b2.button("✕", key=f"del_{ticker}",
-                         help="Remove from portfolio",
-                         use_container_width=True):
-                st.session_state.portfolio_tickers.remove(ticker)
-                st.session_state.portfolio_expanded.discard(ticker)
-                _save_portfolio(st.session_state.portfolio_tickers)
-                st.rerun()
+                    st.rerun()
+                if b2.button("✕", key=f"del_{ticker}",
+                             help="Remove from portfolio",
+                             use_container_width=True):
+                    st.session_state.portfolio_tickers.remove(ticker)
+                    st.session_state.portfolio_expanded.discard(ticker)
+                    _save_portfolio(st.session_state.portfolio_tickers)
+                    st.rerun()
 
         # ── Expanded detail section ──────────────────────────────────────────
         if is_expanded:
@@ -1063,6 +1069,21 @@ else:
                             else:
                                 st.markdown("<div style='margin-bottom:12px;'></div>",
                                             unsafe_allow_html=True)
+
+                # ── Bottom-right "Remove from portfolio" button ──────────────
+                # Sits at the very bottom of the expanded panel, far away
+                # from the ▴ collapse toggle, so the destructive ✕ action
+                # is unambiguous.
+                _, rem_col = st.columns([0.6, 0.4])
+                with rem_col:
+                    if st.button("✕ Remove from portfolio",
+                                 key=f"del_bottom_{ticker}",
+                                 help="Permanently remove this holding",
+                                 use_container_width=True):
+                        st.session_state.portfolio_tickers.remove(ticker)
+                        st.session_state.portfolio_expanded.discard(ticker)
+                        _save_portfolio(st.session_state.portfolio_tickers)
+                        st.rerun()
 
         # Small vertical gap between cards (the card itself now carries
         # the visual separation via its border + rounded corners).
