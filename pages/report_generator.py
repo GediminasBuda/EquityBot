@@ -417,7 +417,7 @@ def _build_report_types() -> dict:
 REPORT_TYPES = _build_report_types()
 
 # Builtin framework ids (for runner dispatch logic)
-_BUILTIN_IDS = {"fisher", "fisher_peers", "gravity", "kepler_summary",
+_BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "eodhd_full", "overview_v2", "index_overview",
                 "industry_analysis"}
 
@@ -1891,21 +1891,6 @@ if generate_clicked and ticker_input:
                     "advantage":      analysis.get("competitive_advantage_size"),
                 }
 
-            elif report_type == "kepler_summary":
-                # ── Kepler-style analyst summary sheet (no LLM — pure data) ──
-                analysis = {}   # no LLM call; all content comes from CompanyData
-                _prog.progress(80, text="📄  Rendering Kepler Summary PDF…")
-                st.write("📄  Rendering Kepler Summary PDF…")
-                import importlib, agents.pdf_kepler as _kmod
-                importlib.reload(_kmod)
-                from agents.pdf_kepler import KeplerPDFGenerator
-                safe = ticker_input.replace(".", "_").replace("-", "_")
-                date = datetime.now().strftime("%Y-%m-%d")
-                pdf_path = str(OUTPUTS_DIR / f"{safe}_kepler_{date}.pdf")
-                os.makedirs(OUTPUTS_DIR, exist_ok=True)
-                KeplerPDFGenerator().render(company, analysis, pdf_path)
-                extra = {}
-
             elif report_type == "eodhd_full":
                 # ── EODHD All-In-One full data dump ────────────────────────────
                 # Standalone fetcher; NO other data sources. Fetches every
@@ -2052,7 +2037,7 @@ if generate_clicked and ticker_input:
             if adv_result is not None:
                 _usage_claude = adv_result.claude_usage
                 _usage_openai = adv_result.openai_usage
-            elif report_type in ("kepler_summary", "eodhd_full"):
+            elif report_type == "eodhd_full":
                 _usage_claude = {}
                 _usage_openai = None
             else:

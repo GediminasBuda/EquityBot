@@ -127,7 +127,7 @@ Frameworks are JSON configs in frameworks/. When a report is generated:
   3. The LLM returns JSON matching the output_schema field names.
   4. The HTML renderer iterates report_sections to build the final report.
 
-Built-in frameworks (overview_v2, fisher, gravity, kepler_summary, eodhd_full, index_overview)
+Built-in frameworks (overview_v2, fisher, gravity, eodhd_full, index_overview)
 have hardcoded Python PDF renderers and use __builtin__ as their prompt_template — they
 cannot be run as custom HTML frameworks.
 

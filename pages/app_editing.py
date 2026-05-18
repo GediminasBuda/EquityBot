@@ -490,11 +490,11 @@ with chat_box:
     if not st.session_state.app_chat:
         st.markdown(
             "**Examples:**\n"
-            "- *Add a new column to the Kepler Summary income statement table*\n"
+            "- *Add a new column to the Fisher income statement table*\n"
             "- *The gravity score shows wrong stars — fix the score coercion*\n"
             "- *Add ROE to the EODHD data sheet profitability section*\n"
-            "- *Show me what fields are in the Kepler PDF summary page*\n"
-            "- *Rename the 'Net Fin. Debt' label to 'Net Debt' in the Kepler report*"
+            "- *Show me what fields are in the Overview PDF summary page*\n"
+            "- *Rename the 'Net Fin. Debt' label to 'Net Debt' in the Fisher report*"
         )
 
     for msg in st.session_state.app_chat:

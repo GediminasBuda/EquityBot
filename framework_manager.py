@@ -49,7 +49,7 @@ ORDER_FILE = _DATA_DIR / "framework_order.json"
 # is_builtin from each FrameworkConfig directly). Updated to reflect the
 # current set of shipped built-ins.
 BUILTIN_IDS = frozenset({
-    "overview_v2", "fisher", "gravity", "kepler_summary",
+    "overview_v2", "fisher", "gravity",
     "eodhd_full", "index_overview",
 })
 

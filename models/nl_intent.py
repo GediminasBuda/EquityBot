@@ -18,7 +18,7 @@ Intent schema:
     "sort_dir":     "asc" | "desc" | null,
     "limit":        10 | null,
     "framework_id": "fisher" | "gravity" | "overview_v2"
-                    | "kepler_summary" | "eodhd_full" | null,
+                    | "eodhd_full" | null,
     "notes":        ""    # free-text the LLM uses to flag ambiguity
   }
 """
@@ -42,7 +42,7 @@ VALID_SORT_BYS   = {
 VALID_SORT_DIRS  = {"asc", "desc"}
 VALID_FRAMEWORKS = {
     "fisher", "gravity", "overview_v2",
-    "kepler_summary", "eodhd_full", "index_overview",
+    "eodhd_full", "index_overview",
 }
 
 
@@ -79,7 +79,7 @@ EXACTLY these keys (use null when not specified):
   "sort_dir":     "asc" | "desc" | null,
   "limit":        positive integer | null,
   "framework_id": "fisher" | "gravity" | "overview_v2" |
-                  "kepler_summary" | "eodhd_full" | null,
+                  "eodhd_full" | null,
   "notes":        "1 short sentence flagging ambiguity, or empty string"
 }
 
@@ -190,7 +190,6 @@ FRAMEWORK MAPPING
 - "Fisher", "15 Fisher", "Helmer", "Fisher Alternatives"    → "fisher"
 - "Gravity", "Taxer", "Gravity Taxers", "choke-point"       → "gravity"
 - "Overview", "Memo", "Investment Memo"                     → "overview_v2"
-- "Kepler", "Cheuvreux"                                     → "kepler_summary"
 - "EODHD duomenys", "data sheet", "raw data"                → "eodhd_full"
 
 EXAMPLES

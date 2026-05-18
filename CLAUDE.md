@@ -44,7 +44,6 @@ EquityBot/
 │   ├── overview.py                 # LLM prompt builder for Overview report
 │   ├── fisher.py                   # LLM prompt builder for Fisher 15Q report
 │   ├── gravity.py                  # LLM prompt builder for Gravity Score report
-│   ├── kepler_summary.py           # LLM prompt builder for Kepler Summary report
 │   ├── generic_runner.py           # Runs user-created custom frameworks
 │   ├── universe_screener.py        # Multi-ticker screening / universe comparison
 │   └── index_runner.py             # Index overview report runner
@@ -55,7 +54,6 @@ EquityBot/
 │   ├── pdf_overview.py             # ReportLab PDF renderer for Overview
 │   ├── pdf_fisher.py               # ReportLab PDF renderer for Fisher
 │   ├── pdf_gravity.py              # ReportLab PDF renderer for Gravity Score
-│   ├── pdf_kepler.py               # ReportLab PDF renderer for Kepler Summary
 │   ├── pdf_eodhd_sheet.py          # ReportLab PDF renderer for EODHD Data Sheet (no LLM)
 │   ├── pdf_adversarial.py          # Adversarial report appendix renderer
 │   └── report_generic.py           # HTML report renderer for custom frameworks
@@ -68,7 +66,6 @@ EquityBot/
 │   ├── overview.json
 │   ├── fisher.json
 │   ├── gravity.json
-│   ├── kepler_summary.json
 │   ├── eodhd_sheet.json
 │   └── index_overview.json
 │
@@ -250,15 +247,6 @@ Multi-dimension scoring framework (0–50 points, A+/A/B/C/D grade). Dimensions:
 - LLM output: scored JSON ~6000 tokens
 - Supports adversarial mode (Claude + GPT-4o cross-review)
 
-#### Kepler Summary (`kepler_summary`)
-5-page data-dense analyst style sheet (modelled on Kepler Cheuvreux format). LLM generates only 4 fields: target_price, recommendation, key_thesis (≤25 words), valuation_method. Everything else is rendered directly from `CompanyData`.
-- Model: `models/kepler_summary.py`
-- PDF: `agents/pdf_kepler.py`
-- LLM output: 400 max_tokens (minimal)
-- Pages: Summary (3 hist years + 1 forward) | Valuation | Income Statement | Cash Flow | Balance Sheet
-- Column headers: `12/2024` format (full year, not `12/24`)
-- Column range: 7 most recent historical years in chronological order
-
 #### EODHD Data Sheet (`eodhd_sheet`)
 4-page comprehensive data dump. **No LLM call.** Pure EODHD data.
 - PDF: `agents/pdf_eodhd_sheet.py`
@@ -327,7 +315,7 @@ All PDF generators use **ReportLab Platypus**. Key patterns:
 2. Add `<id>` to `_BUILTIN_IDS` set in `pages/report_generator.py`
 3. Create `agents/pdf_<id>.py` with a `<Name>Generator` class and `.render(company, analysis, path)` method
 4. Optionally create `models/<id>.py` with prompt builder returning `(cacheable_prefix, dynamic_prompt)`
-5. Add dispatch block in `pages/report_generator.py` (copy pattern from `kepler_summary` or `eodhd_sheet`)
+5. Add dispatch block in `pages/report_generator.py` (copy pattern from `eodhd_sheet`)
 6. Add `importlib.reload()` calls in the dispatch block so live code edits take effect without restarting
 
 ---
@@ -423,14 +411,12 @@ print('PDF written')
 
 Syntax-check all PDF modules:
 ```bash
-python -c "import agents.pdf_kepler, agents.pdf_eodhd_sheet, agents.pdf_overview; print('OK')"
+python -c "import agents.pdf_eodhd_sheet, agents.pdf_overview; print('OK')"
 ```
 
 ---
 
 ## 18. Open / Incomplete Items
 
-- **Kepler Summary detail page labels**: Pages 2–5 (Valuation, Income, Cash Flow, Balance Sheet) use reasonable labels but have not been verified field-by-field against the reference Kepler Cheuvreux PDF. If labels need to match exactly, compare against the reference PDF.
-- **52-week high/low in market data block**: Currently uses year-end price proxies for Kepler report. EODHD Data Sheet uses real 52-week values.
-- **Adversarial mode**: Only implemented for Overview and Gravity. Fisher and Kepler Summary do not have adversarial support.
+- **Adversarial mode**: Only implemented for Overview and Gravity. Fisher does not have adversarial support.
 - **Universe screener**: Exists (`models/universe_screener.py`) but is not covered in this documentation. Runs a framework against multiple tickers and produces an HTML comparison.
