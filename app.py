@@ -171,6 +171,13 @@ st.markdown(
       @media (max-width: 768px) {
         .stSidebar { z-index: 999999999999 !important; }
       }
+
+      @media (max-width: 640px) {
+        .st-emotion-cache-hua6f6 {
+          min-width: calc(50% - 1.5rem);
+          margin: 0px 5px 0px 5px;
+        }
+      }
     </style>
     """,
     unsafe_allow_html=True,
