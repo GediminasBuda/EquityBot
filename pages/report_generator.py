@@ -782,7 +782,7 @@ with col_left:
     # its value with the canonical col_right input further down.
     st.markdown("<div class='rg-peer-mobile-anchor'></div>",
                 unsafe_allow_html=True)
-    st.markdown("#### Peer Tickers  *(Overview V2 / Fisher / Gravity — optional)*")
+    st.markdown("#### Peer Tickers  *(optional)*")
     st.text_input(
         "Peer tickers (mobile)",
         placeholder="REL.L  TRI.TO  MSFT  (space-separated, up to 6)",
@@ -1103,7 +1103,7 @@ with col_right:
     # lives in col_left right after the ticker searchbox).
     st.markdown("<div class='rg-peer-desktop-anchor'></div>",
                 unsafe_allow_html=True)
-    st.markdown("#### Peer Tickers  *(Overview V2 / Fisher / Gravity — optional)*")
+    st.markdown("#### Peer Tickers  *(optional)*")
     peers_input = st.text_input(
         "Peer tickers",
         placeholder="REL.L  TRI.TO  MSFT  (space-separated, up to 6)",
