@@ -694,14 +694,15 @@ st.markdown(
           grid-template-columns: 1fr 1fr;
           gap: 8px 12px;
         }
-        /* Name on the left of the top row; the floating trash icon
-           sits at the right (see pf-trash-anchor rules below). */
+        /* Name + sub-line centred on mobile; the floating trash icon
+           sits at the top-right corner (see pf-trash-anchor rules
+           below) and stays out of the name's text flow. */
         .pf-name-cell {
           grid-column: 1 / -1;
           border-bottom: 1px solid #EDF1F5;
           padding-bottom: 6px;
-          align-items: flex-start;
-          text-align: left;
+          align-items: center;
+          text-align: center;
         }
         .pf-name { font-size: 15px; }
         .pf-metric {
