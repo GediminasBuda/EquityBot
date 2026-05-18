@@ -588,6 +588,10 @@ with top_l:
             f"{'s' if len(st.session_state.portfolio_tickers) != 1 else ''} tracked"
         )
 with top_m:
+    # Anchor sibling so mobile CSS can hide the "Expand all" button —
+    # there's no use case for bulk-expanding on a phone-sized screen.
+    st.markdown("<div class='pf-expand-all-anchor'></div>",
+                unsafe_allow_html=True)
     if st.button("⏷ Expand all", use_container_width=True,
                  disabled=not st.session_state.portfolio_tickers):
         st.session_state.portfolio_expanded = set(st.session_state.portfolio_tickers)
@@ -828,6 +832,18 @@ st.markdown(
 
       /* The toggle anchor marker is invisible. */
       .pf-toggle-anchor { display: none; }
+      .pf-expand-all-anchor { display: none; }
+
+      /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
+         list of cards on a phone screen produces an unusable wall of
+         charts. The button (and its anchor) only show on >=769px. */
+      @media (max-width: 768px) {
+        div[data-testid="element-container"]:has(.pf-expand-all-anchor),
+        div[data-testid="element-container"]:has(.pf-expand-all-anchor)
+          + div[data-testid="element-container"] {
+          display: none !important;
+        }
+      }
 
       /* ── Mobile: float the trash column over the card's top-right
          corner instead of letting it wrap below the card content. ─── */
