@@ -176,6 +176,7 @@ st.markdown(
         .st-emotion-cache-hua6f6 {
           min-width: calc(50% - 1.5rem);
           margin: 0px 5px 0px 5px;
+          height: 65px;
         }
       }
     </style>
