@@ -733,42 +733,41 @@ st.markdown(
         line-height: 1 !important;
       }
 
-      /* Red styling for any ✕ "remove" button — both the small glyph
-         button up top (when card is collapsed) and the labelled
-         "✕ Remove from portfolio" button at the bottom of an expanded
-         card. We use an invisible anchor div rendered right before the
-         button and target the next sibling element-container's button
-         via :has(). Modern browsers (Chrome 105+, Safari 15.4+, FF 121+)
-         all support :has(); older fallback: button stays default style. */
-      div[data-testid="element-container"]:has(.pf-del-anchor)
-        + div[data-testid="element-container"]
+      /* Anchor markers collapse to zero so they don't affect layout. */
+      .pf-trash-anchor { display: none; }
+
+      /* ── Trash 🗑️ icon button (delete affordance, every viewport) ─
+         The trash button lives in its own Streamlit column (trash_col)
+         on every card row. The styling is the same on desktop and
+         mobile — small red rounded square. On mobile the column is
+         additionally lifted out of the flow and pinned to the
+         top-right corner of the card (see media query below). */
+      div[data-testid="column"]:has(.pf-trash-anchor)
         div[data-testid="stButton"] > button {
+        width: 40px !important;
+        min-width: 40px !important;
+        height: 40px !important;
+        min-height: 40px !important;
+        padding: 0 !important;
+        border-radius: 8px !important;
+        border: 1px solid #E8C0BC !important;
+        background: #FFFFFF !important;
         color: #B83227 !important;
-        border-color: #E8C0BC !important;
+        font-size: 18px !important;
+        line-height: 1 !important;
+        margin: 0 auto !important;
       }
-      div[data-testid="element-container"]:has(.pf-del-anchor)
-        + div[data-testid="element-container"]
+      div[data-testid="column"]:has(.pf-trash-anchor)
         div[data-testid="stButton"] > button:hover {
         background: #FBE5E2 !important;
         border-color: #B83227 !important;
-        color: #B83227 !important;
       }
-      /* The .pf-del-anchor wrapper itself collapses to zero height
-         so it doesn't push the layout. */
-      .pf-del-anchor { display: none; }
-      .pf-trash-anchor { display: none; }
 
-      /* ── Mobile-only floating trash icon (🗑️) at top-right of card ──
-         The trash button lives in its own Streamlit column (trash_col).
-         On mobile we promote the card-row's stHorizontalBlock to
-         position:relative and absolute-position that column over the
-         top-right corner of the card. On desktop the trash_col is
-         hidden and the labelled .pf-del-desktop-only bottom button
-         carries the destructive action. */
+      /* ── Mobile: float the trash column over the card's top-right
+         corner instead of letting it wrap below the card content. ─── */
       @media (max-width: 768px) {
-        /* Anchor: the stHorizontalBlock that contains a trash anchor
-           descendant becomes the positioning context for the floated
-           trash column. */
+        /* Promote the card-row's stHorizontalBlock to relative so the
+           trash column can absolute-position against it. */
         div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor) {
           position: relative;
         }
@@ -777,8 +776,7 @@ st.markdown(
         div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor) .pf-card {
           padding-right: 52px;
         }
-        /* Pin the trash column (only the one containing the anchor)
-           to the top-right corner of the card row. */
+        /* Pin the trash column to the top-right corner of the row. */
         div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
           > div[data-testid="column"]:has(.pf-trash-anchor) {
           position: absolute !important;
@@ -789,42 +787,6 @@ st.markdown(
           max-width: 40px !important;
           padding: 0 !important;
           z-index: 5;
-        }
-        /* Style the trash icon button: small red rounded square. */
-        div[data-testid="column"]:has(.pf-trash-anchor)
-          div[data-testid="stButton"] > button {
-          width: 40px !important;
-          min-width: 40px !important;
-          height: 40px !important;
-          min-height: 40px !important;
-          padding: 0 !important;
-          border-radius: 8px !important;
-          border: 1px solid #E8C0BC !important;
-          background: #FFFFFF !important;
-          color: #B83227 !important;
-          font-size: 18px !important;
-          line-height: 1 !important;
-        }
-        div[data-testid="column"]:has(.pf-trash-anchor)
-          div[data-testid="stButton"] > button:hover {
-          background: #FBE5E2 !important;
-          border-color: #B83227 !important;
-        }
-        /* Hide the labelled "✕ Remove from portfolio" button on mobile
-           — the trash icon at top-right replaces it. */
-        div[data-testid="element-container"]:has(.pf-del-desktop-only),
-        div[data-testid="element-container"]:has(.pf-del-desktop-only)
-          + div[data-testid="element-container"] {
-          display: none !important;
-        }
-      }
-
-      /* Desktop: hide the trash column entirely so the card row stays
-         a clean 2-col layout (main + toggle). */
-      @media (min-width: 769px) {
-        div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
-          > div[data-testid="column"]:has(.pf-trash-anchor) {
-          display: none !important;
         }
       }
 
@@ -927,12 +889,11 @@ else:
             earn_kw = {"muted": True}
 
         # ── Card row: main HTML block + toggle column + trash column ─────
-        # 3 Streamlit columns. On mobile the trash column is lifted out
-        # of the flow via position:absolute (anchored to the stHorizontalBlock
-        # row) and pinned to the top-right corner of the card. On desktop
-        # the trash column is hidden entirely; the labelled bottom
-        # "✕ Remove from portfolio" button (.pf-del-desktop-only) handles
-        # the destructive action.
+        # 3 Streamlit columns. The trash column is the only delete
+        # affordance on every viewport. On mobile its column is lifted
+        # out of the row's flow and pinned to the top-right corner of
+        # the card so it sits next to the name; on desktop it sits as
+        # a normal narrow column to the right of the toggle.
         main_col, btn_col, trash_col = st.columns([1, 0.14, 0.14], gap="small")
 
         with main_col:
@@ -971,39 +932,18 @@ else:
                 st.rerun()
 
         with btn_col:
-            # Desktop behaviour (pre-mobile-changes state):
-            #   Collapsed: small ▾ + small red ✕ side-by-side icons.
-            #   Expanded:  only the ▴ collapse toggle here; the
-            #              "✕ Remove from portfolio" labelled button
-            #              moves to the bottom of the detail panel.
+            # Only the ▾/▴ expand-collapse toggle lives here. The
+            # destructive delete action is handled exclusively by the
+            # 🗑️ trash icon in trash_col on every viewport.
             arrow = "▴" if is_expanded else "▾"
-            if is_expanded:
-                if st.button(arrow, key=f"toggle_{ticker}",
-                             help="Collapse",
-                             use_container_width=True):
+            if st.button(arrow, key=f"toggle_{ticker}",
+                         help="Collapse" if is_expanded else "Expand",
+                         use_container_width=True):
+                if is_expanded:
                     st.session_state.portfolio_expanded.discard(ticker)
-                    st.rerun()
-            else:
-                b1, b2 = st.columns(2, gap="small")
-                if b1.button(arrow, key=f"toggle_{ticker}",
-                             help="Expand",
-                             use_container_width=True):
+                else:
                     st.session_state.portfolio_expanded.add(ticker)
-                    st.rerun()
-                # Anchor: paints button red (.pf-del-anchor) AND hides
-                # it on mobile (.pf-del-desktop-only) because the
-                # floating 🗑️ icon at top-right replaces this affordance.
-                b2.markdown(
-                    "<div class='pf-del-anchor pf-del-desktop-only'></div>",
-                    unsafe_allow_html=True,
-                )
-                if b2.button("✕", key=f"del_{ticker}",
-                             help="Remove from portfolio",
-                             use_container_width=True):
-                    st.session_state.portfolio_tickers.remove(ticker)
-                    st.session_state.portfolio_expanded.discard(ticker)
-                    _save_portfolio(st.session_state.portfolio_tickers)
-                    st.rerun()
+                st.rerun()
 
         # ── Expanded detail section ──────────────────────────────────────────
         if is_expanded:
@@ -1195,24 +1135,6 @@ else:
                             else:
                                 st.markdown("<div style='margin-bottom:12px;'></div>",
                                             unsafe_allow_html=True)
-
-                # ── Bottom-right "Remove from portfolio" button ──────────────
-                # Sits at the very bottom of the expanded panel, far away
-                # from the ▴ collapse toggle, so the destructive ✕ action
-                # is unambiguous.
-                _, rem_col = st.columns([0.6, 0.4])
-                with rem_col:
-                    # Anchor sibling so CSS paints the next button red.
-                    st.markdown("<div class='pf-del-anchor'></div>",
-                                unsafe_allow_html=True)
-                    if st.button("✕ Remove from portfolio",
-                                 key=f"del_bottom_{ticker}",
-                                 help="Permanently remove this holding",
-                                 use_container_width=True):
-                        st.session_state.portfolio_tickers.remove(ticker)
-                        st.session_state.portfolio_expanded.discard(ticker)
-                        _save_portfolio(st.session_state.portfolio_tickers)
-                        st.rerun()
 
         # Small vertical gap between cards (the card itself now carries
         # the visual separation via its border + rounded corners).
