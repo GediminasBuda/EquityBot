@@ -685,18 +685,23 @@ st.markdown(
       .pf-metric-value.bold { font-weight: 700; }
       .pf-metric-value.muted { color: #8A92A0; font-style: italic; }
 
-      /* ── Tablet (≤768px): name spans full width, metrics in 2 cols, label inline ── */
+      /* ── Tablet / Mobile (≤768px): card layout matches the user's
+         mockup: name + trash on top row, Earnings full-width, then a
+         strict 2-col grid of (Price | Mkt Cap), (P/E | EBIT M.),
+         (ROE | YTD), and finally the "Chart ↓" toggle button below. */
       @media (max-width: 768px) {
         .pf-summary {
           grid-template-columns: 1fr 1fr;
           gap: 8px 12px;
         }
+        /* Name on the left of the top row; the floating trash icon
+           sits at the right (see pf-trash-anchor rules below). */
         .pf-name-cell {
           grid-column: 1 / -1;
           border-bottom: 1px solid #EDF1F5;
           padding-bottom: 6px;
-          align-items: center;
-          text-align: center;
+          align-items: flex-start;
+          text-align: left;
         }
         .pf-name { font-size: 15px; }
         .pf-metric {
@@ -716,11 +721,38 @@ st.markdown(
           font-weight: 600;
           text-align: right;
         }
+
+        /* Earnings spans the full width and is centred — its own row
+           directly under the name. */
+        .pf-m-earnings {
+          grid-column: 1 / -1;
+          justify-content: center !important;
+          text-align: center;
+          border-bottom: 1px solid #EDF1F5;
+          padding-bottom: 6px;
+        }
+        .pf-m-earnings .pf-metric-value { text-align: center; }
+
+        /* Explicit display order so the 6 lower metrics fall into the
+           rows the user specified, regardless of HTML source order:
+              Row 1: Price | Mkt Cap
+              Row 2: P/E   | EBIT M.
+              Row 3: ROE   | YTD
+           (Name cell + Earnings are above thanks to grid-column span;
+           order on grid items still flows them left→right, top→bottom.) */
+        .pf-m-price { order: 1; }
+        .pf-m-mcap  { order: 2; }
+        .pf-m-pe    { order: 3; }
+        .pf-m-ebit  { order: 4; }
+        .pf-m-roe   { order: 5; }
+        .pf-m-ytd   { order: 6; }
       }
 
-      /* ── Phone (≤380px): single-column stack ─────────────────────── */
+      /* ── Phone (≤380px): keep the 2-col metric grid (so the 6 lower
+         metrics still pair up as the user laid out); only widen
+         spacing slightly. */
       @media (max-width: 380px) {
-        .pf-summary { grid-template-columns: 1fr; }
+        .pf-summary { gap: 6px 10px; }
       }
 
       /* ── Action buttons (▾ toggle / ✕ delete) ────────────────────── */
@@ -762,6 +794,39 @@ st.markdown(
         background: #FBE5E2 !important;
         border-color: #B83227 !important;
       }
+
+      /* ── Mobile: relabel the small ▾/▴ toggle as "Chart ↓" /
+         "Hide chart ↑" so it reads as the chart open/close action
+         the user expects at the bottom of every card. Anchor classes
+         on the markdown sibling encode the state. */
+      @media (max-width: 768px) {
+        div[data-testid="element-container"]:has(.pf-toggle-anchor)
+          + div[data-testid="element-container"]
+          div[data-testid="stButton"] > button p {
+          font-size: 0 !important;
+        }
+        div[data-testid="element-container"]:has(.pf-toggle-collapsed)
+          + div[data-testid="element-container"]
+          div[data-testid="stButton"] > button::after {
+          content: "Chart ↓";
+          font-size: 14px;
+          font-weight: 600;
+          color: #1B3F6E;
+          line-height: 1;
+        }
+        div[data-testid="element-container"]:has(.pf-toggle-expanded)
+          + div[data-testid="element-container"]
+          div[data-testid="stButton"] > button::after {
+          content: "Hide chart ↑";
+          font-size: 14px;
+          font-weight: 600;
+          color: #1B3F6E;
+          line-height: 1;
+        }
+      }
+
+      /* The toggle anchor marker is invisible. */
+      .pf-toggle-anchor { display: none; }
 
       /* ── Mobile: float the trash column over the card's top-right
          corner instead of letting it wrap below the card content. ─── */
@@ -855,13 +920,14 @@ else:
 
     def _metric_html(label: str, value: str, *,
                      color: str = "#222", bold: bool = False,
-                     muted: bool = False) -> str:
+                     muted: bool = False, extra_cls: str = "") -> str:
         cls = "pf-metric-value"
         if bold:  cls += " bold"
         if muted: cls += " muted"
         style = f"color:{color};" if color != "#222" else ""
+        wrap_cls = f"pf-metric {extra_cls}".strip()
         return (
-            f"<div class='pf-metric'>"
+            f"<div class='{wrap_cls}'>"
             f"<div class='pf-metric-label'>{label}</div>"
             f"<div class='{cls}' style='{style}'>{value}</div>"
             f"</div>"
@@ -906,14 +972,15 @@ else:
                 f"{_html.escape(name_full)}</div>"
                 f"<div class='pf-sub'>{_html.escape(sub_line)}</div>"
                 "</div>"
-                # 7 metrics
-                f"{_metric_html('Earnings', earn_value, **earn_kw)}"
-                f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']))}"
-                f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']))}"
-                f"{_metric_html('P/E', _fmt_ratio(snap['pe']))}"
-                f"{_metric_html('ROE', _fmt_pct(snap['roe']))}"
-                f"{_metric_html('EBIT M.', _fmt_pct(snap['ebit_margin']))}"
-                f"{_metric_html('YTD', ytd_text, color=ytd_color, bold=True)}"
+                # 7 metrics — each carries a unique class so mobile CSS
+                # can re-order them via `order:` and span Earnings full-width.
+                f"{_metric_html('Earnings', earn_value, extra_cls='pf-m-earnings', **earn_kw)}"
+                f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']), extra_cls='pf-m-price')}"
+                f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']), extra_cls='pf-m-mcap')}"
+                f"{_metric_html('P/E', _fmt_ratio(snap['pe']), extra_cls='pf-m-pe')}"
+                f"{_metric_html('ROE', _fmt_pct(snap['roe']), extra_cls='pf-m-roe')}"
+                f"{_metric_html('EBIT M.', _fmt_pct(snap['ebit_margin']), extra_cls='pf-m-ebit')}"
+                f"{_metric_html('YTD', ytd_text, color=ytd_color, bold=True, extra_cls='pf-m-ytd')}"
                 "</div></div>"
             )
             st.markdown(card_html, unsafe_allow_html=True)
@@ -935,7 +1002,14 @@ else:
             # Only the ▾/▴ expand-collapse toggle lives here. The
             # destructive delete action is handled exclusively by the
             # 🗑️ trash icon in trash_col on every viewport.
+            # The state-aware anchor lets mobile CSS swap the bare arrow
+            # for "Chart ↓" / "Hide chart ↑" via a ::after pseudo-element.
             arrow = "▴" if is_expanded else "▾"
+            anchor_cls = ("pf-toggle-anchor pf-toggle-expanded"
+                          if is_expanded
+                          else "pf-toggle-anchor pf-toggle-collapsed")
+            st.markdown(f"<div class='{anchor_cls}'></div>",
+                        unsafe_allow_html=True)
             if st.button(arrow, key=f"toggle_{ticker}",
                          help="Collapse" if is_expanded else "Expand",
                          use_container_width=True):
