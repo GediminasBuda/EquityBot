@@ -803,6 +803,20 @@ st.markdown(
       .pf-expand-all-anchor { display: none; }
       .pf-toggle-anchor { display: none; }
 
+      /* ── Keep the action-row buttons side-by-side ──────────────────
+         The two-button action column uses a nested st.columns(2) row.
+         At its narrow desktop width the default Streamlit column-gap
+         eats just enough horizontal space to push the second column
+         onto a new line. Scope a zero-gap + no-wrap rule to the
+         nested horizontal block that lives next to the trash anchor
+         so toggle + trash always sit on the same line. */
+      div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
+        > div[data-testid="column"]
+        div[data-testid="stHorizontalBlock"] {
+        gap: 4px !important;
+        flex-wrap: nowrap !important;
+      }
+
       /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
          list of cards on a phone screen produces an unusable wall of
          charts. Targeting the whole stColumn that contains the
