@@ -806,13 +806,13 @@ st.markdown(
           flex: 1 1 100% !important;
         }
         /* Slimmer button — less vertical padding, no inflated
-           min-height. */
-        div[data-testid="element-container"]:has(.pf-remove-anchor)
-          + div[data-testid="element-container"]
-          div[data-testid="stButton"] > button,
-        div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
-          + div[data-testid="stElementContainer"]
-          div[data-testid="stButton"] > button {
+           min-height. Target the actual button via its emotion-cache
+           class scoped to the remove-anchor's column, so the rule
+           outranks the global .st-emotion-cache-1yu3o6t padding set
+           in app.py. */
+        .stColumn:has(.pf-remove-anchor) button.st-emotion-cache-1yu3o6t,
+        div[data-testid="stColumn"]:has(.pf-remove-anchor) button.st-emotion-cache-1yu3o6t,
+        div[data-testid="column"]:has(.pf-remove-anchor) button.st-emotion-cache-1yu3o6t {
           padding: 0.45rem 0.75rem !important;
           min-height: 30px !important;
         }
