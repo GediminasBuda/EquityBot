@@ -2233,50 +2233,6 @@ if st.session_state.report_result:
         )
         st.caption(f"{len(report_bytes)//1024} KB")
 
-    if is_html_report:
-        # Render HTML inline
-        html_content = extra.get("html_content", report_bytes.decode("utf-8", errors="replace"))
-        b64 = base64.b64encode(html_content.encode("utf-8")).decode()
-        st.markdown(
-            f'<iframe src="data:text/html;base64,{b64}" '
-            f'width="100%" height="820px" '
-            f'style="border:1px solid #BBCCDD; border-radius:4px;"></iframe>',
-            unsafe_allow_html=True,
-        )
-    else:
-        # PDF viewer — Chrome (≥60) blocks `data:application/pdf;base64,…`
-        # URIs in <iframe>, so we ship the bytes as base64, decode them in
-        # the browser into a Blob, and load the iframe from the resulting
-        # blob URL. This works in Chrome, Firefox, Safari and Edge without
-        # extra packages or external services.
-        import streamlit.components.v1 as components
-        b64 = base64.b64encode(report_bytes).decode()
-        components.html(
-            f"""
-            <iframe id="pdfFrame" width="100%" height="820px"
-                    style="border:1px solid #BBCCDD; border-radius:4px;"></iframe>
-            <script>
-              (function() {{
-                const b64 = "{b64}";
-                const bin = atob(b64);
-                const len = bin.length;
-                const bytes = new Uint8Array(len);
-                for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-                const blob = new Blob([bytes], {{ type: "application/pdf" }});
-                const url = URL.createObjectURL(blob);
-                document.getElementById("pdfFrame").src = url;
-              }})();
-            </script>
-            """,
-            height=830,
-            scrolling=False,
-        )
-        st.caption(
-            "💡 If the PDF still doesn't display, use the **Download PDF** "
-            "button above. (Some corporate-managed browsers strip the inline "
-            "viewer entirely.)"
-        )
-
 elif st.session_state.error_msg:
     st.error(st.session_state.error_msg)
 
