@@ -153,6 +153,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Global CSS overrides ──────────────────────────────────────────────────────
+# NB. .st-emotion-cache-zy6yx3 is a Streamlit-generated hash class — it can
+# change when Streamlit is upgraded. Re-inspect in DevTools and update the
+# selector if the padding stops applying after a version bump.
+st.markdown(
+    """
+    <style>
+      .st-emotion-cache-zy6yx3 { padding: 3rem 1rem 4rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ── Auth gate ─────────────────────────────────────────────────────────────────
 _users = _load_users()
 if _users:
