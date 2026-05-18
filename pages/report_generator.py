@@ -702,6 +702,50 @@ st.markdown(
     # #### markdown blocks in, so they don't dominate the layout.
     ".st-emotion-cache-1dy2t46 h4 { font-size: 1rem !important; }"
     ".st-emotion-cache-1dy2t46 { margin-bottom: -10px; }"
+    # ── Peer Tickers visibility ──────────────────────────────────
+    # Two parallel Peer Tickers inputs are rendered: a mobile copy
+    # in col_left (anchored .rg-peer-mobile-anchor) so it sits right
+    # after the ticker searchbox on phones, and a desktop copy in
+    # col_right (anchored .rg-peer-desktop-anchor) for the original
+    # side-by-side desktop form. Each anchor sits as the FIRST of a
+    # 3-element sequence (anchor markdown → header markdown → input)
+    # so the rules hide the anchor element-container and its next
+    # two siblings together. Both Streamlit testid spellings are
+    # listed for compatibility.
+    ".rg-peer-mobile-anchor { display: none; }"
+    ".rg-peer-desktop-anchor { display: none; }"
+    "@media (min-width: 769px) {"
+    "  div[data-testid=\"stElementContainer\"]:has(.rg-peer-mobile-anchor),"
+    "  div[data-testid=\"element-container\"]:has(.rg-peer-mobile-anchor),"
+    "  div.stElementContainer:has(.rg-peer-mobile-anchor),"
+    "  div.element-container:has(.rg-peer-mobile-anchor),"
+    "  div[data-testid=\"stElementContainer\"]:has(.rg-peer-mobile-anchor) + div[data-testid=\"stElementContainer\"],"
+    "  div[data-testid=\"element-container\"]:has(.rg-peer-mobile-anchor) + div[data-testid=\"element-container\"],"
+    "  div.stElementContainer:has(.rg-peer-mobile-anchor) + div.stElementContainer,"
+    "  div.element-container:has(.rg-peer-mobile-anchor) + div.element-container,"
+    "  div[data-testid=\"stElementContainer\"]:has(.rg-peer-mobile-anchor) + div[data-testid=\"stElementContainer\"] + div[data-testid=\"stElementContainer\"],"
+    "  div[data-testid=\"element-container\"]:has(.rg-peer-mobile-anchor) + div[data-testid=\"element-container\"] + div[data-testid=\"element-container\"],"
+    "  div.stElementContainer:has(.rg-peer-mobile-anchor) + div.stElementContainer + div.stElementContainer,"
+    "  div.element-container:has(.rg-peer-mobile-anchor) + div.element-container + div.element-container {"
+    "    display: none !important;"
+    "  }"
+    "}"
+    "@media (max-width: 768px) {"
+    "  div[data-testid=\"stElementContainer\"]:has(.rg-peer-desktop-anchor),"
+    "  div[data-testid=\"element-container\"]:has(.rg-peer-desktop-anchor),"
+    "  div.stElementContainer:has(.rg-peer-desktop-anchor),"
+    "  div.element-container:has(.rg-peer-desktop-anchor),"
+    "  div[data-testid=\"stElementContainer\"]:has(.rg-peer-desktop-anchor) + div[data-testid=\"stElementContainer\"],"
+    "  div[data-testid=\"element-container\"]:has(.rg-peer-desktop-anchor) + div[data-testid=\"element-container\"],"
+    "  div.stElementContainer:has(.rg-peer-desktop-anchor) + div.stElementContainer,"
+    "  div.element-container:has(.rg-peer-desktop-anchor) + div.element-container,"
+    "  div[data-testid=\"stElementContainer\"]:has(.rg-peer-desktop-anchor) + div[data-testid=\"stElementContainer\"] + div[data-testid=\"stElementContainer\"],"
+    "  div[data-testid=\"element-container\"]:has(.rg-peer-desktop-anchor) + div[data-testid=\"element-container\"] + div[data-testid=\"element-container\"],"
+    "  div.stElementContainer:has(.rg-peer-desktop-anchor) + div.stElementContainer + div.stElementContainer,"
+    "  div.element-container:has(.rg-peer-desktop-anchor) + div.element-container + div.element-container {"
+    "    display: none !important;"
+    "  }"
+    "}"
     "</style>",
     unsafe_allow_html=True,
 )
@@ -730,6 +774,20 @@ with col_left:
         label=None,
         clear_on_submit=False,
         key="rg_searchbox",
+    )
+
+    # ── Mobile-only Peer Tickers (CSS hides this block on desktop) ────────
+    # The user wants Peer Tickers to appear right after the ticker input on
+    # phones. Render a parallel input here with a distinct key, then merge
+    # its value with the canonical col_right input further down.
+    st.markdown("<div class='rg-peer-mobile-anchor'></div>",
+                unsafe_allow_html=True)
+    st.markdown("#### Peer Tickers  *(Overview V2 / Fisher / Gravity — optional)*")
+    st.text_input(
+        "Peer tickers (mobile)",
+        placeholder="REL.L  TRI.TO  MSFT  (space-separated, up to 6)",
+        label_visibility="collapsed",
+        key="peers_input_mobile",
     )
 
     # Persist the selected ticker (or the parsed intent / screener rows) in
@@ -1041,6 +1099,10 @@ with col_left:
 
 with col_right:
     # Peer tickers — only relevant for Overview
+    # Anchor lets CSS hide the desktop copy on mobile (the mobile copy
+    # lives in col_left right after the ticker searchbox).
+    st.markdown("<div class='rg-peer-desktop-anchor'></div>",
+                unsafe_allow_html=True)
     st.markdown("#### Peer Tickers  *(Overview V2 / Fisher / Gravity — optional)*")
     peers_input = st.text_input(
         "Peer tickers",
@@ -1050,6 +1112,13 @@ with col_right:
             "overview_v2", "fisher", "fisher_peers", "gravity",
         )),
         key="peers_input",
+    )
+    # Merge whichever copy actually carries a user-entered value so the
+    # rest of the page consumes a single peers_input string.
+    peers_input = (
+        st.session_state.get("peers_input_mobile", "").strip()
+        or peers_input
+        or ""
     )
 
     st.markdown("#### Options")
