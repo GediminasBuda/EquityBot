@@ -745,6 +745,15 @@ st.markdown(
     "  div.element-container:has(.rg-peer-desktop-anchor) + div.element-container + div.element-container {"
     "    display: none !important;"
     "  }"
+    # ── Tighten the vertical gap between the end of col_left
+    # (Report Framework) and the start of col_right (Options) when
+    # the form columns wrap on mobile. The columns were created with
+    # gap=\"large\" which leaves ~2rem of empty space; 22px keeps the
+    # form compact. Scoped via the mobile-peer anchor so only the
+    # form's outer horizontal block is affected.
+    "  div[data-testid=\"stHorizontalBlock\"]:has(.rg-peer-mobile-anchor) {"
+    "    row-gap: 22px !important;"
+    "  }"
     "}"
     "</style>",
     unsafe_allow_html=True,
