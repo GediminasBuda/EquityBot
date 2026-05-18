@@ -640,7 +640,7 @@ def _page_balance_sheet(bundle: dict, styles: dict) -> list:
         fields, n_periods=8, period="quarterly",
         highlight_fields=["commonStockSharesOutstanding"],
     )
-    return annual_el + [Spacer(1, 10)] + quarterly_el
+    return annual_el + [PageBreak()] + quarterly_el
 
 
 def _page_cash_flow(bundle: dict, styles: dict) -> list:
