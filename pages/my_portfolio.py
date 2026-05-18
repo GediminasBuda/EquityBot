@@ -958,8 +958,8 @@ else:
             st.markdown(card_html, unsafe_allow_html=True)
 
         with trash_col:
-            # Anchor identifies this column so CSS can pin it on mobile
-            # and hide it on desktop.
+            # Mobile-only floating trash icon. Anchor lets CSS pin this
+            # whole column on mobile and hide it entirely on desktop.
             st.markdown("<div class='pf-trash-anchor'></div>",
                         unsafe_allow_html=True)
             if st.button("🗑️", key=f"del_mobile_{ticker}",
@@ -971,33 +971,34 @@ else:
                 st.rerun()
 
         with btn_col:
-            # Top-right always has only the ▾/▴ toggle. The destructive
-            # "✕ Remove from portfolio" button is always rendered with
-            # its full label at the bottom-right (below the card when
-            # collapsed; at the bottom of the detail panel when expanded)
-            # so it's far from the toggle in both states.
+            # Desktop behaviour (pre-mobile-changes state):
+            #   Collapsed: small ▾ + small red ✕ side-by-side icons.
+            #   Expanded:  only the ▴ collapse toggle here; the
+            #              "✕ Remove from portfolio" labelled button
+            #              moves to the bottom of the detail panel.
             arrow = "▴" if is_expanded else "▾"
-            if st.button(arrow, key=f"toggle_{ticker}",
-                         help="Collapse" if is_expanded else "Expand",
-                         use_container_width=True):
-                if is_expanded:
+            if is_expanded:
+                if st.button(arrow, key=f"toggle_{ticker}",
+                             help="Collapse",
+                             use_container_width=True):
                     st.session_state.portfolio_expanded.discard(ticker)
-                else:
+                    st.rerun()
+            else:
+                b1, b2 = st.columns(2, gap="small")
+                if b1.button(arrow, key=f"toggle_{ticker}",
+                             help="Expand",
+                             use_container_width=True):
                     st.session_state.portfolio_expanded.add(ticker)
-                st.rerun()
-
-        # ── Labelled remove button (only rendered here when card is
-        #     collapsed; when expanded it lives at the bottom of the
-        #     detail panel further down). Right-aligned via empty
-        #     left column so it sits under the action column above. ──
-        if not is_expanded:
-            _, rem_col_top = st.columns([0.6, 0.4])
-            with rem_col_top:
-                st.markdown("<div class='pf-del-anchor pf-del-desktop-only'></div>",
-                            unsafe_allow_html=True)
-                if st.button("✕ Remove from portfolio",
-                             key=f"del_top_{ticker}",
-                             help="Permanently remove this holding",
+                    st.rerun()
+                # Anchor: paints button red (.pf-del-anchor) AND hides
+                # it on mobile (.pf-del-desktop-only) because the
+                # floating 🗑️ icon at top-right replaces this affordance.
+                b2.markdown(
+                    "<div class='pf-del-anchor pf-del-desktop-only'></div>",
+                    unsafe_allow_html=True,
+                )
+                if b2.button("✕", key=f"del_{ticker}",
+                             help="Remove from portfolio",
                              use_container_width=True):
                     st.session_state.portfolio_tickers.remove(ticker)
                     st.session_state.portfolio_expanded.discard(ticker)
