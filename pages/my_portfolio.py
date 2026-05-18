@@ -725,6 +725,30 @@ st.markdown(
         line-height: 1 !important;
       }
 
+      /* Red styling for any ✕ "remove" button — both the small glyph
+         button up top (when card is collapsed) and the labelled
+         "✕ Remove from portfolio" button at the bottom of an expanded
+         card. We use an invisible anchor div rendered right before the
+         button and target the next sibling element-container's button
+         via :has(). Modern browsers (Chrome 105+, Safari 15.4+, FF 121+)
+         all support :has(); older fallback: button stays default style. */
+      div[data-testid="element-container"]:has(.pf-del-anchor)
+        + div[data-testid="element-container"]
+        div[data-testid="stButton"] > button {
+        color: #B83227 !important;
+        border-color: #E8C0BC !important;
+      }
+      div[data-testid="element-container"]:has(.pf-del-anchor)
+        + div[data-testid="element-container"]
+        div[data-testid="stButton"] > button:hover {
+        background: #FBE5E2 !important;
+        border-color: #B83227 !important;
+        color: #B83227 !important;
+      }
+      /* The .pf-del-anchor wrapper itself collapses to zero height
+         so it doesn't push the layout. */
+      .pf-del-anchor { display: none; }
+
       /* ── Tighter inter-card gap (the wrapping st.container has its
             own gap; pull it down a bit so cards don't feel sparse) ─── */
       div[data-testid="stVerticalBlock"] > div[data-testid="element-container"]
@@ -871,6 +895,9 @@ else:
                              use_container_width=True):
                     st.session_state.portfolio_expanded.add(ticker)
                     st.rerun()
+                # Anchor sibling so CSS can paint the next button red.
+                b2.markdown("<div class='pf-del-anchor'></div>",
+                            unsafe_allow_html=True)
                 if b2.button("✕", key=f"del_{ticker}",
                              help="Remove from portfolio",
                              use_container_width=True):
@@ -1076,6 +1103,9 @@ else:
                 # is unambiguous.
                 _, rem_col = st.columns([0.6, 0.4])
                 with rem_col:
+                    # Anchor sibling so CSS paints the next button red.
+                    st.markdown("<div class='pf-del-anchor'></div>",
+                                unsafe_allow_html=True)
                     if st.button("✕ Remove from portfolio",
                                  key=f"del_bottom_{ticker}",
                                  help="Permanently remove this holding",
