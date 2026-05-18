@@ -693,6 +693,11 @@ st.markdown(
     "  background: #FFFFFF;"
     "  padding: 4px 0 6px 0;"
     "}"
+    # Centre the title on mobile so it doesn't sit hard-left under
+    # the burger / sidebar icon.
+    "@media (max-width: 768px) {"
+    "  .eq-page-title { justify-content: center !important; }"
+    "}"
     # Shrink the auto-styled h4 headings Streamlit wraps subheaders /
     # #### markdown blocks in, so they don't dominate the layout.
     ".st-emotion-cache-1dy2t46 h4 { font-size: 1rem !important; }"
