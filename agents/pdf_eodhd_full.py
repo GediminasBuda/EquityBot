@@ -480,7 +480,8 @@ def _page_valuation(bundle: dict, styles: dict) -> list:
 # ══════════════════════════════════════════════════════════════════════════════
 def _financials_section(
     bundle: dict, styles: dict, block_key: str, title: str,
-    field_specs: list[tuple], n_years: int = 10,
+    field_specs: list[tuple], n_periods: int = 10,
+    period: str = "yearly",
     highlight_fields: Optional[list] = None,
 ) -> list:
     """
@@ -488,19 +489,20 @@ def _financials_section(
 
     field_specs: [(eodhd_field_name, display_label, formatter), ...]
                  formatter takes the raw string value, returns display string.
+    period:      "yearly" or "quarterly" — which EODHD sub-block to read.
     """
     el = []
     f = bundle.get("fundamentals") or {}
     fin = f.get("Financials") or {}
-    block = (fin.get(block_key) or {}).get("yearly") or {}
+    block = (fin.get(block_key) or {}).get(period) or {}
     if not block:
         el.append(_sec(title, styles))
         el.append(Paragraph("No data returned by EODHD.", styles["small"]))
         return el
 
-    # Most recent N years, chronological order
-    years_desc = sorted(block.keys(), reverse=True)[:n_years]
-    years = list(reversed(years_desc))     # asc for column display
+    # Most recent N periods, chronological order (oldest → newest in columns)
+    periods_desc = sorted(block.keys(), reverse=True)[:n_periods]
+    years = list(reversed(periods_desc))     # asc for column display
     if not years:
         el.append(_sec(title, styles))
         el.append(Paragraph("No data returned by EODHD.", styles["small"]))
@@ -579,11 +581,17 @@ def _page_income_stmt(bundle: dict, styles: dict) -> list:
         ("netIncome",                   "Net Income", _m),
         ("netIncomeApplicableToCommonShares", "NI Applicable to Common", _m),
     ]
-    return _financials_section(
+    annual_el = _financials_section(
         bundle, styles, "Income_Statement",
         "Income Statement — 10y (millions, reporting currency)",
-        fields, n_years=10,
+        fields, n_periods=10, period="yearly",
     )
+    quarterly_el = _financials_section(
+        bundle, styles, "Income_Statement",
+        "Income Statement — Last 8 Quarters (millions, reporting currency)",
+        fields, n_periods=8, period="quarterly",
+    )
+    return annual_el + [Spacer(1, 10)] + quarterly_el
 
 
 def _page_balance_sheet(bundle: dict, styles: dict) -> list:
@@ -618,14 +626,21 @@ def _page_balance_sheet(bundle: dict, styles: dict) -> list:
         ("netWorkingCapital",          "Net Working Capital", _m),
         ("netInvestedCapital",         "Net Invested Capital", _m),
     ]
-    return _financials_section(
+    annual_el = _financials_section(
         bundle, styles, "Balance_Sheet",
         "Balance Sheet — 10y (millions, reporting currency)",
-        fields, n_years=10,
+        fields, n_periods=10, period="yearly",
         # Light blue tint behind Shares Outstanding so the eye locks
         # onto the only-non-monetary row in the table.
         highlight_fields=["commonStockSharesOutstanding"],
     )
+    quarterly_el = _financials_section(
+        bundle, styles, "Balance_Sheet",
+        "Balance Sheet — Last 8 Quarters (millions, reporting currency)",
+        fields, n_periods=8, period="quarterly",
+        highlight_fields=["commonStockSharesOutstanding"],
+    )
+    return annual_el + [Spacer(1, 10)] + quarterly_el
 
 
 def _page_cash_flow(bundle: dict, styles: dict) -> list:
@@ -655,11 +670,17 @@ def _page_cash_flow(bundle: dict, styles: dict) -> list:
         ("endPeriodCashFlow",                "End Period Cash", _m),
         ("freeCashFlow",                     "Free Cash Flow", _m),
     ]
-    return _financials_section(
+    annual_el = _financials_section(
         bundle, styles, "Cash_Flow",
         "Cash Flow — 10y (millions, reporting currency)",
-        fields, n_years=10,
+        fields, n_periods=10, period="yearly",
     )
+    quarterly_el = _financials_section(
+        bundle, styles, "Cash_Flow",
+        "Cash Flow — Last 8 Quarters (millions, reporting currency)",
+        fields, n_periods=8, period="quarterly",
+    )
+    return annual_el + [Spacer(1, 10)] + quarterly_el
 
 
 # ══════════════════════════════════════════════════════════════════════════════
