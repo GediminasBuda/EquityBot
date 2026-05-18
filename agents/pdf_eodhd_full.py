@@ -591,7 +591,7 @@ def _page_income_stmt(bundle: dict, styles: dict) -> list:
         "Income Statement — Last 8 Quarters (millions, reporting currency)",
         fields, n_periods=8, period="quarterly",
     )
-    return annual_el + [Spacer(1, 10)] + quarterly_el
+    return annual_el + [PageBreak()] + quarterly_el
 
 
 def _page_balance_sheet(bundle: dict, styles: dict) -> list:
@@ -680,7 +680,7 @@ def _page_cash_flow(bundle: dict, styles: dict) -> list:
         "Cash Flow — Last 8 Quarters (millions, reporting currency)",
         fields, n_periods=8, period="quarterly",
     )
-    return annual_el + [Spacer(1, 10)] + quarterly_el
+    return annual_el + [PageBreak()] + quarterly_el
 
 
 # ══════════════════════════════════════════════════════════════════════════════
