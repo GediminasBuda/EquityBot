@@ -759,36 +759,39 @@ st.markdown(
       .pf-trash-anchor { display: none; }
 
       /* ── Mobile-only floating trash icon (🗑️) at top-right of card ──
-         The trash button is rendered inside main_col immediately after
-         the card HTML. On mobile we promote main_col's stVerticalBlock
-         to position:relative, then absolute-position the button's
-         element-container into the top-right corner of the card area.
-         Desktop: trash button hidden entirely; labelled bottom button
-         (.pf-del-desktop-only) carries the destructive action. */
+         The trash button lives in its own Streamlit column (trash_col).
+         On mobile we promote the card-row's stHorizontalBlock to
+         position:relative and absolute-position that column over the
+         top-right corner of the card. On desktop the trash_col is
+         hidden and the labelled .pf-del-desktop-only bottom button
+         carries the destructive action. */
       @media (max-width: 768px) {
-        /* Promote the vertical block (= main_col contents) to relative
-           so the absolutely-positioned trash button anchors to it. */
-        div[data-testid="stVerticalBlock"]:has(.pf-trash-anchor) {
+        /* Anchor: the stHorizontalBlock that contains a trash anchor
+           descendant becomes the positioning context for the floated
+           trash column. */
+        div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor) {
           position: relative;
         }
-        /* Reserve space on the right side of the card for the trash
-           icon so it doesn't overlap with name / metric values. */
-        div[data-testid="stVerticalBlock"]:has(.pf-trash-anchor) .pf-card {
+        /* Reserve right-side breathing room inside the card so the
+           floating icon never overlaps name / metric values. */
+        div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor) .pf-card {
           padding-right: 52px;
         }
-        /* The trash button's element-container is the next sibling
-           after the .pf-trash-anchor element-container. Float it. */
-        div[data-testid="element-container"]:has(.pf-trash-anchor)
-          + div[data-testid="element-container"] {
+        /* Pin the trash column (only the one containing the anchor)
+           to the top-right corner of the card row. */
+        div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
+          > div[data-testid="column"]:has(.pf-trash-anchor) {
           position: absolute !important;
-          top: 10px !important;
-          right: 10px !important;
+          top: 14px !important;
+          right: 14px !important;
           width: 40px !important;
+          min-width: 40px !important;
+          max-width: 40px !important;
+          padding: 0 !important;
           z-index: 5;
         }
-        /* Style the trash icon: small red square with rounded corners. */
-        div[data-testid="element-container"]:has(.pf-trash-anchor)
-          + div[data-testid="element-container"]
+        /* Style the trash icon button: small red rounded square. */
+        div[data-testid="column"]:has(.pf-trash-anchor)
           div[data-testid="stButton"] > button {
           width: 40px !important;
           min-width: 40px !important;
@@ -802,8 +805,7 @@ st.markdown(
           font-size: 18px !important;
           line-height: 1 !important;
         }
-        div[data-testid="element-container"]:has(.pf-trash-anchor)
-          + div[data-testid="element-container"]
+        div[data-testid="column"]:has(.pf-trash-anchor)
           div[data-testid="stButton"] > button:hover {
           background: #FBE5E2 !important;
           border-color: #B83227 !important;
@@ -817,12 +819,11 @@ st.markdown(
         }
       }
 
-      /* Desktop: hide the mobile-only trash icon entirely so it doesn't
-         clutter the layout. */
+      /* Desktop: hide the trash column entirely so the card row stays
+         a clean 2-col layout (main + toggle). */
       @media (min-width: 769px) {
-        div[data-testid="element-container"]:has(.pf-trash-anchor),
-        div[data-testid="element-container"]:has(.pf-trash-anchor)
-          + div[data-testid="element-container"] {
+        div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
+          > div[data-testid="column"]:has(.pf-trash-anchor) {
           display: none !important;
         }
       }
@@ -925,11 +926,14 @@ else:
             earn_value = "—"
             earn_kw = {"muted": True}
 
-        # ── Card row: main HTML block + action button column ─────────────
-        # On desktop the column ratio holds; on mobile (<640px) Streamlit
-        # wraps the second column below the first, so the buttons end up
-        # under the card content as a small horizontal pair.
-        main_col, btn_col = st.columns([1, 0.14], gap="small")
+        # ── Card row: main HTML block + toggle column + trash column ─────
+        # 3 Streamlit columns. On mobile the trash column is lifted out
+        # of the flow via position:absolute (anchored to the stHorizontalBlock
+        # row) and pinned to the top-right corner of the card. On desktop
+        # the trash column is hidden entirely; the labelled bottom
+        # "✕ Remove from portfolio" button (.pf-del-desktop-only) handles
+        # the destructive action.
+        main_col, btn_col, trash_col = st.columns([1, 0.14, 0.14], gap="small")
 
         with main_col:
             card_html = (
@@ -953,10 +957,9 @@ else:
             )
             st.markdown(card_html, unsafe_allow_html=True)
 
-            # Mobile-only floating trash icon. Rendered inside main_col so
-            # CSS can position it absolutely at top-right of the card. The
-            # anchor div makes the parent vertical block targetable via
-            # :has(), and the next-sibling element-container is the button.
+        with trash_col:
+            # Anchor identifies this column so CSS can pin it on mobile
+            # and hide it on desktop.
             st.markdown("<div class='pf-trash-anchor'></div>",
                         unsafe_allow_html=True)
             if st.button("🗑️", key=f"del_mobile_{ticker}",
