@@ -594,140 +594,189 @@ with top_r:
         _fetch_next_earnings.clear()
         st.rerun()
 
-# Tight CSS for the rows — pulls Streamlit's default column padding tighter
-# so an entire ticker fits on a single visual line.
+# Responsive card CSS — every holding renders as a single .pf-card with
+# a CSS Grid inside. The grid reflows at narrow viewports:
+#   ≥769px : 1 name cell + 7 metric cells in one horizontal row
+#   ≤768px : name spans 2 cols, metrics stack into 2-col grid
+#   ≤380px : metrics collapse to 1 col
+# Action buttons live in a separate Streamlit column that wraps below the
+# card content on mobile (Streamlit columns wrap at ~640px).
 st.markdown(
     """
     <style>
-      .pf-cell {
-        font-size: 13px;
+      /* ── Card container ──────────────────────────────────────────── */
+      .pf-card {
+        background: #FFFFFF;
+        border: 1px solid #E5EAF0;
+        border-radius: 10px;
+        padding: 12px 14px;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      .pf-card:hover {
+        border-color: #C0CDD8;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+      }
+
+      /* ── Summary grid: name + 7 metrics ──────────────────────────── */
+      .pf-summary {
+        display: grid;
+        grid-template-columns:
+          minmax(0, 1.8fr)   /* name + ticker */
+          repeat(7, minmax(0, 1fr));   /* earnings · price · mcap · pe · roe · ebit · ytd */
+        gap: 6px 10px;
+        align-items: center;
+      }
+
+      .pf-name-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      .pf-name {
+        font-weight: 700;
+        color: #1B3F6E;
+        font-size: 14px;
         line-height: 1.2;
-        padding: 4px 0 4px 0;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .pf-name    { font-weight: 600; color: #1B3F6E; }
-      .pf-tk      { color: #888; font-size: 11px; }
-      .pf-val     { font-size: 13px; color: #222; }
-      .pf-hdr     { color: #888; font-size: 11px; padding: 2px 0;
-                    text-align: center; }
-      .pf-earn    { color: #1B3F6E; font-size: 11px; }
-      .pf-earn-na { color: #888; font-size: 11px; font-style: italic; }
-
-      /* Tight gutter — pull all columns hard together. */
-      div[data-testid="column"] {
-        padding-left: 1px !important;
-        padding-right: 1px !important;
+      .pf-sub {
+        font-size: 11px;
+        color: #8A92A0;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
-      /* All buttons: rounded corners, centred symbol, subtle border, hover. */
+      .pf-metric {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 2px;
+        min-width: 0;
+      }
+      .pf-metric-label {
+        font-size: 10px;
+        color: #8A92A0;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        line-height: 1.1;
+      }
+      .pf-metric-value {
+        font-size: 13px;
+        color: #222;
+        font-weight: 500;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .pf-metric-value.bold { font-weight: 700; }
+      .pf-metric-value.muted { color: #8A92A0; font-style: italic; }
+
+      /* ── Tablet (≤768px): name spans full width, metrics in 2 cols, label inline ── */
+      @media (max-width: 768px) {
+        .pf-summary {
+          grid-template-columns: 1fr 1fr;
+          gap: 8px 12px;
+        }
+        .pf-name-cell {
+          grid-column: 1 / -1;
+          border-bottom: 1px solid #EDF1F5;
+          padding-bottom: 6px;
+        }
+        .pf-name { font-size: 15px; }
+        .pf-metric {
+          flex-direction: row;
+          align-items: baseline;
+          justify-content: space-between;
+          text-align: left;
+          gap: 8px;
+        }
+        .pf-metric-label {
+          font-size: 11px;
+          letter-spacing: 0.3px;
+          flex-shrink: 0;
+        }
+        .pf-metric-value {
+          font-size: 14px;
+          font-weight: 600;
+          text-align: right;
+        }
+      }
+
+      /* ── Phone (≤380px): single-column stack ─────────────────────── */
+      @media (max-width: 380px) {
+        .pf-summary { grid-template-columns: 1fr; }
+      }
+
+      /* ── Action buttons (▾ toggle / ✕ delete) ────────────────────── */
+      /* All buttons inside a horizontal block (i.e. the action column)
+         get rounded squares; on mobile the column wraps and the two
+         nested-column buttons sit side-by-side at full width. */
       div[data-testid="stButton"] > button {
         border-radius: 8px !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        text-align: center !important;
-        padding: 0 8px !important;
-        min-height: 30px !important;
+        min-height: 36px !important;
         line-height: 1 !important;
       }
 
-      /* Action buttons in the last two columns of a row become small
-         rounded squares with a centred glyph. */
-      div[data-testid="stHorizontalBlock"]
-        > div[data-testid="column"]:nth-last-child(-n+2)
-        > div[data-testid="stVerticalBlock"]
-        div[data-testid="stButton"] > button {
-        width: 30px !important;
-        height: 30px !important;
-        min-width: 30px !important;
-        min-height: 30px !important;
-        padding: 0 !important;
-        border-radius: 8px !important;
-        border: 1px solid #C8D2DD !important;
-        background: #FFFFFF !important;
-        color: #1B3F6E !important;
-        font-size: 14px !important;
-        margin: 0 auto !important;
-        position: relative !important;
-        /* Hard-centre glyph regardless of inner wrapper widths */
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        overflow: hidden !important;
+      /* ── Tighter inter-card gap (the wrapping st.container has its
+            own gap; pull it down a bit so cards don't feel sparse) ─── */
+      div[data-testid="stVerticalBlock"] > div[data-testid="element-container"]
+        + div[data-testid="element-container"] {
+        margin-top: 6px;
       }
-      div[data-testid="stHorizontalBlock"]
-        > div[data-testid="column"]:nth-last-child(-n+2)
-        > div[data-testid="stVerticalBlock"]
-        div[data-testid="stButton"] > button:hover {
-        background: #EEF5FB !important;
-        border-color: #1B3F6E !important;
+
+      /* ── Detail panel internal flex strips (sector / rec, low / high) ── */
+      .pf-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        align-items: baseline;
+        justify-content: space-between;
+        margin: 4px 0 8px 0;
       }
-      /* Streamlit wraps button text in markdown containers + a tooltip
-         icon when the `help=` arg is set. Both of those add width that
-         pushes the glyph off-centre. We hide the tooltip-icon entirely
-         (the `help=` tooltip still works on hover via the button's
-         own title attr) and reset every descendant of the button so
-         the glyph sits at the geometric centre. */
-      div[data-testid="stHorizontalBlock"]
-        > div[data-testid="column"]:nth-last-child(-n+2)
-        > div[data-testid="stVerticalBlock"]
-        div[data-testid="stButton"] > button [data-testid="stTooltipIcon"],
-      div[data-testid="stHorizontalBlock"]
-        > div[data-testid="column"]:nth-last-child(-n+2)
-        > div[data-testid="stVerticalBlock"]
-        div[data-testid="stButton"] > button [data-testid="stTooltipHoverTarget"] {
-        display: none !important;
+      .pf-strip-meta { color: #888; font-size: 13px; min-width: 0; }
+      .pf-strip-rec  { font-size: 14px; font-weight: 600; white-space: nowrap; }
+      .pf-strip-rec .lbl { color: #888; font-size: 12px; font-weight: 400;
+                           margin-right: 4px; }
+
+      .pf-banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 4px 12px;
+        margin: 8px 0 4px 0;
+        padding: 8px 12px;
+        background: #F4F8FC;
+        border-radius: 6px;
       }
-      /* Wildcard reset on every descendant — covers st-emotion-cache-*
-         wrappers, p, span, divs that Streamlit adds around the glyph. */
-      div[data-testid="stHorizontalBlock"]
-        > div[data-testid="column"]:nth-last-child(-n+2)
-        > div[data-testid="stVerticalBlock"]
-        div[data-testid="stButton"] > button * {
-        margin: 0 !important;
-        padding: 0 !important;
-        line-height: 1 !important;
-        text-align: center !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        min-width: 0 !important;
+      .pf-banner-l { display: flex; flex-wrap: wrap; align-items: baseline;
+                     gap: 4px 10px; min-width: 0; }
+      .pf-banner-period { color: #666; font-size: 13px; }
+      .pf-banner-pct    { font-weight: 700; font-size: 22px; line-height: 1.1; }
+      .pf-banner-abs    { font-weight: 600; font-size: 15px; }
+      .pf-banner-r      { color: #888; font-size: 12px; white-space: nowrap; }
+
+      .pf-lowhigh {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 24px;
+        color: #666;
+        font-size: 13px;
+        margin-top: 4px;
       }
-      /* The <p> inside the button gets block layout — make sure it
-         doesn't add the browser default 1em top/bottom margins. */
-      div[data-testid="stHorizontalBlock"]
-        > div[data-testid="column"]:nth-last-child(-n+2)
-        > div[data-testid="stVerticalBlock"]
-        div[data-testid="stButton"] > button p {
-        margin: 0 !important;
-        padding: 0 !important;
-        text-align: center !important;
-        width: 100% !important;
-        display: block !important;
-      }
+      .pf-lowhigh b { color: #333; }
     </style>
     """,
     unsafe_allow_html=True,
 )
-
-# Column widths — must match between header and rows.
-#   Name  Tk   Earn  Price MCap  P/E   ROE   EBIT  YTD   ▾    ✕
-_COL_W = [1.9, 0.8, 1.3, 1.3, 1.2, 1.0, 1.1, 1.0, 1.1, 0.35, 0.35]
-
-# Header row labels (only when there's at least one card)
-if st.session_state.portfolio_tickers:
-    h_cols = st.columns(_COL_W)
-    labels = ["Name", "Ticker", "Earnings", "Price", "Mkt Cap",
-              "P/E", "ROE", "EBIT M.", "YTD", "", ""]
-    for i, lab in enumerate(labels):
-        # All header labels centred (pf-hdr already has text-align:center).
-        h_cols[i].markdown(
-            f"<div class='pf-hdr'>{lab}</div>",
-            unsafe_allow_html=True,
-        )
-    st.markdown("<hr style='margin:0 0 4px 0; border-color:#E0E5EC;'>",
-                unsafe_allow_html=True)
 
 # ── Portfolio rendering ───────────────────────────────────────────────────────
 if not st.session_state.portfolio_tickers:
@@ -737,6 +786,22 @@ if not st.session_state.portfolio_tickers:
         "`SPY` (ETF), `EURUSD=X` (forex)."
     )
 else:
+    import html as _html
+
+    def _metric_html(label: str, value: str, *,
+                     color: str = "#222", bold: bool = False,
+                     muted: bool = False) -> str:
+        cls = "pf-metric-value"
+        if bold:  cls += " bold"
+        if muted: cls += " muted"
+        style = f"color:{color};" if color != "#222" else ""
+        return (
+            f"<div class='pf-metric'>"
+            f"<div class='pf-metric-label'>{label}</div>"
+            f"<div class='{cls}' style='{style}'>{value}</div>"
+            f"</div>"
+        )
+
     for ticker in list(st.session_state.portfolio_tickers):
         snap = _fetch_snapshot(ticker)
         rec_label, rec_color = _recommendation(snap)
@@ -744,73 +809,64 @@ else:
         ytd_text, ytd_color = _fmt_signed_pct(snap.get("ytd_pct"))
         next_earnings = _fetch_next_earnings(ticker)
 
-        # ── Single-line compact row ──────────────────────────────────────────
-        cols = st.columns(_COL_W)
+        # Name + ticker + (sector if available) at left
+        name_full = snap["name"] or ticker
+        sector = snap.get("sector") or ""
+        sub_bits = [ticker] + ([sector] if sector else [])
+        sub_line = " · ".join(sub_bits)
 
-        # 0. Name (truncated hard so it stays on one line — full name in tooltip)
-        name_disp = (snap["name"] or ticker)[:22]
-        cols[0].markdown(
-            f"<div class='pf-cell pf-name' title='{snap['name']}'>"
-            f"{name_disp}</div>",
-            unsafe_allow_html=True,
-        )
-
-        # 1. Ticker symbol (small grey, centred)
-        cols[1].markdown(
-            f"<div class='pf-cell pf-tk' style='text-align:center;'>"
-            f"{ticker}</div>",
-            unsafe_allow_html=True,
-        )
-
-        # 2. Earnings date (or 'no date'), centred
+        # Earnings text (slightly muted when no date scheduled)
         if next_earnings:
-            earn = f"📅 {next_earnings}"
-            earn_cls = "pf-earn"
+            earn_value = f"📅 {next_earnings}"
+            earn_kw = {}
         else:
-            earn = "📅 no date"
-            earn_cls = "pf-earn-na"
-        cols[2].markdown(
-            f"<div class='pf-cell {earn_cls}' style='text-align:center;'>"
-            f"{earn}</div>",
-            unsafe_allow_html=True,
-        )
+            earn_value = "—"
+            earn_kw = {"muted": True}
 
-        # 3-7. Numeric metrics — centred to line up with centred headers.
-        def _num_cell(text: str, color: str = "#222",
-                      bold: bool = False) -> str:
-            wt = "font-weight:600;" if bold else ""
-            return (f"<div class='pf-cell pf-val' "
-                    f"style='text-align:center;color:{color};{wt}'>"
-                    f"{text}</div>")
+        # ── Card row: main HTML block + action button column ─────────────
+        # On desktop the column ratio holds; on mobile (<640px) Streamlit
+        # wraps the second column below the first, so the buttons end up
+        # under the card content as a small horizontal pair.
+        main_col, btn_col = st.columns([1, 0.14], gap="small")
 
-        cols[3].markdown(_num_cell(_fmt_price(snap['price'], snap['currency'])),
-                          unsafe_allow_html=True)
-        cols[4].markdown(_num_cell(_fmt_money(snap['market_cap'])),
-                          unsafe_allow_html=True)
-        cols[5].markdown(_num_cell(_fmt_ratio(snap['pe'])),
-                          unsafe_allow_html=True)
-        cols[6].markdown(_num_cell(_fmt_pct(snap['roe'])),
-                          unsafe_allow_html=True)
-        cols[7].markdown(_num_cell(_fmt_pct(snap['ebit_margin'])),
-                          unsafe_allow_html=True)
-        # 8. YTD (coloured + bold)
-        cols[8].markdown(_num_cell(ytd_text, color=ytd_color, bold=True),
-                          unsafe_allow_html=True)
+        with main_col:
+            card_html = (
+                "<div class='pf-card'>"
+                "<div class='pf-summary'>"
+                # Name cell
+                f"<div class='pf-name-cell'>"
+                f"<div class='pf-name' title='{_html.escape(name_full)}'>"
+                f"{_html.escape(name_full)}</div>"
+                f"<div class='pf-sub'>{_html.escape(sub_line)}</div>"
+                "</div>"
+                # 7 metrics
+                f"{_metric_html('Earnings', earn_value, **earn_kw)}"
+                f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']))}"
+                f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']))}"
+                f"{_metric_html('P/E', _fmt_ratio(snap['pe']))}"
+                f"{_metric_html('ROE', _fmt_pct(snap['roe']))}"
+                f"{_metric_html('EBIT M.', _fmt_pct(snap['ebit_margin']))}"
+                f"{_metric_html('YTD', ytd_text, color=ytd_color, bold=True)}"
+                "</div></div>"
+            )
+            st.markdown(card_html, unsafe_allow_html=True)
 
-        # 9. Expand / collapse toggle
-        with cols[9]:
+        with btn_col:
+            # Two small buttons side by side via nested columns.
+            # Stays usable on mobile: the parent column wraps to full
+            # width and the two halves become two ~50% buttons.
+            b1, b2 = st.columns(2, gap="small")
             arrow = "▴" if is_expanded else "▾"
-            if st.button(arrow, key=f"toggle_{ticker}", help="Expand / collapse",
+            if b1.button(arrow, key=f"toggle_{ticker}",
+                         help="Expand / collapse",
                          use_container_width=True):
                 if is_expanded:
                     st.session_state.portfolio_expanded.discard(ticker)
                 else:
                     st.session_state.portfolio_expanded.add(ticker)
                 st.rerun()
-
-        # 10. Remove
-        with cols[10]:
-            if st.button("✕", key=f"del_{ticker}", help="Remove from portfolio",
+            if b2.button("✕", key=f"del_{ticker}",
+                         help="Remove from portfolio",
                          use_container_width=True):
                 st.session_state.portfolio_tickers.remove(ticker)
                 st.session_state.portfolio_expanded.discard(ticker)
@@ -820,23 +876,23 @@ else:
         # ── Expanded detail section ──────────────────────────────────────────
         if is_expanded:
             with st.container(border=True):
-                # Top strip — sector + recommendation badge
-                strip_l, strip_r = st.columns([5, 1])
-                with strip_l:
-                    sector_label = snap.get("sector") or ""
-                    extra_meta = f"  ·  {sector_label}" if sector_label else ""
-                    st.markdown(
-                        f"<div style='color:#888;font-size:13px;'>{ticker}{extra_meta}</div>",
-                        unsafe_allow_html=True,
-                    )
-                with strip_r:
-                    st.markdown(
-                        f"<div style='text-align:right;'>"
-                        f"<span style='color:#888;font-size:12px;'>Rec:</span>"
-                        f"&nbsp;<span style='color:{rec_color};font-weight:700;font-size:16px;'>"
-                        f"{rec_label}</span></div>",
-                        unsafe_allow_html=True,
-                    )
+                # Top strip — sector + recommendation badge (single flex row,
+                # wraps onto two lines on narrow viewports).
+                sector_label = snap.get("sector") or ""
+                meta_html = (
+                    _html.escape(ticker)
+                    + (f"  ·  {_html.escape(sector_label)}" if sector_label else "")
+                )
+                st.markdown(
+                    "<div class='pf-strip'>"
+                    f"<div class='pf-strip-meta'>{meta_html}</div>"
+                    f"<div class='pf-strip-rec'>"
+                    f"<span class='lbl'>Rec:</span>"
+                    f"<span style='color:{rec_color};'>{rec_label}</span>"
+                    f"</div>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
 
                 # Period selector
                 current_period = st.session_state.portfolio_periods.get(ticker, DEFAULT_PERIOD)
@@ -882,24 +938,24 @@ else:
                         arrow      = "▲" if chg_pct >= 0 else "▼"
 
                         # ── Prominent period-change banner above the chart ──
+                        # Flex with wrap so on narrow viewports the
+                        # first→last value drops onto a second line
+                        # beneath the % change.
                         ccy = snap.get("currency") or ""
                         st.markdown(
-                            f"<div style='display:flex;align-items:baseline;"
-                            f"justify-content:space-between;margin:8px 0 4px 0;"
-                            f"padding:6px 10px;background:#F4F8FC;"
-                            f"border-left:4px solid {line_color};"
-                            f"border-radius:4px;'>"
-                            f"<div>"
-                            f"<span style='color:#666;font-size:13px;'>"
-                            f"{sel_period} change</span>&nbsp;&nbsp;"
-                            f"<span style='color:{line_color};font-weight:700;"
-                            f"font-size:22px;'>{arrow} {chg_pct:+.2f}%</span>"
-                            f"&nbsp;&nbsp;"
-                            f"<span style='color:{line_color};font-size:15px;"
-                            f"font-weight:600;'>"
+                            f"<div class='pf-banner' "
+                            f"style='border-left:4px solid {line_color};'>"
+                            f"<div class='pf-banner-l'>"
+                            f"<span class='pf-banner-period'>"
+                            f"{sel_period} change</span>"
+                            f"<span class='pf-banner-pct' "
+                            f"style='color:{line_color};'>"
+                            f"{arrow} {chg_pct:+.2f}%</span>"
+                            f"<span class='pf-banner-abs' "
+                            f"style='color:{line_color};'>"
                             f"({abs_chg:+,.2f} {ccy})</span>"
                             f"</div>"
-                            f"<div style='color:#888;font-size:12px;'>"
+                            f"<div class='pf-banner-r'>"
                             f"{first_px:,.2f} → {last_px:,.2f}"
                             f"</div>"
                             f"</div>",
@@ -935,9 +991,13 @@ else:
                         )
                         st.altair_chart(chart, use_container_width=True)
 
-                        sc1, sc2 = st.columns(2)
-                        sc1.caption(f"**{sel_period} low:** {low_p:,.2f}")
-                        sc2.caption(f"**{sel_period} high:** {high_p:,.2f}")
+                        st.markdown(
+                            f"<div class='pf-lowhigh'>"
+                            f"<span><b>{sel_period} low:</b> {low_p:,.2f}</span>"
+                            f"<span><b>{sel_period} high:</b> {high_p:,.2f}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
                     except Exception as e:
                         st.warning(f"Chart rendering failed: {e}")
 
@@ -1004,12 +1064,10 @@ else:
                                 st.markdown("<div style='margin-bottom:12px;'></div>",
                                             unsafe_allow_html=True)
 
-        # Thin inter-card separator
-        st.markdown(
-            "<hr style='margin:2px 0; border:none; "
-            "border-top:1px solid #EDF1F5;'>",
-            unsafe_allow_html=True,
-        )
+        # Small vertical gap between cards (the card itself now carries
+        # the visual separation via its border + rounded corners).
+        st.markdown("<div style='height:6px;'></div>",
+                    unsafe_allow_html=True)
 
 st.markdown("&nbsp;", unsafe_allow_html=True)
 # ── Footer ────────────────────────────────────────────────────────────────────
