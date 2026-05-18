@@ -24,12 +24,11 @@ Authentication:
 """
 from __future__ import annotations
 import hashlib
-import hmac
+import json
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 import streamlit as st
 
@@ -78,115 +77,79 @@ def _check_password(username: str, password: str, users: dict[str, str]) -> bool
     return given_hash == stored and stored != ""
 
 
-# ── Query-param-backed session persistence ──────────────────────────────────
+# ── File-backed session persistence ─────────────────────────────────────────
 # Streamlit's st.session_state is tied to the browser's WebSocket session,
-# so a plain F5 wipes it and the user has to log in again. The earlier
-# attempt with a browser cookie via streamlit-cookies-controller failed
-# because the cookie component mounts asynchronously — by the time it
-# delivers the cookie value the auth gate has already short-circuited to
-# the login screen.
+# so a plain F5 wipes it and the user has to log in again. Two earlier
+# attempts — a browser cookie via streamlit-cookies-controller and a
+# signed token in st.query_params — both failed in deployment: the
+# cookie component mounts asynchronously after st.stop() has already
+# short-circuited to the login screen, and st.query_params writes don't
+# always survive a Streamlit multipage rerun.
 #
-# Use st.query_params instead: the URL is synchronously available on
-# every script run (F5, deep link, tab reload), so a signed token in the
-# URL is read before the auth gate runs. The token is HMAC-SHA256-signed
-# with a server-side secret so the user can't forge it.
-_AUTH_QUERY_PARAM    = "s"              # short key keeps the URL tidy
+# Final approach: persist the most recent successful sign-in to a
+# server-side JSON file at data/last_auth.json. On every page load we
+# read that file first; if it carries a non-expired username we mark
+# the session authenticated. The file is only written after the
+# password check passes and is removed on Sign out. Because this is a
+# single-user private deployment (only the owner has the URL), trading
+# the cookie/token complexity for a flat file is acceptable.
 _AUTH_TOKEN_TTL_S    = 30 * 24 * 3600   # 30 days
-_AUTH_TOKEN_VERSION  = "v1"             # bump to invalidate all sessions
+
+_DATA_DIR_AUTH = Path(__file__).resolve().parent / "data"
+_DATA_DIR_AUTH.mkdir(exist_ok=True)
+_LAST_AUTH_FILE = _DATA_DIR_AUTH / "last_auth.json"
 
 
-def _session_secret() -> str:
-    """
-    Return the HMAC key used to sign session tokens. Prefers
-    st.secrets["SESSION_SECRET"], then the SESSION_SECRET env var. Falls
-    back to a key derived from existing API keys so the secret is stable
-    across restarts even in dev (you can rotate by changing _AUTH_TOKEN_VERSION).
-    """
+def _persist_session_file(username: str, ttl_s: int = _AUTH_TOKEN_TTL_S) -> None:
+    """Save the successful sign-in to the on-disk auth file."""
     try:
-        if "SESSION_SECRET" in st.secrets:
-            return str(st.secrets["SESSION_SECRET"])
+        payload = {
+            "username":   username,
+            "expires_at": int(time.time()) + ttl_s,
+        }
+        _LAST_AUTH_FILE.write_text(json.dumps(payload), encoding="utf-8")
     except Exception:
         pass
-    env_val = os.environ.get("SESSION_SECRET")
-    if env_val:
-        return env_val
-    # Fallback: derive from API keys + version so it's at least
-    # deterministic and non-trivial in dev mode.
-    seed = (
-        os.environ.get("ANTHROPIC_API_KEY", "")
-        + os.environ.get("OPENAI_API_KEY", "")
-        + os.environ.get("EODHD_API_KEY", "")
-        + _AUTH_TOKEN_VERSION
-    ) or "eqbot-fallback-secret-change-me"
-    return hashlib.sha256(seed.encode()).hexdigest()
 
 
-def _mint_auth_token(username: str, ttl_s: int = _AUTH_TOKEN_TTL_S) -> str:
-    expiry  = int(time.time()) + ttl_s
-    payload = f"{_AUTH_TOKEN_VERSION}|{username}|{expiry}"
-    sig     = hmac.new(
-        _session_secret().encode(),
-        payload.encode(),
-        hashlib.sha256,
-    ).hexdigest()
-    return f"{payload}|{sig}"
-
-
-def _verify_auth_token(token: str) -> Optional[str]:
-    """Return the username if the token is valid + unexpired, else None."""
-    if not token or not isinstance(token, str):
-        return None
-    try:
-        parts = token.split("|")
-        if len(parts) != 4:
-            return None
-        version, username, expiry_str, sig = parts
-        if version != _AUTH_TOKEN_VERSION:
-            return None
-        expiry = int(expiry_str)
-        if time.time() > expiry:
-            return None
-        payload      = f"{version}|{username}|{expiry}"
-        expected_sig = hmac.new(
-            _session_secret().encode(),
-            payload.encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        if not hmac.compare_digest(sig, expected_sig):
-            return None
-        return username
-    except Exception:
-        return None
-
-
-def _try_restore_session_from_query() -> None:
-    """If a valid auth token is present in the URL, mark session authenticated."""
+def _try_restore_session_from_file() -> None:
+    """If the on-disk auth file is fresh, mark session authenticated."""
     if st.session_state.get("authenticated"):
         return
-    try:
-        token = st.query_params.get(_AUTH_QUERY_PARAM)
-    except Exception:
-        token = None
-    if not token:
+    if not _LAST_AUTH_FILE.exists():
         return
-    username = _verify_auth_token(token)
-    if username:
-        st.session_state["authenticated"] = True
-        st.session_state["username"]      = username
-
-
-def _persist_session_query(username: str) -> None:
-    """Write the signed token to the URL so F5 keeps the user logged in."""
     try:
-        st.query_params[_AUTH_QUERY_PARAM] = _mint_auth_token(username)
+        data = json.loads(_LAST_AUTH_FILE.read_text(encoding="utf-8"))
     except Exception:
-        pass
+        return
+    expires_at = data.get("expires_at", 0)
+    username   = data.get("username")
+    if not username:
+        return
+    if time.time() > expires_at:
+        # Expired — clean up so we don't keep reading it.
+        try:
+            _LAST_AUTH_FILE.unlink()
+        except Exception:
+            pass
+        return
+    # Validate that the recorded username is still in the user table —
+    # avoids resurrecting a session for a user that was removed from
+    # the secrets [users] block.
+    if username not in _load_users():
+        try:
+            _LAST_AUTH_FILE.unlink()
+        except Exception:
+            pass
+        return
+    st.session_state["authenticated"] = True
+    st.session_state["username"]      = username
 
 
-def _clear_session_query() -> None:
+def _clear_session_file() -> None:
     try:
-        if _AUTH_QUERY_PARAM in st.query_params:
-            del st.query_params[_AUTH_QUERY_PARAM]
+        if _LAST_AUTH_FILE.exists():
+            _LAST_AUTH_FILE.unlink()
     except Exception:
         pass
 
@@ -245,9 +208,10 @@ def _show_login() -> None:
                 uname = username.strip().lower()
                 st.session_state["authenticated"] = True
                 st.session_state["username"]      = uname
-                # Write the signed token into the URL so a plain F5
-                # keeps the user logged in for the token's TTL.
-                _persist_session_query(uname)
+                # Persist the sign-in to disk so a plain F5 (which
+                # resets st.session_state) can restore the session
+                # for up to _AUTH_TOKEN_TTL_S seconds.
+                _persist_session_file(uname)
                 st.rerun()
             else:
                 st.error("Incorrect username or password.", icon="🔒")
@@ -262,7 +226,7 @@ def _logout_button() -> None:
         if st.button("Sign out", use_container_width=True):
             st.session_state["authenticated"] = False
             st.session_state["username"]      = ""
-            _clear_session_query()
+            _clear_session_file()
             st.rerun()
 
 
@@ -308,10 +272,10 @@ st.markdown(
 # ── Auth gate ─────────────────────────────────────────────────────────────────
 _users = _load_users()
 if _users:
-    # Try to restore the session from a signed token in the URL BEFORE
+    # Try to restore the session from the on-disk last_auth file BEFORE
     # falling through to the login form — keeps the user signed in
-    # across F5 / deep links up to the token's TTL.
-    _try_restore_session_from_query()
+    # across F5 / browser-reopen up to _AUTH_TOKEN_TTL_S.
+    _try_restore_session_from_file()
 
     # Credentials configured — enforce login
     if not st.session_state.get("authenticated"):
