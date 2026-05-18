@@ -763,19 +763,59 @@ st.markdown(
       .pf-remove-anchor { display: none; }
 
       /* ── Red destructive style for the "🗑️ Remove from My
-         Portfolio" button at the bottom of the expanded chart panel. */
+         Portfolio" button at the bottom of the expanded chart panel.
+         Both element-container testid spellings are listed so the
+         rule works across Streamlit versions. */
       div[data-testid="element-container"]:has(.pf-remove-anchor)
         + div[data-testid="element-container"]
+        div[data-testid="stButton"] > button,
+      div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
+        + div[data-testid="stElementContainer"]
         div[data-testid="stButton"] > button {
         color: #B83227 !important;
         border-color: #E8C0BC !important;
       }
       div[data-testid="element-container"]:has(.pf-remove-anchor)
         + div[data-testid="element-container"]
+        div[data-testid="stButton"] > button:hover,
+      div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
+        + div[data-testid="stElementContainer"]
         div[data-testid="stButton"] > button:hover {
         background: #FBE5E2 !important;
         border-color: #B83227 !important;
         color: #B83227 !important;
+      }
+
+      /* ── Desktop-only: Remove button spans full width, slimmer
+         vertical padding. Mobile keeps its original right-aligned
+         narrow layout (locked-in design). */
+      @media (min-width: 769px) {
+        /* Hide the empty placeholder column to the left of the
+           remove button's column (the [0.55, 0.45] split). */
+        div[data-testid="stHorizontalBlock"]:has(.pf-remove-anchor)
+          > div[data-testid="column"]:first-child,
+        div[data-testid="stHorizontalBlock"]:has(.pf-remove-anchor)
+          > div[data-testid="stColumn"]:first-child {
+          display: none !important;
+        }
+        /* The remove-anchor column takes the entire row width. */
+        div[data-testid="column"]:has(.pf-remove-anchor),
+        div[data-testid="stColumn"]:has(.pf-remove-anchor) {
+          width: 100% !important;
+          max-width: 100% !important;
+          flex: 1 1 100% !important;
+        }
+        /* Slimmer button — less vertical padding, no inflated
+           min-height. */
+        div[data-testid="element-container"]:has(.pf-remove-anchor)
+          + div[data-testid="element-container"]
+          div[data-testid="stButton"] > button,
+        div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
+          + div[data-testid="stElementContainer"]
+          div[data-testid="stButton"] > button {
+          padding: 0.25rem 0.75rem !important;
+          min-height: 30px !important;
+        }
       }
 
       .pf-toggle-anchor { display: none; }
