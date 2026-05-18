@@ -701,6 +701,7 @@ st.markdown(
     # Shrink the auto-styled h4 headings Streamlit wraps subheaders /
     # #### markdown blocks in, so they don't dominate the layout.
     ".st-emotion-cache-1dy2t46 h4 { font-size: 1rem !important; }"
+    ".st-emotion-cache-1dy2t46 { margin-bottom: -10px; }"
     "</style>",
     unsafe_allow_html=True,
 )
