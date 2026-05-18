@@ -64,12 +64,17 @@ def generate_price_chart_png(
     src = ""
 
     # Priority 1: explicit EODHD /eod bundle passed by caller.
+    # Prefer adjusted_close so the line is split-adjusted (otherwise stocks
+    # like DECK show an artificial cliff at the split date, e.g. 6-for-1 in
+    # Sep-2024 drops the unadjusted close from ~$1000 to ~$160).
     if eod_data and isinstance(eod_data, list):
         from datetime import datetime as _dt
         for row in eod_data:
             if not isinstance(row, dict): continue
             d = row.get("date")
-            p = row.get("close") or row.get("adjusted_close")
+            adj = row.get("adjusted_close")
+            raw = row.get("close")
+            p = adj if adj not in (None, "", "NA", 0) else raw
             if d and p not in (None, "", "NA"):
                 try:
                     dates.append(_dt.strptime(str(d), "%Y-%m-%d"))
@@ -77,7 +82,7 @@ def generate_price_chart_png(
                 except (ValueError, TypeError):
                     continue
         if dates:
-            src = "EODHD /eod"
+            src = "EODHD /eod (split-adjusted)"
 
     # Priority 2: yfinance live fetch (V1 path)
     if not dates:
@@ -106,10 +111,15 @@ def generate_price_chart_png(
 # ── Data fetchers ─────────────────────────────────────────────────────────────
 
 def _fetch_5y_yfinance(ticker: str) -> Tuple[List[datetime], List[float]]:
-    """Fetch ~5 years of daily close prices via yfinance."""
+    """Fetch ~5 years of daily close prices via yfinance.
+
+    auto_adjust=True so the 'Close' column is split + dividend adjusted
+    — required for tickers like DECK that did a stock split in the 5y
+    window. Without this the chart shows an artificial cliff at the split.
+    """
     try:
         import yfinance as yf
-        df = yf.Ticker(ticker).history(period="5y", interval="1d", auto_adjust=False)
+        df = yf.Ticker(ticker).history(period="5y", interval="1d", auto_adjust=True)
         if df is None or df.empty or "Close" not in df.columns:
             return [], []
         dates = [d.to_pydatetime() for d in df.index]
