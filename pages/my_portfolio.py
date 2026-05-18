@@ -803,18 +803,38 @@ st.markdown(
       .pf-expand-all-anchor { display: none; }
       .pf-toggle-anchor { display: none; }
 
-      /* ── Keep the action-row buttons side-by-side ──────────────────
-         The two-button action column uses a nested st.columns(2) row.
-         At its narrow desktop width the default Streamlit column-gap
-         eats just enough horizontal space to push the second column
-         onto a new line. Scope a zero-gap + no-wrap rule to the
-         nested horizontal block that lives next to the trash anchor
-         so toggle + trash always sit on the same line. */
+      /* ── Force the two action-row buttons (Chart + 🗑️) onto one
+         line, regardless of viewport. Streamlit's nested st.columns
+         wrap to vertical stacking at narrow widths (especially when
+         the parent column itself has already wrapped on mobile), so
+         we forcibly override the nested horizontal block to display
+         as a flex row and pin each nested column to 49% width. The
+         selector is scoped to the card row's stHorizontalBlock (it
+         is the only one carrying a .pf-trash-anchor descendant), so
+         no other st.columns on the page is affected. */
       div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
         > div[data-testid="column"]
         div[data-testid="stHorizontalBlock"] {
-        gap: 4px !important;
+        display: flex !important;
+        flex-direction: row !important;
         flex-wrap: nowrap !important;
+        gap: 4px !important;
+      }
+      div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
+        > div[data-testid="column"]
+        div[data-testid="stHorizontalBlock"]
+        > div[data-testid="column"] {
+        width: 49% !important;
+        min-width: 0 !important;
+        flex: 0 0 49% !important;
+      }
+      /* The two stButtons themselves should fill their nested column
+         (49%) instead of clinging to default Streamlit min-widths. */
+      div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
+        > div[data-testid="column"]
+        div[data-testid="stHorizontalBlock"]
+        div[data-testid="stButton"] {
+        width: 100% !important;
       }
 
       /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
