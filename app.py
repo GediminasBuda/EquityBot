@@ -78,15 +78,20 @@ def _check_password(username: str, password: str, users: dict[str, str]) -> bool
     return given_hash == stored and stored != ""
 
 
-# ── Cookie-backed session persistence ────────────────────────────────────────
+# ── Query-param-backed session persistence ──────────────────────────────────
 # Streamlit's st.session_state is tied to the browser's WebSocket session,
-# so a plain F5 wipes it and the user has to log in again. To survive page
-# refreshes we mint a signed (HMAC-SHA256) token, store it in a browser
-# cookie, and verify it on subsequent loads. The signature prevents a user
-# from forging cookies; the expiry timestamp limits how long a stolen
-# cookie would remain valid.
-_AUTH_COOKIE_NAME    = "eqbot_auth"
-_AUTH_COOKIE_TTL_S   = 30 * 24 * 3600   # 30 days
+# so a plain F5 wipes it and the user has to log in again. The earlier
+# attempt with a browser cookie via streamlit-cookies-controller failed
+# because the cookie component mounts asynchronously — by the time it
+# delivers the cookie value the auth gate has already short-circuited to
+# the login screen.
+#
+# Use st.query_params instead: the URL is synchronously available on
+# every script run (F5, deep link, tab reload), so a signed token in the
+# URL is read before the auth gate runs. The token is HMAC-SHA256-signed
+# with a server-side secret so the user can't forge it.
+_AUTH_QUERY_PARAM    = "s"              # short key keeps the URL tidy
+_AUTH_TOKEN_TTL_S    = 30 * 24 * 3600   # 30 days
 _AUTH_TOKEN_VERSION  = "v1"             # bump to invalidate all sessions
 
 
@@ -116,7 +121,7 @@ def _session_secret() -> str:
     return hashlib.sha256(seed.encode()).hexdigest()
 
 
-def _mint_auth_token(username: str, ttl_s: int = _AUTH_COOKIE_TTL_S) -> str:
+def _mint_auth_token(username: str, ttl_s: int = _AUTH_TOKEN_TTL_S) -> str:
     expiry  = int(time.time()) + ttl_s
     payload = f"{_AUTH_TOKEN_VERSION}|{username}|{expiry}"
     sig     = hmac.new(
@@ -154,29 +159,12 @@ def _verify_auth_token(token: str) -> Optional[str]:
         return None
 
 
-def _cookie_controller():
-    """Return the singleton CookieController, or None if the package isn't
-    installed (the app keeps working with session-only auth in that case)."""
-    if "_cookie_ctrl" in st.session_state:
-        return st.session_state._cookie_ctrl
-    try:
-        from streamlit_cookies_controller import CookieController
-        ctrl = CookieController(key="eqbot_cookie_ctrl")
-        st.session_state._cookie_ctrl = ctrl
-        return ctrl
-    except Exception:
-        return None
-
-
-def _try_restore_session_from_cookie() -> None:
-    """If a valid auth cookie is present, mark the session authenticated."""
+def _try_restore_session_from_query() -> None:
+    """If a valid auth token is present in the URL, mark session authenticated."""
     if st.session_state.get("authenticated"):
         return
-    ctrl = _cookie_controller()
-    if ctrl is None:
-        return
     try:
-        token = ctrl.get(_AUTH_COOKIE_NAME)
+        token = st.query_params.get(_AUTH_QUERY_PARAM)
     except Exception:
         token = None
     if not token:
@@ -187,24 +175,18 @@ def _try_restore_session_from_cookie() -> None:
         st.session_state["username"]      = username
 
 
-def _persist_session_cookie(username: str) -> None:
-    """Set the signed auth cookie so the browser remembers the login."""
-    ctrl = _cookie_controller()
-    if ctrl is None:
-        return
-    token = _mint_auth_token(username)
+def _persist_session_query(username: str) -> None:
+    """Write the signed token to the URL so F5 keeps the user logged in."""
     try:
-        ctrl.set(_AUTH_COOKIE_NAME, token, max_age=_AUTH_COOKIE_TTL_S)
+        st.query_params[_AUTH_QUERY_PARAM] = _mint_auth_token(username)
     except Exception:
         pass
 
 
-def _clear_session_cookie() -> None:
-    ctrl = _cookie_controller()
-    if ctrl is None:
-        return
+def _clear_session_query() -> None:
     try:
-        ctrl.remove(_AUTH_COOKIE_NAME)
+        if _AUTH_QUERY_PARAM in st.query_params:
+            del st.query_params[_AUTH_QUERY_PARAM]
     except Exception:
         pass
 
@@ -263,9 +245,9 @@ def _show_login() -> None:
                 uname = username.strip().lower()
                 st.session_state["authenticated"] = True
                 st.session_state["username"]      = uname
-                # Set the signed cookie so a plain F5 keeps the user
-                # logged in for the cookie's TTL.
-                _persist_session_cookie(uname)
+                # Write the signed token into the URL so a plain F5
+                # keeps the user logged in for the token's TTL.
+                _persist_session_query(uname)
                 st.rerun()
             else:
                 st.error("Incorrect username or password.", icon="🔒")
@@ -280,7 +262,7 @@ def _logout_button() -> None:
         if st.button("Sign out", use_container_width=True):
             st.session_state["authenticated"] = False
             st.session_state["username"]      = ""
-            _clear_session_cookie()
+            _clear_session_query()
             st.rerun()
 
 
@@ -326,10 +308,10 @@ st.markdown(
 # ── Auth gate ─────────────────────────────────────────────────────────────────
 _users = _load_users()
 if _users:
-    # Try to restore the session from a signed auth cookie BEFORE
+    # Try to restore the session from a signed token in the URL BEFORE
     # falling through to the login form — keeps the user signed in
-    # across F5 / browser-reopen up to the cookie's TTL.
-    _try_restore_session_from_cookie()
+    # across F5 / deep links up to the token's TTL.
+    _try_restore_session_from_query()
 
     # Credentials configured — enforce login
     if not st.session_state.get("authenticated"):
