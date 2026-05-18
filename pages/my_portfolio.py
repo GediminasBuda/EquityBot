@@ -839,7 +839,7 @@ st.markdown(
         /* Reserve right-side breathing room inside the card so the
            floating icon never overlaps name / metric values. */
         div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor) .pf-card {
-          padding-right: 52px;
+          padding-right: revert-rule;
         }
         /* Pin the trash column to the top-right corner of the row. */
         div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
