@@ -813,7 +813,7 @@ st.markdown(
         div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
           + div[data-testid="stElementContainer"]
           div[data-testid="stButton"] > button {
-          padding: 0.25rem 0.75rem !important;
+          padding: 0.45rem 0.75rem !important;
           min-height: 30px !important;
         }
       }
