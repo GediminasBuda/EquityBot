@@ -170,6 +170,7 @@ st.markdown(
          sidebar far above it. */
       @media (max-width: 768px) {
         .stSidebar { z-index: 999999999999 !important; }
+        .st-emotion-cache-1vo6xi6 { height: 30px; }
       }
 
       @media (max-width: 640px) {
