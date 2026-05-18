@@ -756,6 +756,76 @@ st.markdown(
       /* The .pf-del-anchor wrapper itself collapses to zero height
          so it doesn't push the layout. */
       .pf-del-anchor { display: none; }
+      .pf-trash-anchor { display: none; }
+
+      /* ── Mobile-only floating trash icon (🗑️) at top-right of card ──
+         The trash button is rendered inside main_col immediately after
+         the card HTML. On mobile we promote main_col's stVerticalBlock
+         to position:relative, then absolute-position the button's
+         element-container into the top-right corner of the card area.
+         Desktop: trash button hidden entirely; labelled bottom button
+         (.pf-del-desktop-only) carries the destructive action. */
+      @media (max-width: 768px) {
+        /* Promote the vertical block (= main_col contents) to relative
+           so the absolutely-positioned trash button anchors to it. */
+        div[data-testid="stVerticalBlock"]:has(.pf-trash-anchor) {
+          position: relative;
+        }
+        /* Reserve space on the right side of the card for the trash
+           icon so it doesn't overlap with name / metric values. */
+        div[data-testid="stVerticalBlock"]:has(.pf-trash-anchor) .pf-card {
+          padding-right: 52px;
+        }
+        /* The trash button's element-container is the next sibling
+           after the .pf-trash-anchor element-container. Float it. */
+        div[data-testid="element-container"]:has(.pf-trash-anchor)
+          + div[data-testid="element-container"] {
+          position: absolute !important;
+          top: 10px !important;
+          right: 10px !important;
+          width: 40px !important;
+          z-index: 5;
+        }
+        /* Style the trash icon: small red square with rounded corners. */
+        div[data-testid="element-container"]:has(.pf-trash-anchor)
+          + div[data-testid="element-container"]
+          div[data-testid="stButton"] > button {
+          width: 40px !important;
+          min-width: 40px !important;
+          height: 40px !important;
+          min-height: 40px !important;
+          padding: 0 !important;
+          border-radius: 8px !important;
+          border: 1px solid #E8C0BC !important;
+          background: #FFFFFF !important;
+          color: #B83227 !important;
+          font-size: 18px !important;
+          line-height: 1 !important;
+        }
+        div[data-testid="element-container"]:has(.pf-trash-anchor)
+          + div[data-testid="element-container"]
+          div[data-testid="stButton"] > button:hover {
+          background: #FBE5E2 !important;
+          border-color: #B83227 !important;
+        }
+        /* Hide the labelled "✕ Remove from portfolio" button on mobile
+           — the trash icon at top-right replaces it. */
+        div[data-testid="element-container"]:has(.pf-del-desktop-only),
+        div[data-testid="element-container"]:has(.pf-del-desktop-only)
+          + div[data-testid="element-container"] {
+          display: none !important;
+        }
+      }
+
+      /* Desktop: hide the mobile-only trash icon entirely so it doesn't
+         clutter the layout. */
+      @media (min-width: 769px) {
+        div[data-testid="element-container"]:has(.pf-trash-anchor),
+        div[data-testid="element-container"]:has(.pf-trash-anchor)
+          + div[data-testid="element-container"] {
+          display: none !important;
+        }
+      }
 
       /* ── Tighter inter-card gap (the wrapping st.container has its
             own gap; pull it down a bit so cards don't feel sparse) ─── */
@@ -883,6 +953,20 @@ else:
             )
             st.markdown(card_html, unsafe_allow_html=True)
 
+            # Mobile-only floating trash icon. Rendered inside main_col so
+            # CSS can position it absolutely at top-right of the card. The
+            # anchor div makes the parent vertical block targetable via
+            # :has(), and the next-sibling element-container is the button.
+            st.markdown("<div class='pf-trash-anchor'></div>",
+                        unsafe_allow_html=True)
+            if st.button("🗑️", key=f"del_mobile_{ticker}",
+                         help="Remove from portfolio",
+                         use_container_width=True):
+                st.session_state.portfolio_tickers.remove(ticker)
+                st.session_state.portfolio_expanded.discard(ticker)
+                _save_portfolio(st.session_state.portfolio_tickers)
+                st.rerun()
+
         with btn_col:
             # Top-right always has only the ▾/▴ toggle. The destructive
             # "✕ Remove from portfolio" button is always rendered with
@@ -906,7 +990,7 @@ else:
         if not is_expanded:
             _, rem_col_top = st.columns([0.6, 0.4])
             with rem_col_top:
-                st.markdown("<div class='pf-del-anchor'></div>",
+                st.markdown("<div class='pf-del-anchor pf-del-desktop-only'></div>",
                             unsafe_allow_html=True)
                 if st.button("✕ Remove from portfolio",
                              key=f"del_top_{ticker}",
