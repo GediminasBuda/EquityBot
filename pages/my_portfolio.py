@@ -804,35 +804,51 @@ st.markdown(
       .pf-toggle-anchor { display: none; }
 
       /* ── Force the two action-row buttons (Chart + 🗑️) onto one
-         line, regardless of viewport. Streamlit's nested st.columns
-         wrap to vertical stacking at narrow widths (especially when
-         the parent column itself has already wrapped on mobile), so
-         we forcibly override the nested horizontal block to display
-         as a flex row and pin each nested column to 49% width. The
-         selector is scoped to the card row's stHorizontalBlock (it
-         is the only one carrying a .pf-trash-anchor descendant), so
-         no other st.columns on the page is affected. */
-      div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
-        > div[data-testid="column"]
-        div[data-testid="stHorizontalBlock"] {
+         line at every viewport. Streamlit's nested st.columns get
+         vertically stacked at narrow widths by Streamlit's own JS,
+         which CSS cannot reliably override. Instead the two buttons
+         live directly inside the action column; this CSS promotes
+         the column's vertical block to a horizontal flex row.
+
+         Scope: only the column that contains .pf-action-flex (i.e.
+         the My-Portfolio card's action column) — no effect anywhere
+         else. */
+      .pf-action-flex { display: none; }
+      div[data-testid="column"]:has(.pf-action-flex)
+        > div[data-testid="stVerticalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         gap: 4px !important;
+        align-items: stretch !important;
       }
-      div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
-        > div[data-testid="column"]
-        div[data-testid="stHorizontalBlock"]
-        > div[data-testid="column"] {
-        width: 49% !important;
+      /* Each child element-container should take half the width,
+         except the invisible anchor element-containers which
+         collapse to zero space. */
+      div[data-testid="column"]:has(.pf-action-flex)
+        > div[data-testid="stVerticalBlock"]
+        > div[data-testid="element-container"]:has(div[data-testid="stButton"]) {
+        flex: 1 1 49% !important;
         min-width: 0 !important;
-        flex: 0 0 49% !important;
+        width: 49% !important;
       }
-      /* The two stButtons themselves should fill their nested column
-         (49%) instead of clinging to default Streamlit min-widths. */
-      div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
-        > div[data-testid="column"]
-        div[data-testid="stHorizontalBlock"]
+      /* Hide the marker / anchor element-containers entirely so they
+         take no flex space. :has() lets us match the wrapper without
+         depending on Streamlit's exact emotion-cache class. */
+      div[data-testid="column"]:has(.pf-action-flex)
+        > div[data-testid="stVerticalBlock"]
+        > div[data-testid="element-container"]:has(.pf-action-flex),
+      div[data-testid="column"]:has(.pf-action-flex)
+        > div[data-testid="stVerticalBlock"]
+        > div[data-testid="element-container"]:has(.pf-toggle-anchor),
+      div[data-testid="column"]:has(.pf-action-flex)
+        > div[data-testid="stVerticalBlock"]
+        > div[data-testid="element-container"]:has(.pf-trash-anchor) {
+        display: none !important;
+      }
+      /* And make sure the stButtons themselves fill their element-
+         container (49% of the row). */
+      div[data-testid="column"]:has(.pf-action-flex)
         div[data-testid="stButton"] {
         width: 100% !important;
       }
@@ -981,36 +997,37 @@ else:
             st.markdown(card_html, unsafe_allow_html=True)
 
         with action_col:
-            # Two buttons in one row: ▾/▴ toggle (left) + 🗑️ trash (right).
-            a_toggle, a_trash = st.columns(2, gap="small")
+            # No nested st.columns — Streamlit forces them vertical at
+            # narrow widths. Instead render both buttons directly inside
+            # action_col and let the CSS rule (.pf-action-flex anchor)
+            # promote action_col's vertical block to a horizontal flex
+            # row, with each button taking 50% of the available width.
+            st.markdown("<div class='pf-action-flex'></div>",
+                        unsafe_allow_html=True)
 
-            with a_toggle:
-                # Empty markdown placeholder mirrors the trash button's
-                # anchor element-container so both buttons sit at the
-                # exact same vertical position inside the action row.
-                st.markdown("<div class='pf-toggle-anchor'></div>",
-                            unsafe_allow_html=True)
-                label = "Chart ▴" if is_expanded else "Chart ▾"
-                if st.button(label, key=f"toggle_{ticker}",
-                             help="Collapse" if is_expanded else "Expand",
-                             use_container_width=True):
-                    if is_expanded:
-                        st.session_state.portfolio_expanded.discard(ticker)
-                    else:
-                        st.session_state.portfolio_expanded.add(ticker)
-                    st.rerun()
-
-            with a_trash:
-                # Anchor lets CSS paint the trash button red.
-                st.markdown("<div class='pf-trash-anchor'></div>",
-                            unsafe_allow_html=True)
-                if st.button("🗑️", key=f"del_mobile_{ticker}",
-                             help="Remove from portfolio",
-                             use_container_width=True):
-                    st.session_state.portfolio_tickers.remove(ticker)
+            # Toggle button
+            st.markdown("<div class='pf-toggle-anchor'></div>",
+                        unsafe_allow_html=True)
+            label = "Chart ▴" if is_expanded else "Chart ▾"
+            if st.button(label, key=f"toggle_{ticker}",
+                         help="Collapse" if is_expanded else "Expand",
+                         use_container_width=True):
+                if is_expanded:
                     st.session_state.portfolio_expanded.discard(ticker)
-                    _save_portfolio(st.session_state.portfolio_tickers)
-                    st.rerun()
+                else:
+                    st.session_state.portfolio_expanded.add(ticker)
+                st.rerun()
+
+            # Trash button — anchor lets CSS paint it red.
+            st.markdown("<div class='pf-trash-anchor'></div>",
+                        unsafe_allow_html=True)
+            if st.button("🗑️", key=f"del_mobile_{ticker}",
+                         help="Remove from portfolio",
+                         use_container_width=True):
+                st.session_state.portfolio_tickers.remove(ticker)
+                st.session_state.portfolio_expanded.discard(ticker)
+                _save_portfolio(st.session_state.portfolio_tickers)
+                st.rerun()
 
         # ── Expanded detail section ──────────────────────────────────────────
         if is_expanded:
