@@ -161,6 +161,14 @@ st.markdown(
     """
     <style>
       .st-emotion-cache-zy6yx3 { padding: 3rem 1rem 4rem; }
+
+      /* On mobile the sidebar drawer must overlay every other layer
+         (toolbar, page-title sticky banner, modal-style elements).
+         Streamlit's own toolbar uses z-index ~999999, so push the
+         sidebar far above it. */
+      @media (max-width: 768px) {
+        .stSidebar { z-index: 999999999999 !important; }
+      }
     </style>
     """,
     unsafe_allow_html=True,
