@@ -847,32 +847,6 @@ st.markdown(
         }
       }
 
-      /* ── Mobile: float the trash column over the card's top-right
-         corner instead of letting it wrap below the card content. ─── */
-      @media (max-width: 768px) {
-        /* Promote the card-row's stHorizontalBlock to relative so the
-           trash column can absolute-position against it. */
-        div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor) {
-          position: relative;
-        }
-        /* Reserve right-side breathing room inside the card so the
-           floating icon never overlaps name / metric values. */
-        div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor) .pf-card {
-          padding-right: revert-rule;
-        }
-        /* Pin the trash column to the top-right corner of the row. */
-        div[data-testid="stHorizontalBlock"]:has(.pf-trash-anchor)
-          > div[data-testid="column"]:has(.pf-trash-anchor) {
-          position: absolute !important;
-          top: 14px !important;
-          right: 14px !important;
-          width: 40px !important;
-          min-width: 40px !important;
-          max-width: 40px !important;
-          padding: 0 !important;
-          z-index: 5;
-        }
-      }
 
       /* ── Tighter inter-card gap (the wrapping st.container has its
             own gap; pull it down a bit so cards don't feel sparse) ─── */
@@ -973,13 +947,12 @@ else:
             earn_value = "—"
             earn_kw = {"muted": True}
 
-        # ── Card row: main HTML block + toggle column + trash column ─────
-        # 3 Streamlit columns. The trash column is the only delete
-        # affordance on every viewport. On mobile its column is lifted
-        # out of the row's flow and pinned to the top-right corner of
-        # the card so it sits next to the name; on desktop it sits as
-        # a normal narrow column to the right of the toggle.
-        main_col, btn_col, trash_col = st.columns([1, 0.14, 0.14], gap="small")
+        # ── Card row: main HTML block + combined actions column ──────────
+        # The actions column hosts the ▾/▴ toggle and the 🗑️ trash
+        # button side-by-side via a nested 2-col split. Same structure
+        # on desktop and mobile: on mobile the actions column wraps
+        # below the card and the two buttons appear as a single pair.
+        main_col, action_col = st.columns([1, 0.28], gap="small")
 
         with main_col:
             card_html = (
@@ -1004,39 +977,39 @@ else:
             )
             st.markdown(card_html, unsafe_allow_html=True)
 
-        with trash_col:
-            # Mobile-only floating trash icon. Anchor lets CSS pin this
-            # whole column on mobile and hide it entirely on desktop.
-            st.markdown("<div class='pf-trash-anchor'></div>",
-                        unsafe_allow_html=True)
-            if st.button("🗑️", key=f"del_mobile_{ticker}",
-                         help="Remove from portfolio",
-                         use_container_width=True):
-                st.session_state.portfolio_tickers.remove(ticker)
-                st.session_state.portfolio_expanded.discard(ticker)
-                _save_portfolio(st.session_state.portfolio_tickers)
-                st.rerun()
+        with action_col:
+            # Two buttons in one row: ▾/▴ toggle (left) + 🗑️ trash (right).
+            a_toggle, a_trash = st.columns(2, gap="small")
 
-        with btn_col:
-            # Only the ▾/▴ expand-collapse toggle lives here. The
-            # destructive delete action is handled exclusively by the
-            # 🗑️ trash icon in trash_col on every viewport.
-            # The state-aware anchor lets mobile CSS swap the bare arrow
-            # for "Chart ↓" / "Hide chart ↑" via a ::after pseudo-element.
-            arrow = "▴" if is_expanded else "▾"
-            anchor_cls = ("pf-toggle-anchor pf-toggle-expanded"
-                          if is_expanded
-                          else "pf-toggle-anchor pf-toggle-collapsed")
-            st.markdown(f"<div class='{anchor_cls}'></div>",
-                        unsafe_allow_html=True)
-            if st.button(arrow, key=f"toggle_{ticker}",
-                         help="Collapse" if is_expanded else "Expand",
-                         use_container_width=True):
-                if is_expanded:
+            with a_toggle:
+                # State-aware anchor so mobile CSS can swap the bare ▾/▴
+                # arrow for "Chart ↓" / "Hide chart ↑" via ::after.
+                arrow = "▴" if is_expanded else "▾"
+                anchor_cls = ("pf-toggle-anchor pf-toggle-expanded"
+                              if is_expanded
+                              else "pf-toggle-anchor pf-toggle-collapsed")
+                st.markdown(f"<div class='{anchor_cls}'></div>",
+                            unsafe_allow_html=True)
+                if st.button(arrow, key=f"toggle_{ticker}",
+                             help="Collapse" if is_expanded else "Expand",
+                             use_container_width=True):
+                    if is_expanded:
+                        st.session_state.portfolio_expanded.discard(ticker)
+                    else:
+                        st.session_state.portfolio_expanded.add(ticker)
+                    st.rerun()
+
+            with a_trash:
+                # Anchor lets CSS paint the trash button red.
+                st.markdown("<div class='pf-trash-anchor'></div>",
+                            unsafe_allow_html=True)
+                if st.button("🗑️", key=f"del_mobile_{ticker}",
+                             help="Remove from portfolio",
+                             use_container_width=True):
+                    st.session_state.portfolio_tickers.remove(ticker)
                     st.session_state.portfolio_expanded.discard(ticker)
-                else:
-                    st.session_state.portfolio_expanded.add(ticker)
-                st.rerun()
+                    _save_portfolio(st.session_state.portfolio_tickers)
+                    st.rerun()
 
         # ── Expanded detail section ──────────────────────────────────────────
         if is_expanded:
