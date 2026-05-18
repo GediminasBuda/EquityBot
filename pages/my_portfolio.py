@@ -790,6 +790,18 @@ st.markdown(
       .pf-expand-all-anchor { display: none; }
       .pf-toggle-anchor { display: none; }
 
+      /* ── Tight gap between card and Chart button on mobile ───────
+         When the card row's columns wrap (mobile), Streamlit's
+         default vertical gap (~1rem) leaves a chunky space between
+         the ticker card and the wrapped-below "Chart ▾" toggle.
+         Scope a 5px row-gap to the card row only via :has() on the
+         toggle anchor — desktop's horizontal gap is unchanged. */
+      @media (max-width: 768px) {
+        div[data-testid="stHorizontalBlock"]:has(.pf-toggle-anchor) {
+          row-gap: 5px !important;
+        }
+      }
+
       /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
          list of cards on a phone screen produces an unusable wall of
          charts. Targeting the whole stColumn that contains the
