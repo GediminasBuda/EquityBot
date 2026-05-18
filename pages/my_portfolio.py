@@ -698,9 +698,7 @@ st.markdown(
           grid-template-columns: 1fr 1fr;
           gap: 8px 12px;
         }
-        /* Name + sub-line centred on mobile; the floating trash icon
-           sits at the top-right corner (see pf-trash-anchor rules
-           below) and stays out of the name's text flow. */
+        /* Name + sub-line centred on mobile. */
         .pf-name-cell {
           grid-column: 1 / -1;
           border-bottom: 1px solid #EDF1F5;
@@ -771,87 +769,26 @@ st.markdown(
       }
 
       /* Anchor markers collapse to zero so they don't affect layout. */
-      .pf-trash-anchor { display: none; }
+      .pf-remove-anchor { display: none; }
 
-      /* ── Trash 🗑️ icon button (delete affordance, every viewport) ─
-         The trash button lives in its own Streamlit column (trash_col)
-         on every card row. The styling is the same on desktop and
-         mobile — small red rounded square. On mobile the column is
-         additionally lifted out of the flow and pinned to the
-         top-right corner of the card (see media query below). */
-      div[data-testid="column"]:has(.pf-trash-anchor)
+      /* ── Red destructive style for the "🗑️ Remove from My
+         Portfolio" button at the bottom of the expanded chart panel. */
+      div[data-testid="element-container"]:has(.pf-remove-anchor)
+        + div[data-testid="element-container"]
         div[data-testid="stButton"] > button {
-        width: 40px !important;
-        min-width: 40px !important;
-        height: 40px !important;
-        min-height: 40px !important;
-        padding: 0 !important;
-        border-radius: 8px !important;
-        border: 1px solid #E8C0BC !important;
-        background: #FFFFFF !important;
         color: #B83227 !important;
-        font-size: 18px !important;
-        line-height: 1 !important;
-        margin: 0 auto !important;
+        border-color: #E8C0BC !important;
       }
-      div[data-testid="column"]:has(.pf-trash-anchor)
+      div[data-testid="element-container"]:has(.pf-remove-anchor)
+        + div[data-testid="element-container"]
         div[data-testid="stButton"] > button:hover {
         background: #FBE5E2 !important;
         border-color: #B83227 !important;
+        color: #B83227 !important;
       }
 
       .pf-expand-all-anchor { display: none; }
       .pf-toggle-anchor { display: none; }
-
-      /* ── Force the two action-row buttons (Chart + 🗑️) onto one
-         line at every viewport. Streamlit's nested st.columns get
-         vertically stacked at narrow widths by Streamlit's own JS,
-         which CSS cannot reliably override. Instead the two buttons
-         live directly inside the action column; this CSS promotes
-         the column's vertical block to a horizontal flex row.
-
-         Scope: only the column that contains .pf-action-flex (i.e.
-         the My-Portfolio card's action column) — no effect anywhere
-         else. */
-      .pf-action-flex { display: none; }
-      div[data-testid="column"]:has(.pf-action-flex)
-        > div[data-testid="stVerticalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 4px !important;
-        align-items: stretch !important;
-      }
-      /* Each child element-container should take half the width,
-         except the invisible anchor element-containers which
-         collapse to zero space. */
-      div[data-testid="column"]:has(.pf-action-flex)
-        > div[data-testid="stVerticalBlock"]
-        > div[data-testid="element-container"]:has(div[data-testid="stButton"]) {
-        flex: 1 1 49% !important;
-        min-width: 0 !important;
-        width: 49% !important;
-      }
-      /* Hide the marker / anchor element-containers entirely so they
-         take no flex space. :has() lets us match the wrapper without
-         depending on Streamlit's exact emotion-cache class. */
-      div[data-testid="column"]:has(.pf-action-flex)
-        > div[data-testid="stVerticalBlock"]
-        > div[data-testid="element-container"]:has(.pf-action-flex),
-      div[data-testid="column"]:has(.pf-action-flex)
-        > div[data-testid="stVerticalBlock"]
-        > div[data-testid="element-container"]:has(.pf-toggle-anchor),
-      div[data-testid="column"]:has(.pf-action-flex)
-        > div[data-testid="stVerticalBlock"]
-        > div[data-testid="element-container"]:has(.pf-trash-anchor) {
-        display: none !important;
-      }
-      /* And make sure the stButtons themselves fill their element-
-         container (49% of the row). */
-      div[data-testid="column"]:has(.pf-action-flex)
-        div[data-testid="stButton"] {
-        width: 100% !important;
-      }
 
       /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
          list of cards on a phone screen produces an unusable wall of
@@ -966,12 +903,11 @@ else:
             earn_value = "—"
             earn_kw = {"muted": True}
 
-        # ── Card row: main HTML block + combined actions column ──────────
-        # The actions column hosts the ▾/▴ toggle and the 🗑️ trash
-        # button side-by-side via a nested 2-col split. Same structure
-        # on desktop and mobile: on mobile the actions column wraps
-        # below the card and the two buttons appear as a single pair.
-        main_col, action_col = st.columns([1, 0.28], gap="small")
+        # ── Card row: main HTML block + Chart toggle column ──────────────
+        # The actions column hosts only the ▾/▴ "Chart" toggle now;
+        # the "Remove from My Portfolio" button has moved inside the
+        # expanded chart panel so the row stays compact.
+        main_col, action_col = st.columns([1, 0.14], gap="small")
 
         with main_col:
             card_html = (
@@ -997,15 +933,9 @@ else:
             st.markdown(card_html, unsafe_allow_html=True)
 
         with action_col:
-            # No nested st.columns — Streamlit forces them vertical at
-            # narrow widths. Instead render both buttons directly inside
-            # action_col and let the CSS rule (.pf-action-flex anchor)
-            # promote action_col's vertical block to a horizontal flex
-            # row, with each button taking 50% of the available width.
-            st.markdown("<div class='pf-action-flex'></div>",
-                        unsafe_allow_html=True)
-
-            # Toggle button
+            # Only the ▾/▴ "Chart" toggle lives here. The Remove
+            # from My Portfolio button moves inside the expanded
+            # detail panel further below.
             st.markdown("<div class='pf-toggle-anchor'></div>",
                         unsafe_allow_html=True)
             label = "Chart ▴" if is_expanded else "Chart ▾"
@@ -1016,17 +946,6 @@ else:
                     st.session_state.portfolio_expanded.discard(ticker)
                 else:
                     st.session_state.portfolio_expanded.add(ticker)
-                st.rerun()
-
-            # Trash button — anchor lets CSS paint it red.
-            st.markdown("<div class='pf-trash-anchor'></div>",
-                        unsafe_allow_html=True)
-            if st.button("🗑️", key=f"del_mobile_{ticker}",
-                         help="Remove from portfolio",
-                         use_container_width=True):
-                st.session_state.portfolio_tickers.remove(ticker)
-                st.session_state.portfolio_expanded.discard(ticker)
-                _save_portfolio(st.session_state.portfolio_tickers)
                 st.rerun()
 
         # ── Expanded detail section ──────────────────────────────────────────
@@ -1219,6 +1138,22 @@ else:
                             else:
                                 st.markdown("<div style='margin-bottom:12px;'></div>",
                                             unsafe_allow_html=True)
+
+                # ── Remove from My Portfolio button (inside detail panel) ──
+                # Lives at the very bottom of the expanded chart panel.
+                # Hidden when the card is collapsed.
+                _, rem_col = st.columns([0.55, 0.45])
+                with rem_col:
+                    st.markdown("<div class='pf-remove-anchor'></div>",
+                                unsafe_allow_html=True)
+                    if st.button("🗑️ Remove from My Portfolio",
+                                 key=f"del_{ticker}",
+                                 help="Permanently remove this holding",
+                                 use_container_width=True):
+                        st.session_state.portfolio_tickers.remove(ticker)
+                        st.session_state.portfolio_expanded.discard(ticker)
+                        _save_portfolio(st.session_state.portfolio_tickers)
+                        st.rerun()
 
         # Small vertical gap between cards (the card itself now carries
         # the visual separation via its border + rounded corners).
