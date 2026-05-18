@@ -803,22 +803,6 @@ st.markdown(
       .pf-expand-all-anchor { display: none; }
       .pf-toggle-anchor { display: none; }
 
-      /* ── Chart container safety override ─────────────────────────
-         The global emotion-cache rules in app.py (especially the
-         mobile `.st-emotion-cache-1vo6xi6 { height: 30px }`) can
-         accidentally clip the Vega-Lite chart container — the chart
-         is set to height:280 via Altair's .properties() and would
-         then spill out of its 30px-tall parent and crash into the
-         elements below. Force the chart's wrappers to size to
-         content so the chart sits cleanly inside the expanded card. */
-      div[data-testid="stVegaLiteChart"],
-      div[data-testid="element-container"]:has([data-testid="stVegaLiteChart"]),
-      div[data-testid="element-container"]:has(.vega-embed) {
-        height: auto !important;
-        min-height: 280px !important;
-        overflow: visible !important;
-      }
-
       /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
          list of cards on a phone screen produces an unusable wall of
          charts. Targeting the whole stColumn that contains the

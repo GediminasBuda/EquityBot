@@ -162,7 +162,6 @@ st.markdown(
     <style>
       .st-emotion-cache-zy6yx3 { padding: 3rem 1rem 4rem; }
       .st-emotion-cache-1yu3o6t { padding: 0.95rem 0.75rem; }
-      .st-emotion-cache-1permvm { gap: 0; }
 
       /* On mobile the sidebar drawer must overlay every other layer
          (toolbar, page-title sticky banner, modal-style elements).
@@ -170,7 +169,6 @@ st.markdown(
          sidebar far above it. */
       @media (max-width: 768px) {
         .stSidebar { z-index: 999999999999 !important; }
-        .st-emotion-cache-1vo6xi6 { height: 30px; }
         .st-emotion-cache-1yu3o6t { padding: 0rem 0.75rem; }
       }
 
