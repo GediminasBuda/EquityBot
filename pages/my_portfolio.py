@@ -782,12 +782,18 @@ st.markdown(
 
       /* ── Desktop-only: collapse the toggle anchor's wrapping
          element-container so the "Chart" button isn't pushed down
-         by an empty ~1rem-tall markdown wrapper. Mobile keeps the
-         element-container intact because the locked-in mobile gap
-         between card and Chart button (5px row-gap) accounts for
-         it visually. */
+         by an empty ~1rem-tall markdown wrapper. Streamlit versions
+         differ in whether the wrapper carries data-testid
+         "element-container" or "stElementContainer" — match either
+         via the stable .element-container / .stElementContainer
+         class names. Mobile keeps the element-container intact
+         because the locked-in mobile gap between card and Chart
+         button (5px row-gap) accounts for it visually. */
       @media (min-width: 769px) {
-        div[data-testid="element-container"]:has(.pf-toggle-anchor) {
+        div.element-container:has(.pf-toggle-anchor),
+        div.stElementContainer:has(.pf-toggle-anchor),
+        div[data-testid="element-container"]:has(.pf-toggle-anchor),
+        div[data-testid="stElementContainer"]:has(.pf-toggle-anchor) {
           display: none !important;
         }
       }
