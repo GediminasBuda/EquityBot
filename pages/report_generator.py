@@ -2242,28 +2242,6 @@ if st.session_state.report_result:
 elif st.session_state.error_msg:
     st.error(st.session_state.error_msg)
 
-else:
-    # Empty state — show example tickers
-    st.markdown("### Example tickers to try")
-    ex_cols = st.columns(3)
-    examples = [
-        ("WKL.AS",   "Wolters Kluwer",     "Professional information · Netherlands"),
-        ("ASML.AS",  "ASML Holding",       "Semiconductor equipment · Netherlands"),
-        ("V",        "Visa Inc.",          "Payment network · United States"),
-        ("MCO",      "Moody's",            "Credit ratings · United States"),
-        ("SAP.DE",   "SAP SE",             "Enterprise software · Germany"),
-        ("NOKIA.HE", "Nokia",              "Telecom equipment · Finland"),
-    ]
-    for i, (ticker, name, desc) in enumerate(examples):
-        with ex_cols[i % 3]:
-            st.markdown(
-                f"<div class='report-card'>"
-                f"<h4>{name} <code>{ticker}</code></h4>"
-                f"<p>{desc}</p>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(
     "<div style='margin-top:32px;padding-top:8px;"
