@@ -161,6 +161,7 @@ st.markdown(
     """
     <style>
       .st-emotion-cache-zy6yx3 { padding: 3rem 1rem 4rem; }
+      .st-emotion-cache-1yu3o6t { padding: 0.95rem 0.75rem; }
 
       /* On mobile the sidebar drawer must overlay every other layer
          (toolbar, page-title sticky banner, modal-style elements).
