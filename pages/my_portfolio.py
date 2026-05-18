@@ -836,11 +836,13 @@ st.markdown(
 
       /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
          list of cards on a phone screen produces an unusable wall of
-         charts. The button (and its anchor) only show on >=769px. */
+         charts. Targeting the whole stColumn that contains the
+         anchor (instead of relying on +-sibling matching between
+         element-containers, which depends on Streamlit's exact DOM
+         nesting) makes the rule robust across Streamlit versions. */
       @media (max-width: 768px) {
-        div[data-testid="element-container"]:has(.pf-expand-all-anchor),
-        div[data-testid="element-container"]:has(.pf-expand-all-anchor)
-          + div[data-testid="element-container"] {
+        div[data-testid="column"]:has(.pf-expand-all-anchor),
+        div[data-testid="stColumn"]:has(.pf-expand-all-anchor) {
           display: none !important;
         }
       }
