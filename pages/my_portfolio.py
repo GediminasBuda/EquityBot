@@ -801,6 +801,7 @@ st.markdown(
       }
 
       .pf-expand-all-anchor { display: none; }
+      .pf-toggle-anchor { display: none; }
 
       /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
          list of cards on a phone screen produces an unusable wall of
@@ -950,6 +951,11 @@ else:
             a_toggle, a_trash = st.columns(2, gap="small")
 
             with a_toggle:
+                # Empty markdown placeholder mirrors the trash button's
+                # anchor element-container so both buttons sit at the
+                # exact same vertical position inside the action row.
+                st.markdown("<div class='pf-toggle-anchor'></div>",
+                            unsafe_allow_html=True)
                 label = "Chart ▴" if is_expanded else "Chart ▾"
                 if st.button(label, key=f"toggle_{ticker}",
                              help="Collapse" if is_expanded else "Expand",
