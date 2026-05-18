@@ -780,6 +780,18 @@ st.markdown(
 
       .pf-toggle-anchor { display: none; }
 
+      /* ── Desktop-only: collapse the toggle anchor's wrapping
+         element-container so the "Chart" button isn't pushed down
+         by an empty ~1rem-tall markdown wrapper. Mobile keeps the
+         element-container intact because the locked-in mobile gap
+         between card and Chart button (5px row-gap) accounts for
+         it visually. */
+      @media (min-width: 769px) {
+        div[data-testid="element-container"]:has(.pf-toggle-anchor) {
+          display: none !important;
+        }
+      }
+
       /* ── Tight gap between card and Chart button on mobile ───────
          When the card row's columns wrap (mobile), Streamlit's
          default vertical gap (~1rem) leaves a chunky space between
