@@ -689,6 +689,8 @@ st.markdown(
           grid-column: 1 / -1;
           border-bottom: 1px solid #EDF1F5;
           padding-bottom: 6px;
+          align-items: center;
+          text-align: center;
         }
         .pf-name { font-size: 15px; }
         .pf-metric {
