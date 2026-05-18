@@ -580,22 +580,13 @@ if selected_ticker:
         st.info(f"**{norm}** is already in your portfolio.")
 
 # ── Top bar ───────────────────────────────────────────────────────────────────
-top_l, top_m, top_r = st.columns([5, 1, 1])
+top_l, top_r = st.columns([6, 1])
 with top_l:
     if st.session_state.portfolio_tickers:
         st.markdown(
             f"**{len(st.session_state.portfolio_tickers)}** ticker"
             f"{'s' if len(st.session_state.portfolio_tickers) != 1 else ''} tracked"
         )
-with top_m:
-    # Anchor sibling so mobile CSS can hide the "Expand all" button —
-    # there's no use case for bulk-expanding on a phone-sized screen.
-    st.markdown("<div class='pf-expand-all-anchor'></div>",
-                unsafe_allow_html=True)
-    if st.button("⏷ Expand all", use_container_width=True,
-                 disabled=not st.session_state.portfolio_tickers):
-        st.session_state.portfolio_expanded = set(st.session_state.portfolio_tickers)
-        st.rerun()
 with top_r:
     if st.button("🔄 Refresh", use_container_width=True):
         _fetch_snapshot.clear()
@@ -787,7 +778,6 @@ st.markdown(
         color: #B83227 !important;
       }
 
-      .pf-expand-all-anchor { display: none; }
       .pf-toggle-anchor { display: none; }
 
       /* ── Tight gap between card and Chart button on mobile ───────
@@ -801,20 +791,6 @@ st.markdown(
           row-gap: 5px !important;
         }
       }
-
-      /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
-         list of cards on a phone screen produces an unusable wall of
-         charts. Targeting the whole stColumn that contains the
-         anchor (instead of relying on +-sibling matching between
-         element-containers, which depends on Streamlit's exact DOM
-         nesting) makes the rule robust across Streamlit versions. */
-      @media (max-width: 768px) {
-        div[data-testid="column"]:has(.pf-expand-all-anchor),
-        div[data-testid="stColumn"]:has(.pf-expand-all-anchor) {
-          display: none !important;
-        }
-      }
-
 
       /* ── Tighter inter-card gap (the wrapping st.container has its
             own gap; pull it down a bit so cards don't feel sparse) ─── */
