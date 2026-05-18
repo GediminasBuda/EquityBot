@@ -878,30 +878,33 @@ else:
             st.markdown(card_html, unsafe_allow_html=True)
 
         with btn_col:
-            # When expanded, only the ▴ collapse toggle lives up here —
-            # the ✕ "Remove from portfolio" button moves to the bottom
-            # of the detail panel so users don't confuse it with a
-            # "close chart" affordance next to the toggle.
+            # Top-right always has only the ▾/▴ toggle. The destructive
+            # "✕ Remove from portfolio" button is always rendered with
+            # its full label at the bottom-right (below the card when
+            # collapsed; at the bottom of the detail panel when expanded)
+            # so it's far from the toggle in both states.
             arrow = "▴" if is_expanded else "▾"
-            if is_expanded:
-                if st.button(arrow, key=f"toggle_{ticker}",
-                             help="Collapse",
-                             use_container_width=True):
+            if st.button(arrow, key=f"toggle_{ticker}",
+                         help="Collapse" if is_expanded else "Expand",
+                         use_container_width=True):
+                if is_expanded:
                     st.session_state.portfolio_expanded.discard(ticker)
-                    st.rerun()
-            else:
-                # Collapsed: ▾ toggle + ✕ remove, side by side.
-                b1, b2 = st.columns(2, gap="small")
-                if b1.button(arrow, key=f"toggle_{ticker}",
-                             help="Expand",
-                             use_container_width=True):
+                else:
                     st.session_state.portfolio_expanded.add(ticker)
-                    st.rerun()
-                # Anchor sibling so CSS can paint the next button red.
-                b2.markdown("<div class='pf-del-anchor'></div>",
+                st.rerun()
+
+        # ── Labelled remove button (only rendered here when card is
+        #     collapsed; when expanded it lives at the bottom of the
+        #     detail panel further down). Right-aligned via empty
+        #     left column so it sits under the action column above. ──
+        if not is_expanded:
+            _, rem_col_top = st.columns([0.6, 0.4])
+            with rem_col_top:
+                st.markdown("<div class='pf-del-anchor'></div>",
                             unsafe_allow_html=True)
-                if b2.button("✕", key=f"del_{ticker}",
-                             help="Remove from portfolio",
+                if st.button("✕ Remove from portfolio",
+                             key=f"del_top_{ticker}",
+                             help="Permanently remove this holding",
                              use_container_width=True):
                     st.session_state.portfolio_tickers.remove(ticker)
                     st.session_state.portfolio_expanded.discard(ticker)
