@@ -800,38 +800,6 @@ st.markdown(
         border-color: #B83227 !important;
       }
 
-      /* ── Mobile: relabel the small ▾/▴ toggle as "Chart ↓" /
-         "Hide chart ↑" so it reads as the chart open/close action
-         the user expects at the bottom of every card. Anchor classes
-         on the markdown sibling encode the state. */
-      @media (max-width: 768px) {
-        div[data-testid="element-container"]:has(.pf-toggle-anchor)
-          + div[data-testid="element-container"]
-          div[data-testid="stButton"] > button p {
-          font-size: 0 !important;
-        }
-        div[data-testid="element-container"]:has(.pf-toggle-collapsed)
-          + div[data-testid="element-container"]
-          div[data-testid="stButton"] > button::after {
-          content: "Chart ↓";
-          font-size: 14px;
-          font-weight: 600;
-          color: #1B3F6E;
-          line-height: 1;
-        }
-        div[data-testid="element-container"]:has(.pf-toggle-expanded)
-          + div[data-testid="element-container"]
-          div[data-testid="stButton"] > button::after {
-          content: "Hide chart ↑";
-          font-size: 14px;
-          font-weight: 600;
-          color: #1B3F6E;
-          line-height: 1;
-        }
-      }
-
-      /* The toggle anchor marker is invisible. */
-      .pf-toggle-anchor { display: none; }
       .pf-expand-all-anchor { display: none; }
 
       /* Hide the "⏷ Expand all" button on mobile — bulk-expanding a
@@ -982,15 +950,8 @@ else:
             a_toggle, a_trash = st.columns(2, gap="small")
 
             with a_toggle:
-                # State-aware anchor so mobile CSS can swap the bare ▾/▴
-                # arrow for "Chart ↓" / "Hide chart ↑" via ::after.
-                arrow = "▴" if is_expanded else "▾"
-                anchor_cls = ("pf-toggle-anchor pf-toggle-expanded"
-                              if is_expanded
-                              else "pf-toggle-anchor pf-toggle-collapsed")
-                st.markdown(f"<div class='{anchor_cls}'></div>",
-                            unsafe_allow_html=True)
-                if st.button(arrow, key=f"toggle_{ticker}",
+                label = "Chart ▴" if is_expanded else "Chart ▾"
+                if st.button(label, key=f"toggle_{ticker}",
                              help="Collapse" if is_expanded else "Expand",
                              use_container_width=True):
                     if is_expanded:
