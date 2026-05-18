@@ -2,7 +2,7 @@
   "id": "eodhd_full",
   "name": "EODHD duomenys",
   "icon": "🗂️",
-  "description": "Comprehensive 100% EODHD All-In-One dump: company profile, valuation, full financial statements, real-time quote, 5-year price + dividend history, splits, insider transactions, news, sentiments and analyst rating changes — every endpoint the EODHD subscription exposes, no other data sources mixed in.",
+  "description": "Comprehensive 100% EODHD All-In-One",
   "is_builtin": true,
   "base_id": null,
   "version": 1,
