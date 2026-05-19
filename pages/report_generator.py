@@ -444,6 +444,18 @@ def _render_peer_picker(scope: str) -> None:
                 use_container_width=True,
             ):
                 st.session_state.rg_peers_list.remove(p)
+                # streamlit_searchbox keeps the last selected value in
+                # session_state across reruns. If we don't clear it here,
+                # the next render reads picked == p, sees p is no longer
+                # in rg_peers_list, and silently re-adds it — the user
+                # then can't remove the last peer at all. Wipe every
+                # picker's session_state key for both viewports so the
+                # next render starts from an empty searchbox.
+                for sc in ("mobile", "desktop"):
+                    prefix = f"peers_pick_{sc}"
+                    for k in list(st.session_state.keys()):
+                        if k.startswith(prefix):
+                            del st.session_state[k]
                 st.rerun()
         st.caption(f"{n}/6 peers selected")
 
