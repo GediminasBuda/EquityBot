@@ -785,10 +785,7 @@ with col_left:
     # ── Smart searchbar (autocomplete + NL prompt) ────────────────────────────
     selected = st_searchbox(
         search_function=_smart_search,
-        placeholder=(
-            "🔍 e.g.  AAPL  ·  Rheinmetall  ·  "
-            "'top 10 SP500 by market cap'  ·  'Fisher on RHM.DE'"
-        ),
+        placeholder="",
         label=None,
         clear_on_submit=False,
         key="rg_searchbox",
@@ -803,7 +800,7 @@ with col_left:
     st.markdown("#### Peers")
     st.text_input(
         "Peer tickers (mobile)",
-        placeholder="REL.L  TRI.TO  MSFT  (space-separated, up to 6)",
+        placeholder="",
         label_visibility="collapsed",
         key="peers_input_mobile",
     )
@@ -1089,7 +1086,7 @@ with col_right:
     st.markdown("#### Peers")
     peers_input = st.text_input(
         "Peer tickers",
-        placeholder="REL.L  TRI.TO  MSFT  (space-separated, up to 6)",
+        placeholder="",
         label_visibility="collapsed",
         disabled=(report_type not in (
             "overview_v2", "fisher", "fisher_peers", "gravity",

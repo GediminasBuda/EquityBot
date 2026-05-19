@@ -204,8 +204,8 @@ def _show_login() -> None:
     col = st.columns([1, 2, 1])[1]
     with col:
         with st.form("login_form", clear_on_submit=False):
-            username = st.text_input("Username", placeholder="username")
-            password = st.text_input("Password", type="password", placeholder="••••••••")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
             submitted = st.form_submit_button("Sign in", use_container_width=True)
 
         if submitted:
@@ -325,55 +325,44 @@ st.markdown(
         color: #000000 !important;
       }
 
-      /* ── Inputs & selects (Bloomberg clean black + amber) ──────────
-         Override every Streamlit/BaseWeb input state so no red error
-         or invalid styling can leak through. Black background, amber
-         text, muted-amber border on idle, full-amber on focus. */
+      /* ── Inputs & selects (red border + red typed text) ────────────
+         Per user spec the v2 inputs are empty by default (placeholders
+         stripped Python-side) and render with a red border and red
+         caret/typed-text. The background stays true black so the field
+         reads as a Bloomberg-style alarm strip. */
       input, textarea, select,
       [data-baseweb="input"] input,
       [data-baseweb="select"] input,
       [data-baseweb="search"] input,
       [data-baseweb="textarea"] textarea {
         background-color: #000000 !important;
-        color: #FFA028 !important;
+        color: #FF3030 !important;
         font-family: monospace !important;
-        caret-color: #FFA028 !important;
+        caret-color: #FF3030 !important;
       }
       input::placeholder, textarea::placeholder {
-        color: #5a4a25 !important;
-        font-family: monospace !important;
-        opacity: 1;
+        color: transparent !important;
       }
       [data-baseweb="input"] > div,
       [data-baseweb="select"] > div,
       [data-baseweb="search"] > div,
       [data-baseweb="textarea"] > div {
         background-color: #000000 !important;
-        border-color: #4a3818 !important;
+        border-color: #FF3030 !important;
       }
       [data-baseweb="input"] > div:focus-within,
       [data-baseweb="select"] > div:focus-within,
       [data-baseweb="search"] > div:focus-within,
       [data-baseweb="textarea"] > div:focus-within {
-        border-color: #FFA028 !important;
-        box-shadow: 0 0 0 1px #FFA028 !important;
+        border-color: #FF3030 !important;
+        box-shadow: 0 0 0 1px #FF3030 !important;
       }
-      /* Kill any red/error styling Streamlit / BaseWeb might inject */
-      [data-baseweb="input"][aria-invalid="true"] > div,
-      [data-baseweb="select"][aria-invalid="true"] > div,
-      [data-baseweb="input"] [data-error="true"],
-      [data-baseweb="select"] [data-error="true"] {
-        border-color: #4a3818 !important;
-        background-color: #000000 !important;
-        color: #FFA028 !important;
-        box-shadow: none !important;
-      }
-      /* Streamlit searchbox custom component — same rules */
+      /* Streamlit searchbox custom component — same red treatment */
       [data-testid="stSearchbox"] input,
       [data-testid="stSearchbox"] > div > div {
         background-color: #000000 !important;
-        color: #FFA028 !important;
-        border-color: #4a3818 !important;
+        color: #FF3030 !important;
+        border-color: #FF3030 !important;
         font-family: monospace !important;
       }
 

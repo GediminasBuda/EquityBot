@@ -566,7 +566,7 @@ if "portfolio_periods" not in st.session_state:
 # one adds it to the portfolio immediately — no extra confirm click.
 selected_ticker = st_searchbox(
     search_function=_ticker_search,
-    placeholder="🔍 Search",
+    placeholder="",
     label=None,
     clear_on_submit=True,
     key="ticker_searchbox",
