@@ -28,6 +28,7 @@ import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
+from streamlit.components.v1 import html as _components_html
 from streamlit_searchbox import st_searchbox
 
 from config import EODHD_API_KEY, REQUEST_HEADERS
@@ -531,6 +532,23 @@ st.markdown(
     # #### markdown blocks in, so they don't dominate the layout.
     ".st-emotion-cache-1dy2t46 h4 { font-size: 1rem !important; }"
     ".st-emotion-cache-1dy2t46 { margin-bottom: -10px; }"
+    # ── Collapse the JS-injection iframe wrappers so they don't add
+    # an empty row between the searchbox and the first portfolio
+    # card. Hidden via display:none on both wrappers — the iframe's
+    # script still runs (display:none does not stop iframe scripts
+    # in Chrome/Firefox/Safari). Applies on every viewport because
+    # the user wants the styling consistent. */
+    ".pf-style-iframe-anchor { display: none; }"
+    "div[data-testid=\"stElementContainer\"]:has(.pf-style-iframe-anchor),"
+    "div[data-testid=\"element-container\"]:has(.pf-style-iframe-anchor),"
+    "div.stElementContainer:has(.pf-style-iframe-anchor),"
+    "div.element-container:has(.pf-style-iframe-anchor),"
+    "div[data-testid=\"stElementContainer\"]:has(.pf-style-iframe-anchor) + div[data-testid=\"stElementContainer\"],"
+    "div[data-testid=\"element-container\"]:has(.pf-style-iframe-anchor) + div[data-testid=\"element-container\"],"
+    "div.stElementContainer:has(.pf-style-iframe-anchor) + div.stElementContainer,"
+    "div.element-container:has(.pf-style-iframe-anchor) + div.element-container {"
+    "  display: none !important;"
+    "}"
     "</style>",
     unsafe_allow_html=True,
 )
@@ -570,6 +588,101 @@ selected_ticker = st_searchbox(
     label=None,
     clear_on_submit=True,
     key="ticker_searchbox",
+)
+
+# ── Inject red styling into this page's streamlit_searchbox iframes ────
+# Same approach as the Report Generator: a parent-page <script> reaches
+# every searchbox iframe (same-origin) and appends a <style> block.
+# Repaints every 800ms in case Streamlit re-creates the iframe on a
+# rerender. The anchor div lets CSS collapse the iframe wrapper's
+# default padding so it doesn't add an empty gap below the searchbox.
+st.markdown("<div class='pf-style-iframe-anchor'></div>",
+            unsafe_allow_html=True)
+_components_html(
+    """
+    <script>
+    (function () {
+      const STYLE_ID = 'eqbot-searchbox-red';
+      const CSS = `
+        input, .css-1d391kg input, [class*="control"] input {
+          background-color: #000000 !important;
+          color: #FF3030 !important;
+          caret-color: #FF3030 !important;
+          -webkit-text-fill-color: #FF3030 !important;
+          font-family: monospace !important;
+        }
+        [class*="control"], [class*="-control"] {
+          background-color: #000000 !important;
+          border: 1px solid #FF3030 !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+          min-height: 38px !important;
+        }
+        [class*="control"]:hover, [class*="-control"]:hover,
+        [class*="control--is-focused"], [class*="-control--is-focused"] {
+          border-color: #FF3030 !important;
+          box-shadow: 0 0 0 1px #FF3030 !important;
+        }
+        [class*="placeholder"] { color: transparent !important; }
+        .css-1wy0on6,
+        [class*="indicatorContainer"],
+        [class*="IndicatorsContainer"],
+        [class*="indicator-container"],
+        [class*="dropdownIndicator"],
+        [class*="DropdownIndicator"],
+        [class*="indicatorSeparator"],
+        [class*="IndicatorSeparator"],
+        [class*="loadingIndicator"],
+        [class*="LoadingIndicator"] {
+          display: none !important;
+        }
+        [class*="menu"] {
+          background-color: #000000 !important;
+          border: 1px solid #FF3030 !important;
+          border-radius: 0 !important;
+        }
+        [class*="option"] {
+          background-color: #000000 !important;
+          color: #FFA028 !important;
+          font-family: monospace !important;
+        }
+        [class*="option--is-focused"], [class*="option"]:hover {
+          background-color: #1a0606 !important;
+          color: #FF3030 !important;
+        }
+        [class*="singleValue"] { color: #FF3030 !important; }
+        body { background-color: #000000 !important; }
+      `;
+
+      function paint(doc) {
+        try {
+          if (!doc) return;
+          if (doc.getElementById(STYLE_ID)) return;
+          const s = doc.createElement('style');
+          s.id = STYLE_ID;
+          s.textContent = CSS;
+          doc.head.appendChild(s);
+        } catch (e) { /* same-origin race / not ready */ }
+      }
+
+      function scan() {
+        const parent = window.parent || window;
+        const iframes = parent.document.querySelectorAll('iframe');
+        iframes.forEach(f => {
+          const title = (f.title || '').toLowerCase();
+          const src   = (f.src   || '').toLowerCase();
+          if (title.includes('searchbox') || src.includes('searchbox')) {
+            try { paint(f.contentDocument); } catch (e) {}
+          }
+        });
+      }
+
+      scan();
+      setInterval(scan, 800);
+    })();
+    </script>
+    """,
+    height=0,
 )
 
 if selected_ticker:
