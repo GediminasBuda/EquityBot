@@ -325,45 +325,69 @@ st.markdown(
         color: #000000 !important;
       }
 
-      /* ── Inputs & selects (red border + red typed text) ────────────
-         Per user spec the v2 inputs are empty by default (placeholders
-         stripped Python-side) and render with a red border and red
-         caret/typed-text. The background stays true black so the field
-         reads as a Bloomberg-style alarm strip. */
+      /* ── Inputs (red border + red typed text) ──────────────────────
+         Aggressive override so every Streamlit / BaseWeb input layer
+         renders with a red 1px border and red typed text. Uses the
+         `border` shorthand so width/style/colour all land together;
+         strips inner borders so the visible red rim doesn't double up.
+         Targets every plausible DOM path: native input, Streamlit
+         testid wrappers, BaseWeb wrappers, the custom searchbox. */
+
+      /* Typed text + caret = red, monospace, no placeholder leak */
       input, textarea, select,
       [data-baseweb="input"] input,
       [data-baseweb="select"] input,
       [data-baseweb="search"] input,
-      [data-baseweb="textarea"] textarea {
+      [data-baseweb="textarea"] textarea,
+      [data-testid="stTextInput"] input,
+      [data-testid="stTextArea"] textarea,
+      [data-testid="stSelectbox"] [role="combobox"],
+      [data-testid="stSearchbox"] input {
         background-color: #000000 !important;
         color: #FF3030 !important;
         font-family: monospace !important;
         caret-color: #FF3030 !important;
+        -webkit-text-fill-color: #FF3030 !important;
       }
       input::placeholder, textarea::placeholder {
         color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
+      }
+
+      /* Visible red rim — neutralise outer wrapper first, then paint
+         the canonical inner div. Both layers carry the override so
+         whichever Streamlit version is running ends up red. */
+      [data-baseweb="input"],
+      [data-baseweb="select"],
+      [data-baseweb="textarea"],
+      [data-baseweb="search"] {
+        border: none !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
       }
       [data-baseweb="input"] > div,
       [data-baseweb="select"] > div,
       [data-baseweb="search"] > div,
-      [data-baseweb="textarea"] > div {
+      [data-baseweb="textarea"] > div,
+      [data-testid="stTextInput"] > div > div,
+      [data-testid="stTextArea"] > div > div,
+      [data-testid="stSelectbox"] > div > div,
+      [data-testid="stSearchbox"] > div > div {
+        border: 1px solid #FF3030 !important;
+        border-radius: 2px !important;
         background-color: #000000 !important;
-        border-color: #FF3030 !important;
+        box-shadow: none !important;
       }
       [data-baseweb="input"] > div:focus-within,
       [data-baseweb="select"] > div:focus-within,
       [data-baseweb="search"] > div:focus-within,
-      [data-baseweb="textarea"] > div:focus-within {
+      [data-baseweb="textarea"] > div:focus-within,
+      [data-testid="stTextInput"] > div > div:focus-within,
+      [data-testid="stTextArea"] > div > div:focus-within,
+      [data-testid="stSelectbox"] > div > div:focus-within,
+      [data-testid="stSearchbox"] > div > div:focus-within {
         border-color: #FF3030 !important;
         box-shadow: 0 0 0 1px #FF3030 !important;
-      }
-      /* Streamlit searchbox custom component — same red treatment */
-      [data-testid="stSearchbox"] input,
-      [data-testid="stSearchbox"] > div > div {
-        background-color: #000000 !important;
-        color: #FF3030 !important;
-        border-color: #FF3030 !important;
-        font-family: monospace !important;
       }
 
       /* Metrics */
