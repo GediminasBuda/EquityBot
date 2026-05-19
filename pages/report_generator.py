@@ -763,6 +763,23 @@ st.markdown(
     "    row-gap: 22px !important;"
     "  }"
     "}"
+    # ── Ticker searchbox red frame ─────────────────────────────────
+    # streamlit_searchbox renders in an iframe — parent CSS can't
+    # restyle the input inside. We frame the searchbox's element-
+    # container (the next sibling after the rg-ticker-anchor) so
+    # the user sees a red rim around the field.
+    # Starts with border-radius 8px to verify visually whether
+    # any parent clips the corners; we'll drop to 0 once confirmed.
+    ".rg-ticker-anchor { display: none; }"
+    "div[data-testid=\"stElementContainer\"]:has(.rg-ticker-anchor) + div[data-testid=\"stElementContainer\"],"
+    "div[data-testid=\"element-container\"]:has(.rg-ticker-anchor) + div[data-testid=\"element-container\"],"
+    "div.stElementContainer:has(.rg-ticker-anchor) + div.stElementContainer,"
+    "div.element-container:has(.rg-ticker-anchor) + div.element-container {"
+    "  border: 2px solid #FF3030 !important;"
+    "  border-radius: 8px !important;"
+    "  padding: 2px !important;"
+    "  background-color: #000000 !important;"
+    "}"
     "</style>",
     unsafe_allow_html=True,
 )
@@ -783,6 +800,12 @@ with col_left:
     st.markdown("#### Ticker or Description")
 
     # ── Smart searchbar (autocomplete + NL prompt) ────────────────────────────
+    # Anchor lets CSS draw a red border around the whole element-container
+    # — streamlit_searchbox is a custom component rendered in an iframe,
+    # so the parent page's CSS can't reach the input inside; the next
+    # best thing is to frame the iframe's outer wrapper.
+    st.markdown("<div class='rg-ticker-anchor'></div>",
+                unsafe_allow_html=True)
     selected = st_searchbox(
         search_function=_smart_search,
         placeholder="",
