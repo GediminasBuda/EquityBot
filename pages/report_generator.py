@@ -904,7 +904,12 @@ with col_left:
             [class*="placeholder"] { color: transparent !important; }
             /* Hide the entire indicators column (dropdown arrow,
                separator, loading spinner) — Ticker / Peers fields
-               look cleaner without the amber/red caret on the right. */
+               look cleaner without the caret on the right. The
+               user-confirmed react-select class is .css-1wy0on6
+               (the IndicatorsContainer wrapper); kept the broader
+               [class*=...] selectors too as a safety net in case
+               the hashed class changes after a react-select bump. */
+            .css-1wy0on6,
             [class*="indicatorContainer"],
             [class*="IndicatorsContainer"],
             [class*="indicator-container"],
