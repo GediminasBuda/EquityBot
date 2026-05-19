@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
+from streamlit.components.v1 import html as _components_html
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -763,23 +764,6 @@ st.markdown(
     "    row-gap: 22px !important;"
     "  }"
     "}"
-    # ── Ticker searchbox red frame ─────────────────────────────────
-    # streamlit_searchbox renders in an iframe — parent CSS can't
-    # restyle the input inside. We frame the searchbox's element-
-    # container (the next sibling after the rg-ticker-anchor) so
-    # the user sees a red rim around the field.
-    # Starts with border-radius 8px to verify visually whether
-    # any parent clips the corners; we'll drop to 0 once confirmed.
-    ".rg-ticker-anchor { display: none; }"
-    "div[data-testid=\"stElementContainer\"]:has(.rg-ticker-anchor) + div[data-testid=\"stElementContainer\"],"
-    "div[data-testid=\"element-container\"]:has(.rg-ticker-anchor) + div[data-testid=\"element-container\"],"
-    "div.stElementContainer:has(.rg-ticker-anchor) + div.stElementContainer,"
-    "div.element-container:has(.rg-ticker-anchor) + div.element-container {"
-    "  border: 2px solid #FF3030 !important;"
-    "  border-radius: 8px !important;"
-    "  padding: 2px !important;"
-    "  background-color: #000000 !important;"
-    "}"
     "</style>",
     unsafe_allow_html=True,
 )
@@ -800,18 +784,94 @@ with col_left:
     st.markdown("#### Ticker or Description")
 
     # ── Smart searchbar (autocomplete + NL prompt) ────────────────────────────
-    # Anchor lets CSS draw a red border around the whole element-container
-    # — streamlit_searchbox is a custom component rendered in an iframe,
-    # so the parent page's CSS can't reach the input inside; the next
-    # best thing is to frame the iframe's outer wrapper.
-    st.markdown("<div class='rg-ticker-anchor'></div>",
-                unsafe_allow_html=True)
     selected = st_searchbox(
         search_function=_smart_search,
         placeholder="",
         label=None,
         clear_on_submit=False,
         key="rg_searchbox",
+    )
+
+    # ── Inject red styling into the streamlit_searchbox iframe ─────
+    # The searchbox is a custom Streamlit component rendered inside
+    # an iframe served from the same origin as the app, so parent-
+    # page JS can reach iframe.contentDocument and inject a <style>
+    # block directly. Re-runs on a timer because Streamlit re-creates
+    # the iframe on each rerender.
+    _components_html(
+        """
+        <script>
+        (function () {
+          const STYLE_ID = 'eqbot-searchbox-red';
+          const CSS = `
+            input, .css-1d391kg input, [class*="control"] input {
+              background-color: #000000 !important;
+              color: #FF3030 !important;
+              caret-color: #FF3030 !important;
+              -webkit-text-fill-color: #FF3030 !important;
+              font-family: monospace !important;
+            }
+            [class*="control"], [class*="-control"] {
+              background-color: #000000 !important;
+              border: 1px solid #FF3030 !important;
+              border-radius: 0 !important;
+              box-shadow: none !important;
+              min-height: 38px !important;
+            }
+            [class*="control"]:hover, [class*="-control"]:hover,
+            [class*="control--is-focused"], [class*="-control--is-focused"] {
+              border-color: #FF3030 !important;
+              box-shadow: 0 0 0 1px #FF3030 !important;
+            }
+            [class*="placeholder"] { color: transparent !important; }
+            [class*="indicator"] svg { fill: #FF3030 !important; color: #FF3030 !important; }
+            [class*="menu"] {
+              background-color: #000000 !important;
+              border: 1px solid #FF3030 !important;
+              border-radius: 0 !important;
+            }
+            [class*="option"] {
+              background-color: #000000 !important;
+              color: #FFA028 !important;
+              font-family: monospace !important;
+            }
+            [class*="option--is-focused"], [class*="option"]:hover {
+              background-color: #1a0606 !important;
+              color: #FF3030 !important;
+            }
+            [class*="singleValue"] { color: #FF3030 !important; }
+            body { background-color: #000000 !important; }
+          `;
+
+          function paint(doc) {
+            try {
+              if (!doc) return;
+              if (doc.getElementById(STYLE_ID)) return;
+              const s = doc.createElement('style');
+              s.id = STYLE_ID;
+              s.textContent = CSS;
+              doc.head.appendChild(s);
+            } catch (e) { /* same-origin race / not ready */ }
+          }
+
+          function scan() {
+            const parent = window.parent || window;
+            const iframes = parent.document.querySelectorAll('iframe');
+            iframes.forEach(f => {
+              const title = (f.title || '').toLowerCase();
+              const src   = (f.src   || '').toLowerCase();
+              if (title.includes('searchbox') || src.includes('searchbox')) {
+                try { paint(f.contentDocument); } catch (e) {}
+              }
+            });
+          }
+
+          scan();
+          setInterval(scan, 800);
+        })();
+        </script>
+        """,
+        height=0,
     )
 
     # ── Mobile-only Peer Tickers (CSS hides this block on desktop) ────────
