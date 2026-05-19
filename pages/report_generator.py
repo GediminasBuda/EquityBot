@@ -382,6 +382,72 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
     return suggestions[:12]
 
 
+def _peer_search(query: str) -> list[tuple[str, str]]:
+    """
+    Autocomplete callback for the Peers picker. Reuses _smart_search but
+    filters out:
+      - NL-prompt suggestions (Peers must be real tickers).
+      - Tickers the user has already added (no duplicates in the tag row).
+    """
+    rows = _smart_search(query)
+    already = set(st.session_state.get("rg_peers_list", []))
+    out: list[tuple[str, str]] = []
+    for label, value in rows:
+        if value.startswith("NL::"):
+            continue
+        if value in already:
+            continue
+        out.append((label, value))
+    return out
+
+
+def _render_peer_picker(scope: str) -> None:
+    """
+    Render the autocomplete Peers picker for one viewport scope.
+
+    UX:
+      • st_searchbox suggests tickers as the user types.
+      • Picking one appends it to st.session_state.rg_peers_list (max 6).
+      • Each selected peer renders below as a "TICKER ✕" button — clicking
+        removes it from the list.
+
+    Two scopes ("mobile", "desktop") share the same rg_peers_list so the
+    selection is identical on both viewports; only the visible picker
+    differs (CSS hides one of the two via the anchor pattern).
+    """
+    if "rg_peers_list" not in st.session_state:
+        st.session_state.rg_peers_list = []
+
+    pick_key = f"peers_pick_{scope}"
+    picked = st_searchbox(
+        search_function=_peer_search,
+        placeholder="",
+        label=None,
+        clear_on_submit=True,
+        key=pick_key,
+    )
+    if picked and picked not in st.session_state.rg_peers_list:
+        if len(st.session_state.rg_peers_list) < 6:
+            st.session_state.rg_peers_list.append(picked)
+            st.rerun()
+
+    # Tag row — one removable button per selected peer.
+    peers_now = list(st.session_state.rg_peers_list)
+    if peers_now:
+        n = len(peers_now)
+        cols = st.columns(n)
+        for i, p in enumerate(peers_now):
+            if cols[i].button(
+                f"{p} ✕",
+                key=f"peers_rm_{scope}_{p}",
+                help="Remove from peers list",
+                use_container_width=True,
+            ):
+                st.session_state.rg_peers_list.remove(p)
+                st.rerun()
+        st.caption(f"{n}/6 peers selected")
+
+
 # ── Add ticker to My Portfolio (from screener row) ───────────────────────────
 def _rg_add_to_portfolio(ticker: str) -> bool:
     """
@@ -881,12 +947,7 @@ with col_left:
     st.markdown("<div class='rg-peer-mobile-anchor'></div>",
                 unsafe_allow_html=True)
     st.markdown("#### Peers")
-    st.text_input(
-        "Peer tickers (mobile)",
-        placeholder="",
-        label_visibility="collapsed",
-        key="peers_input_mobile",
-    )
+    _render_peer_picker("mobile")
 
     # Persist the selected ticker (or the parsed intent / screener rows) in
     # session state so the rest of the page can read it without rerunning
@@ -1161,28 +1222,18 @@ with col_left:
     st.caption(f"{rt['desc']}  ·  {rt['pages']}{builtin_badge}")
 
 with col_right:
-    # Peer tickers — only relevant for Overview
-    # Anchor lets CSS hide the desktop copy on mobile (the mobile copy
-    # lives in col_left right after the ticker searchbox).
+    # Peer tickers — only relevant for Overview-style reports.
+    # Anchor lets CSS hide the desktop copy on mobile (mobile copy lives
+    # in col_left right after the ticker searchbox).
     st.markdown("<div class='rg-peer-desktop-anchor'></div>",
                 unsafe_allow_html=True)
     st.markdown("#### Peers")
-    peers_input = st.text_input(
-        "Peer tickers",
-        placeholder="",
-        label_visibility="collapsed",
-        disabled=(report_type not in (
-            "overview_v2", "fisher", "fisher_peers", "gravity",
-        )),
-        key="peers_input",
-    )
-    # Merge whichever copy actually carries a user-entered value so the
-    # rest of the page consumes a single peers_input string.
-    peers_input = (
-        st.session_state.get("peers_input_mobile", "").strip()
-        or peers_input
-        or ""
-    )
+    _render_peer_picker("desktop")
+
+    # Downstream code consumes peers_input as a space-separated string
+    # of tickers. Build it from the shared session_state list so both
+    # viewport pickers feed the same source of truth.
+    peers_input = " ".join(st.session_state.get("rg_peers_list", []))
 
     st.markdown("#### Options")
     force_refresh = st.checkbox(
