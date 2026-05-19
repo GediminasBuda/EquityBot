@@ -902,7 +902,20 @@ with col_left:
               box-shadow: 0 0 0 1px #FF3030 !important;
             }
             [class*="placeholder"] { color: transparent !important; }
-            [class*="indicator"] svg { fill: #FF3030 !important; color: #FF3030 !important; }
+            /* Hide the entire indicators column (dropdown arrow,
+               separator, loading spinner) — Ticker / Peers fields
+               look cleaner without the amber/red caret on the right. */
+            [class*="indicatorContainer"],
+            [class*="IndicatorsContainer"],
+            [class*="indicator-container"],
+            [class*="dropdownIndicator"],
+            [class*="DropdownIndicator"],
+            [class*="indicatorSeparator"],
+            [class*="IndicatorSeparator"],
+            [class*="loadingIndicator"],
+            [class*="LoadingIndicator"] {
+              display: none !important;
+            }
             [class*="menu"] {
               background-color: #000000 !important;
               border: 1px solid #FF3030 !important;
