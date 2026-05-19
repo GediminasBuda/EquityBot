@@ -803,6 +803,27 @@ st.markdown(
     ".rg-peer-desktop-anchor { display: none; }"
     ".rg-peers-mobile-wrap { display: none; }"
     ".rg-peers-desktop-wrap { display: none; }"
+    ".rg-style-iframe-anchor { display: none; }"
+    # ── Mobile only: collapse both the rg-style-iframe-anchor
+    # wrapper AND the immediately-following stElementContainer
+    # (which holds the JS-injection iframe). The iframe runs the
+    # script that re-paints the searchbox red, and it stays in
+    # the DOM (display:none on the wrapper still lets the script
+    # execute) — but its visible empty ~32px row between Ticker
+    # and Peers is gone on phones. Desktop keeps the iframe row
+    # visible because the gap is hidden behind col_right content. */
+    "@media (max-width: 768px) {"
+    "  div[data-testid=\"stElementContainer\"]:has(.rg-style-iframe-anchor),"
+    "  div[data-testid=\"element-container\"]:has(.rg-style-iframe-anchor),"
+    "  div.stElementContainer:has(.rg-style-iframe-anchor),"
+    "  div.element-container:has(.rg-style-iframe-anchor),"
+    "  div[data-testid=\"stElementContainer\"]:has(.rg-style-iframe-anchor) + div[data-testid=\"stElementContainer\"],"
+    "  div[data-testid=\"element-container\"]:has(.rg-style-iframe-anchor) + div[data-testid=\"element-container\"],"
+    "  div.stElementContainer:has(.rg-style-iframe-anchor) + div.stElementContainer,"
+    "  div.element-container:has(.rg-style-iframe-anchor) + div.element-container {"
+    "    display: none !important;"
+    "  }"
+    "}"
     # ── Collapse the anchor's stElementContainer wrapper too.
     # Without this, the wrapper still renders with Streamlit's
     # default ~1rem padding and leaves a visible gap above the
@@ -927,6 +948,10 @@ with col_left:
     # page JS can reach iframe.contentDocument and inject a <style>
     # block directly. Re-runs on a timer because Streamlit re-creates
     # the iframe on each rerender.
+    # Anchor lets CSS hide this iframe's element-container on mobile
+    # so it doesn't add empty vertical space between Ticker and Peers.
+    st.markdown("<div class='rg-style-iframe-anchor'></div>",
+                unsafe_allow_html=True)
     _components_html(
         """
         <script>
