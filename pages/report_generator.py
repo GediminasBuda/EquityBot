@@ -817,6 +817,31 @@ st.markdown(
     "div.element-container:has(.rg-peer-desktop-anchor) {"
     "  display: none !important;"
     "}"
+    # ── Hide the inactive viewport's entire Peers container ─────
+    # Each Peers section is wrapped in a st.container() (which
+    # produces an inner stVerticalBlock). The container-anchor div
+    # (.rg-peers-mobile-wrap / .rg-peers-desktop-wrap) is rendered
+    # as the FIRST child element-container inside that vblock, so
+    # the :has(> child .anchor) selector matches ONLY the inner
+    # st.container's vblock — not the outer column vblock that
+    # also (deep-) contains the anchor. Hiding the entire vblock
+    # nukes label, searchbox, tag-row columns, and caption together.
+    "@media (min-width: 769px) {"
+    "  div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .rg-peers-mobile-wrap),"
+    "  div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"element-container\"] .rg-peers-mobile-wrap),"
+    "  div[data-testid=\"stVerticalBlock\"]:has(> div.stElementContainer .rg-peers-mobile-wrap),"
+    "  div[data-testid=\"stVerticalBlock\"]:has(> div.element-container .rg-peers-mobile-wrap) {"
+    "    display: none !important;"
+    "  }"
+    "}"
+    "@media (max-width: 768px) {"
+    "  div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .rg-peers-desktop-wrap),"
+    "  div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"element-container\"] .rg-peers-desktop-wrap),"
+    "  div[data-testid=\"stVerticalBlock\"]:has(> div.stElementContainer .rg-peers-desktop-wrap),"
+    "  div[data-testid=\"stVerticalBlock\"]:has(> div.element-container .rg-peers-desktop-wrap) {"
+    "    display: none !important;"
+    "  }"
+    "}"
     "@media (min-width: 769px) {"
     "  div[data-testid=\"stElementContainer\"]:has(.rg-peer-mobile-anchor),"
     "  div[data-testid=\"element-container\"]:has(.rg-peer-mobile-anchor),"
@@ -990,10 +1015,17 @@ with col_left:
     # The user wants Peer Tickers to appear right after the ticker input on
     # phones. Render a parallel input here with a distinct key, then merge
     # its value with the canonical col_right input further down.
-    st.markdown("<div class='rg-peer-mobile-anchor'></div>",
-                unsafe_allow_html=True)
-    st.markdown("#### Peers")
-    _render_peer_picker("mobile")
+    # Wrap mobile peers in a st.container so we can hide the entire
+    # block (label + searchbox + tag row + caption) on desktop with
+    # a single CSS rule. The container-anchor div lets CSS identify
+    # this specific st.container's stVerticalBlock via :has(> child).
+    with st.container():
+        st.markdown("<div class='rg-peers-mobile-wrap'></div>",
+                    unsafe_allow_html=True)
+        st.markdown("<div class='rg-peer-mobile-anchor'></div>",
+                    unsafe_allow_html=True)
+        st.markdown("#### Peers")
+        _render_peer_picker("mobile")
 
     # Persist the selected ticker (or the parsed intent / screener rows) in
     # session state so the rest of the page can read it without rerunning
@@ -1271,10 +1303,16 @@ with col_right:
     # Peer tickers — only relevant for Overview-style reports.
     # Anchor lets CSS hide the desktop copy on mobile (mobile copy lives
     # in col_left right after the ticker searchbox).
-    st.markdown("<div class='rg-peer-desktop-anchor'></div>",
-                unsafe_allow_html=True)
-    st.markdown("#### Peers")
-    _render_peer_picker("desktop")
+    # Same container wrap pattern as the mobile copy — lets CSS hide
+    # the whole desktop peers block (label + searchbox + tag row +
+    # caption) on mobile in a single rule.
+    with st.container():
+        st.markdown("<div class='rg-peers-desktop-wrap'></div>",
+                    unsafe_allow_html=True)
+        st.markdown("<div class='rg-peer-desktop-anchor'></div>",
+                    unsafe_allow_html=True)
+        st.markdown("#### Peers")
+        _render_peer_picker("desktop")
 
     # Downstream code consumes peers_input as a space-separated string
     # of tickers. Build it from the shared session_state list so both
