@@ -780,7 +780,7 @@ st.markdown(
 col_left, col_right = st.columns([1.4, 1], gap="large")
 
 with col_left:
-    st.markdown("#### Ticker  *or describe what you want in plain language*")
+    st.markdown("#### Ticker or Description")
 
     # ── Smart searchbar (autocomplete + NL prompt) ────────────────────────────
     selected = st_searchbox(
@@ -800,7 +800,7 @@ with col_left:
     # its value with the canonical col_right input further down.
     st.markdown("<div class='rg-peer-mobile-anchor'></div>",
                 unsafe_allow_html=True)
-    st.markdown("#### Peer Tickers  *(optional)*")
+    st.markdown("#### Peers")
     st.text_input(
         "Peer tickers (mobile)",
         placeholder="REL.L  TRI.TO  MSFT  (space-separated, up to 6)",
@@ -1062,45 +1062,10 @@ with col_left:
         _fw_options = [k for k in REPORT_TYPES if k != "index_overview"]
 
     st.markdown(
-        "#### Report Framework"
+        "#### Valuation Models"
         if not (_is_index_ticker and index_mode == "index_overview")
-        else "#### Framework  *(auto-selected)*"
+        else "#### Valuation Models (auto-selected)"
     )
-
-    # ── Reorder UI (collapsed by default) ─────────────────────────────────────
-    # Only shown when the user is in normal equity / screening mode (where
-    # they actually pick from the list). Hidden when index_overview locks
-    # the selection automatically.
-    if not (_is_index_ticker and index_mode == "index_overview"):
-        with st.expander("↕ Reorder framework list", expanded=False):
-            st.caption(
-                "Use the arrows to move a framework up or down. The order "
-                "is saved automatically and applies everywhere."
-            )
-            fm_reorder = FrameworkManager()
-            # Show ALL frameworks (excluding index_overview which is implicit)
-            reorder_ids = [k for k in REPORT_TYPES if k != "index_overview"]
-            for i, fid in enumerate(reorder_ids):
-                row_left, row_up, row_down = st.columns([8, 1, 1])
-                with row_left:
-                    st.markdown(
-                        f"<div style='padding-top:6px;'>"
-                        f"{REPORT_TYPES[fid]['label']}"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-                with row_up:
-                    if st.button("↑", key=f"order_up_{fid}",
-                                 disabled=(i == 0),
-                                 use_container_width=True):
-                        fm_reorder.move(fid, -1)
-                        st.rerun()
-                with row_down:
-                    if st.button("↓", key=f"order_down_{fid}",
-                                 disabled=(i == len(reorder_ids) - 1),
-                                 use_container_width=True):
-                        fm_reorder.move(fid, +1)
-                        st.rerun()
 
     report_type = st.radio(
         "Report type",
@@ -1112,8 +1077,8 @@ with col_left:
         disabled=(_is_index_ticker and index_mode == "index_overview"),
     )
     rt = REPORT_TYPES[report_type]
-    builtin_badge = "" if rt.get("is_builtin", True) else "  ·  *Custom*"
-    st.caption(f"*{rt['desc']}*  ·  {rt['pages']}{builtin_badge}")
+    builtin_badge = "" if rt.get("is_builtin", True) else "  ·  Custom"
+    st.caption(f"{rt['desc']}  ·  {rt['pages']}{builtin_badge}")
 
 with col_right:
     # Peer tickers — only relevant for Overview
@@ -1121,7 +1086,7 @@ with col_right:
     # lives in col_left right after the ticker searchbox).
     st.markdown("<div class='rg-peer-desktop-anchor'></div>",
                 unsafe_allow_html=True)
-    st.markdown("#### Peer Tickers  *(optional)*")
+    st.markdown("#### Peers")
     peers_input = st.text_input(
         "Peer tickers",
         placeholder="REL.L  TRI.TO  MSFT  (space-separated, up to 6)",

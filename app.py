@@ -325,21 +325,56 @@ st.markdown(
         color: #000000 !important;
       }
 
-      /* Inputs & selects: dark + amber */
-      input, textarea, select {
+      /* ── Inputs & selects (Bloomberg clean black + amber) ──────────
+         Override every Streamlit/BaseWeb input state so no red error
+         or invalid styling can leak through. Black background, amber
+         text, muted-amber border on idle, full-amber on focus. */
+      input, textarea, select,
+      [data-baseweb="input"] input,
+      [data-baseweb="select"] input,
+      [data-baseweb="search"] input,
+      [data-baseweb="textarea"] textarea {
         background-color: #000000 !important;
         color: #FFA028 !important;
         font-family: monospace !important;
+        caret-color: #FFA028 !important;
+      }
+      input::placeholder, textarea::placeholder {
+        color: #5a4a25 !important;
+        font-family: monospace !important;
+        opacity: 1;
       }
       [data-baseweb="input"] > div,
-      [data-baseweb="select"] > div {
-        background-color: #050505 !important;
+      [data-baseweb="select"] > div,
+      [data-baseweb="search"] > div,
+      [data-baseweb="textarea"] > div {
+        background-color: #000000 !important;
         border-color: #4a3818 !important;
       }
       [data-baseweb="input"] > div:focus-within,
-      [data-baseweb="select"] > div:focus-within {
+      [data-baseweb="select"] > div:focus-within,
+      [data-baseweb="search"] > div:focus-within,
+      [data-baseweb="textarea"] > div:focus-within {
         border-color: #FFA028 !important;
         box-shadow: 0 0 0 1px #FFA028 !important;
+      }
+      /* Kill any red/error styling Streamlit / BaseWeb might inject */
+      [data-baseweb="input"][aria-invalid="true"] > div,
+      [data-baseweb="select"][aria-invalid="true"] > div,
+      [data-baseweb="input"] [data-error="true"],
+      [data-baseweb="select"] [data-error="true"] {
+        border-color: #4a3818 !important;
+        background-color: #000000 !important;
+        color: #FFA028 !important;
+        box-shadow: none !important;
+      }
+      /* Streamlit searchbox custom component — same rules */
+      [data-testid="stSearchbox"] input,
+      [data-testid="stSearchbox"] > div > div {
+        background-color: #000000 !important;
+        color: #FFA028 !important;
+        border-color: #4a3818 !important;
+        font-family: monospace !important;
       }
 
       /* Metrics */
@@ -363,6 +398,17 @@ st.markdown(
       [data-testid="stCaptionContainer"], small, .stCaption {
         color: #8a6a30 !important;
         font-family: monospace !important;
+      }
+
+      /* No italic anywhere in the v2 UI — Bloomberg terminals don't
+         italicise. Forces every markdown <em>/<i> and CSS italic
+         declaration to render upright. */
+      em, i, .stMarkdown em, .stMarkdown i,
+      [data-testid="stMarkdownContainer"] em,
+      [data-testid="stMarkdownContainer"] i,
+      [data-testid="stCaptionContainer"] em,
+      [data-testid="stCaptionContainer"] i {
+        font-style: normal !important;
       }
 
       /* Radio / checkbox labels */

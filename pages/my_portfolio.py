@@ -687,7 +687,7 @@ st.markdown(
         max-width: 100%;
       }
       .pf-metric-value.bold { font-weight: 700; }
-      .pf-metric-value.muted { color: #5a4a25; font-style: italic; }
+      .pf-metric-value.muted { color: #5a4a25; }
 
       /* ── Tablet / Mobile (≤768px): card layout matches the user's
          mockup: name + trash on top row, Earnings full-width, then a
