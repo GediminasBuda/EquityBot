@@ -801,6 +801,8 @@ st.markdown(
     # listed for compatibility.
     ".rg-peer-mobile-anchor { display: none; }"
     ".rg-peer-desktop-anchor { display: none; }"
+    ".rg-peers-mobile-wrap { display: none; }"
+    ".rg-peers-desktop-wrap { display: none; }"
     # ── Collapse the anchor's stElementContainer wrapper too.
     # Without this, the wrapper still renders with Streamlit's
     # default ~1rem padding and leaves a visible gap above the
@@ -809,12 +811,20 @@ st.markdown(
     # display:none keeps the element in the DOM. */
     "div[data-testid=\"stElementContainer\"]:has(.rg-peer-mobile-anchor),"
     "div[data-testid=\"stElementContainer\"]:has(.rg-peer-desktop-anchor),"
+    "div[data-testid=\"stElementContainer\"]:has(.rg-peers-mobile-wrap),"
+    "div[data-testid=\"stElementContainer\"]:has(.rg-peers-desktop-wrap),"
     "div[data-testid=\"element-container\"]:has(.rg-peer-mobile-anchor),"
     "div[data-testid=\"element-container\"]:has(.rg-peer-desktop-anchor),"
+    "div[data-testid=\"element-container\"]:has(.rg-peers-mobile-wrap),"
+    "div[data-testid=\"element-container\"]:has(.rg-peers-desktop-wrap),"
     "div.stElementContainer:has(.rg-peer-mobile-anchor),"
     "div.stElementContainer:has(.rg-peer-desktop-anchor),"
+    "div.stElementContainer:has(.rg-peers-mobile-wrap),"
+    "div.stElementContainer:has(.rg-peers-desktop-wrap),"
     "div.element-container:has(.rg-peer-mobile-anchor),"
-    "div.element-container:has(.rg-peer-desktop-anchor) {"
+    "div.element-container:has(.rg-peer-desktop-anchor),"
+    "div.element-container:has(.rg-peers-mobile-wrap),"
+    "div.element-container:has(.rg-peers-desktop-wrap) {"
     "  display: none !important;"
     "}"
     # ── Hide the inactive viewport's entire Peers container ─────
