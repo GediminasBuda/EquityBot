@@ -1998,6 +1998,56 @@ if generate_clicked and ticker_input:
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_eodhd_full_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
                 EODHDFullGenerator().render(bundle, pdf_path)
+
+                # The preview metric bar (Price/MCap/P/E/ROE/EBIT Margin)
+                # reads from `company`, but DataManager occasionally leaves
+                # current_price / roe / ebit_margin / currency unset (e.g.
+                # yfinance blocked on Streamlit Cloud, EODHD Highlights
+                # margins not back-filled into the dataclass). The bundle
+                # we just fetched has all of these — back-fill the missing
+                # scalars so the preview shows real numbers instead of
+                # "n/a".
+                def _to_float(v):
+                    try:
+                        if v is None or v == "" or v == "NA":
+                            return None
+                        return float(v)
+                    except (ValueError, TypeError):
+                        return None
+
+                _fund = (bundle.get("fundamentals") or {}) if bundle else {}
+                _general    = _fund.get("General")    or {}
+                _highlights = _fund.get("Highlights") or {}
+                _realtime   = (bundle.get("realtime") or {}) if bundle else {}
+
+                if not company.current_price:
+                    company.current_price = (
+                        _to_float(_realtime.get("close"))
+                        or _to_float(_realtime.get("previousClose"))
+                    )
+                if not company.currency_price:
+                    company.currency_price = (
+                        _general.get("CurrencyCode")
+                        or _general.get("CurrencySymbol")
+                        or _realtime.get("currency")
+                        or company.currency
+                        or ""
+                    )
+                if not company.market_cap:
+                    _mc_mln = _to_float(_highlights.get("MarketCapitalizationMln"))
+                    company.market_cap = (
+                        _mc_mln * 1e6 if _mc_mln is not None
+                        else _to_float(_highlights.get("MarketCapitalization"))
+                    )
+                if not company.pe_ratio:
+                    company.pe_ratio = _to_float(_highlights.get("PERatio"))
+                if not company.roe:
+                    company.roe = _to_float(_highlights.get("ReturnOnEquityTTM"))
+                if not company.ebit_margin:
+                    company.ebit_margin = _to_float(
+                        _highlights.get("OperatingMarginTTM")
+                    )
+
                 analysis = {}
                 extra = {}
 
