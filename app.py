@@ -325,6 +325,16 @@ st.markdown(
         color: #000000 !important;
       }
 
+      /* ── Kill Streamlit's per-corner border-radius utilities ──────
+         Streamlit ships .st-au/-av/-aw/-ax helpers that set each
+         corner of an element to 0.5rem; that rounding is what was
+         softening the input rims. Zero them out so the red rim
+         renders as sharp 90° corners. */
+      .st-au { border-top-left-radius:     0 !important; }
+      .st-av { border-top-right-radius:    0 !important; }
+      .st-aw { border-bottom-right-radius: 0 !important; }
+      .st-ax { border-bottom-left-radius:  0 !important; }
+
       /* ── Inputs (red border + red typed text) ──────────────────────
          Aggressive override so every Streamlit / BaseWeb input layer
          renders with a red 1px border and red typed text. Uses the
