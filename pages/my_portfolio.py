@@ -381,9 +381,10 @@ def _recommendation(snap: dict) -> tuple[str, str]:
     if used == 0:
         return "—", "#888888"
     avg = score / used
-    if avg >= 1.0:  return "BUY",  "#1A7E3D"
-    if avg <= -0.5: return "SELL", "#B83227"
-    return "HOLD", "#C49102"
+    # Bloomberg palette: bullish blue, bearish red, neutral amber.
+    if avg >= 1.0:  return "BUY",  "#4D9FFF"
+    if avg <= -0.5: return "SELL", "#FF3030"
+    return "HOLD", "#FFA028"
 
 
 # ── Formatters ────────────────────────────────────────────────────────────────
@@ -417,14 +418,14 @@ def _fmt_pct(v) -> str:
 
 
 def _fmt_signed_pct(v) -> tuple[str, str]:
-    """Return (text, color) — green/red based on sign."""
+    """Return (text, color) — blue (bullish) / red (bearish) Bloomberg style."""
     if v is None:
-        return "—", "#888888"
+        return "—", "#8a6a30"
     try:
         pct = float(v) * 100
     except Exception:
-        return "—", "#888888"
-    color = "#1A7E3D" if pct >= 0 else "#B83227"
+        return "—", "#8a6a30"
+    color = "#4D9FFF" if pct >= 0 else "#FF3030"
     return f"{pct:+.2f}%", color
 
 
@@ -517,8 +518,9 @@ st.markdown(
     ".eq-page-title {"
     "  position: relative;"
     "  z-index: 1000001;"
-    "  background: #FFFFFF;"
+    "  background: #000000;"
     "  padding: 4px 0 6px 0;"
+    "  border-bottom: 1px solid #2a1f10;"
     "}"
     # Centre the title on mobile so it doesn't sit hard-left under
     # the burger / sidebar icon.
@@ -536,7 +538,8 @@ st.markdown(
     "<div class='eq-page-title' "
     "style='display:flex;align-items:center;gap:8px;margin:0;'>"
     "<span style='font-size:20px;'>📁</span>"
-    "<span style='font-size:16px;font-weight:600;color:#1B3F6E;'>"
+    "<span style='font-size:16px;font-weight:700;color:#FFA028;"
+    "font-family:monospace;letter-spacing:1px;text-transform:uppercase;'>"
     "My Portfolio</span></div>",
     unsafe_allow_html=True,
 )
@@ -605,17 +608,17 @@ with top_r:
 st.markdown(
     """
     <style>
-      /* ── Card container ──────────────────────────────────────────── */
+      /* ── Card container (Bloomberg terminal) ─────────────────────── */
       .pf-card {
-        background: #FFFFFF;
-        border: 1px solid #E5EAF0;
-        border-radius: 10px;
+        background: #000000;
+        border: 1px solid #2a1f10;
+        border-radius: 2px;
         padding: 12px 14px;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
       .pf-card:hover {
-        border-color: #C0CDD8;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+        border-color: #FFA028;
+        box-shadow: 0 0 6px rgba(255, 160, 40, 0.20);
       }
 
       /* ── Summary grid: name + 7 metrics ──────────────────────────── */
@@ -636,7 +639,10 @@ st.markdown(
       }
       .pf-name {
         font-weight: 700;
-        color: #1B3F6E;
+        color: #FFA028;
+        font-family: monospace;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
         font-size: 14px;
         line-height: 1.2;
         white-space: nowrap;
@@ -645,7 +651,8 @@ st.markdown(
       }
       .pf-sub {
         font-size: 11px;
-        color: #8A92A0;
+        color: #8a6a30;
+        font-family: monospace;
         line-height: 1.2;
         white-space: nowrap;
         overflow: hidden;
@@ -662,14 +669,16 @@ st.markdown(
       }
       .pf-metric-label {
         font-size: 10px;
-        color: #8A92A0;
+        color: #8a6a30;
+        font-family: monospace;
         text-transform: uppercase;
         letter-spacing: 0.4px;
         line-height: 1.1;
       }
       .pf-metric-value {
         font-size: 13px;
-        color: #222;
+        color: #FFA028;
+        font-family: monospace;
         font-weight: 500;
         line-height: 1.2;
         white-space: nowrap;
@@ -678,7 +687,7 @@ st.markdown(
         max-width: 100%;
       }
       .pf-metric-value.bold { font-weight: 700; }
-      .pf-metric-value.muted { color: #8A92A0; font-style: italic; }
+      .pf-metric-value.muted { color: #5a4a25; font-style: italic; }
 
       /* ── Tablet / Mobile (≤768px): card layout matches the user's
          mockup: name + trash on top row, Earnings full-width, then a
@@ -692,7 +701,7 @@ st.markdown(
         /* Name + sub-line centred on mobile. */
         .pf-name-cell {
           grid-column: 1 / -1;
-          border-bottom: 1px solid #EDF1F5;
+          border-bottom: 1px solid #2a1f10;
           padding-bottom: 6px;
           align-items: center;
           text-align: center;
@@ -722,7 +731,7 @@ st.markdown(
           grid-column: 1 / -1;
           justify-content: center !important;
           text-align: center;
-          border-bottom: 1px solid #EDF1F5;
+          border-bottom: 1px solid #2a1f10;
           padding-bottom: 6px;
         }
         .pf-m-earnings .pf-metric-value { text-align: center; }
@@ -772,8 +781,8 @@ st.markdown(
       div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
         + div[data-testid="stElementContainer"]
         div[data-testid="stButton"] > button {
-        color: #B83227 !important;
-        border-color: #E8C0BC !important;
+        color: #FF3030 !important;
+        border-color: #5a1010 !important;
       }
       div[data-testid="element-container"]:has(.pf-remove-anchor)
         + div[data-testid="element-container"]
@@ -781,9 +790,9 @@ st.markdown(
       div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
         + div[data-testid="stElementContainer"]
         div[data-testid="stButton"] > button:hover {
-        background: #FBE5E2 !important;
-        border-color: #B83227 !important;
-        color: #B83227 !important;
+        background: #200505 !important;
+        border-color: #FF3030 !important;
+        color: #FF3030 !important;
       }
 
       /* ── Desktop-only: Remove button spans full width, slimmer
@@ -866,10 +875,11 @@ st.markdown(
         justify-content: space-between;
         margin: 4px 0 8px 0;
       }
-      .pf-strip-meta { color: #888; font-size: 13px; min-width: 0; }
-      .pf-strip-rec  { font-size: 14px; font-weight: 600; white-space: nowrap; }
-      .pf-strip-rec .lbl { color: #888; font-size: 12px; font-weight: 400;
-                           margin-right: 4px; }
+      .pf-strip-meta { color: #8a6a30; font-family: monospace; font-size: 13px; min-width: 0; }
+      .pf-strip-rec  { font-size: 14px; font-weight: 700; white-space: nowrap;
+                       font-family: monospace; }
+      .pf-strip-rec .lbl { color: #8a6a30; font-size: 12px; font-weight: 400;
+                           margin-right: 4px; text-transform: uppercase; }
 
       .pf-banner {
         display: flex;
@@ -879,25 +889,31 @@ st.markdown(
         gap: 4px 12px;
         margin: 8px 0 4px 0;
         padding: 8px 12px;
-        background: #F4F8FC;
-        border-radius: 6px;
+        background: #0a0a0a;
+        border: 1px solid #2a1f10;
+        border-radius: 2px;
       }
       .pf-banner-l { display: flex; flex-wrap: wrap; align-items: baseline;
                      gap: 4px 10px; min-width: 0; }
-      .pf-banner-period { color: #666; font-size: 13px; }
-      .pf-banner-pct    { font-weight: 700; font-size: 22px; line-height: 1.1; }
-      .pf-banner-abs    { font-weight: 600; font-size: 15px; }
-      .pf-banner-r      { color: #888; font-size: 12px; white-space: nowrap; }
+      .pf-banner-period { color: #8a6a30; font-family: monospace; font-size: 13px;
+                          text-transform: uppercase; }
+      .pf-banner-pct    { font-weight: 700; font-size: 22px; line-height: 1.1;
+                          font-family: monospace; }
+      .pf-banner-abs    { font-weight: 600; font-size: 15px; font-family: monospace; }
+      .pf-banner-r      { color: #8a6a30; font-family: monospace; font-size: 12px;
+                          white-space: nowrap; }
 
       .pf-lowhigh {
         display: flex;
         flex-wrap: wrap;
         gap: 4px 24px;
-        color: #666;
+        color: #8a6a30;
+        font-family: monospace;
         font-size: 13px;
         margin-top: 4px;
+        text-transform: uppercase;
       }
-      .pf-lowhigh b { color: #333; }
+      .pf-lowhigh b { color: #FFA028; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1054,8 +1070,8 @@ else:
                         y_min = low_p - pad
                         y_max = high_p + pad
 
-                        # Line + heading colour: green if up, red if down
-                        line_color = "#1A7E3D" if chg_pct >= 0 else "#B83227"
+                        # Line + heading colour: Bloomberg bullish blue / bearish red
+                        line_color = "#4D9FFF" if chg_pct >= 0 else "#FF3030"
                         arrow      = "▲" if chg_pct >= 0 else "▼"
 
                         # ── Prominent period-change banner above the chart ──
@@ -1141,33 +1157,39 @@ else:
                                 sent_badge = ""
                             elif polarity >= 0.15:
                                 sent_badge = (
-                                    f" <span style='background:#E0F2E5;color:#1A7E3D;"
-                                    f"padding:1px 6px;border-radius:8px;font-size:11px;"
-                                    f"font-weight:600;'>+ {polarity:.2f}</span>"
+                                    f" <span style='background:#0a1f30;color:#4D9FFF;"
+                                    f"padding:1px 6px;border:1px solid #1f4a70;"
+                                    f"border-radius:2px;font-family:monospace;"
+                                    f"font-size:11px;font-weight:700;'>+ {polarity:.2f}</span>"
                                 )
                             elif polarity <= -0.15:
                                 sent_badge = (
-                                    f" <span style='background:#FBE5E2;color:#B83227;"
-                                    f"padding:1px 6px;border-radius:8px;font-size:11px;"
-                                    f"font-weight:600;'>− {polarity:.2f}</span>"
+                                    f" <span style='background:#200505;color:#FF3030;"
+                                    f"padding:1px 6px;border:1px solid #5a1010;"
+                                    f"border-radius:2px;font-family:monospace;"
+                                    f"font-size:11px;font-weight:700;'>− {polarity:.2f}</span>"
                                 )
                             else:
                                 sent_badge = (
-                                    f" <span style='background:#F0F0F0;color:#666;"
-                                    f"padding:1px 6px;border-radius:8px;font-size:11px;'>"
-                                    f"~ {polarity:.2f}</span>"
+                                    f" <span style='background:#0a0a0a;color:#8a6a30;"
+                                    f"padding:1px 6px;border:1px solid #2a1f10;"
+                                    f"border-radius:2px;font-family:monospace;"
+                                    f"font-size:11px;'>~ {polarity:.2f}</span>"
                                 )
 
                             title_html = (
                                 f"<a href='{link}' target='_blank' "
-                                f"style='color:#1B3F6E;font-weight:600;text-decoration:none;'>"
+                                f"style='color:#FFA028;font-weight:700;"
+                                f"font-family:monospace;text-decoration:none;'>"
                                 f"{title}</a>"
                                 if link else
-                                f"<span style='color:#1B3F6E;font-weight:600;'>{title}</span>"
+                                f"<span style='color:#FFA028;font-weight:700;"
+                                f"font-family:monospace;'>{title}</span>"
                             )
                             st.markdown(
                                 f"<div style='margin-bottom:4px;'>"
-                                f"<span style='color:#888;font-size:12px;'>{date_short}</span>"
+                                f"<span style='color:#8a6a30;font-family:monospace;"
+                                f"font-size:12px;'>{date_short}</span>"
                                 f"{sent_badge}<br>{title_html}"
                                 f"</div>",
                                 unsafe_allow_html=True,
@@ -1177,8 +1199,9 @@ else:
                                 if len(snippet) > 300:
                                     snippet = snippet[:300].rstrip() + "…"
                                 st.markdown(
-                                    f"<div style='color:#444;font-size:13px;"
-                                    f"margin-bottom:12px;line-height:1.4;'>{snippet}</div>",
+                                    f"<div style='color:#a87f30;font-family:monospace;"
+                                    f"font-size:13px;margin-bottom:12px;line-height:1.4;'>"
+                                    f"{snippet}</div>",
                                     unsafe_allow_html=True,
                                 )
                             else:
@@ -1210,12 +1233,13 @@ st.markdown("&nbsp;", unsafe_allow_html=True)
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(
     "<div style='margin-top:24px;padding-top:8px;"
-    "border-top:1px solid #E0E5EC;color:#888;font-size:12px;"
-    "line-height:1.5;text-align:center;'>"
-    "Personal watchlist powered by <b>EODHD only</b>. Add any ticker — "
-    "stocks (AAPL, RHM.DE), indices (^GSPC, ^DJI), ETFs (SPY) or forex "
-    "(EURUSD=X). Cards are collapsed by default — click ▾ to expand."
-    "<br><span style='font-size:11px;color:#999;'>"
+    "border-top:1px solid #2a1f10;color:#8a6a30;font-family:monospace;"
+    "font-size:12px;line-height:1.5;text-align:center;'>"
+    "Personal watchlist powered by <b style='color:#FFA028;'>EODHD only</b>. "
+    "Add any ticker — stocks (AAPL, RHM.DE), indices (^GSPC, ^DJI), "
+    "ETFs (SPY) or forex (EURUSD=X). Cards are collapsed by default — "
+    "click ▾ to expand."
+    "<br><span style='font-size:11px;color:#5a4a25;'>"
     "Snapshot cached 15 min · History 30 min · News 30 min · "
     "Earnings dates 6 h · Recommendation is a rule-based heuristic on "
     "P/E + ROE + EBIT margin — not investment advice."

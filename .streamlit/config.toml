@@ -1,9 +1,14 @@
 [theme]
-primaryColor        = "#2E75B6"
-backgroundColor     = "#FFFFFF"
-secondaryBackgroundColor = "#EEF5FB"
-textColor           = "#222222"
-font                = "sans serif"
+# ── Bloomberg-terminal palette ──────────────────────────────────────────────
+# Pure black background, amber/orange default text, monospace font.
+# Bullish (positive deltas) use bright blue, bearish use red — those are
+# applied per-element in page CSS, not at the theme level.
+base                     = "dark"
+primaryColor             = "#FFA028"   # amber accents (buttons, sliders, links)
+backgroundColor          = "#000000"   # true black main background
+secondaryBackgroundColor = "#0E0E0E"   # sidebar, cards, expander headers
+textColor                = "#FFA028"   # default amber text
+font                     = "monospace"
 
 [server]
 maxUploadSize       = 10

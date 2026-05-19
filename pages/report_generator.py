@@ -37,35 +37,41 @@ st.markdown("""
 /* Tighten top padding */
 .block-container { padding-top: 1.5rem; }
 
-/* Report type cards */
+/* Report type cards (Bloomberg terminal — black / amber) */
 .report-card {
-    border: 1px solid #BBCCDD;
-    border-radius: 8px;
+    border: 1px solid #2a1f10;
+    border-radius: 2px;
     padding: 14px 16px;
-    background: #EEF5FB;
+    background: #0a0a0a;
     margin-bottom: 6px;
     cursor: pointer;
+    font-family: monospace;
 }
-.report-card h4 { color: #1B3F6E; margin: 0 0 4px 0; font-size: 14px; }
-.report-card p  { color: #555555; margin: 0; font-size: 12px; line-height: 1.4; }
+.report-card h4 {
+    color: #FFA028; margin: 0 0 4px 0; font-size: 14px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+.report-card p  { color: #a87f30; margin: 0; font-size: 12px; line-height: 1.4; }
 
 /* Metric chips */
 .metric-chip {
     display: inline-block;
-    background: #D6E8F7;
-    color: #1B3F6E;
-    border-radius: 4px;
+    background: #0a0a0a;
+    color: #FFA028;
+    border: 1px solid #4a3818;
+    border-radius: 2px;
     padding: 2px 8px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
+    font-family: monospace;
     margin: 2px;
 }
-.rec-buy  { background: #D4EDDA; color: #1A7E3D; }
-.rec-hold { background: #FDEBD0; color: #D68910; }
-.rec-sell { background: #FADBD8; color: #C0392B; }
+.rec-buy  { background: #0a1f30; color: #4D9FFF; border-color: #1f4a70; }
+.rec-hold { background: #1a1208; color: #FFA028; border-color: #4a3818; }
+.rec-sell { background: #200505; color: #FF3030; border-color: #5a1010; }
 
 /* Divider */
-hr { margin: 12px 0; border-color: #BBCCDD; }
+hr { margin: 12px 0; border-color: #2a1f10; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -214,11 +220,12 @@ def _cost_block(
     )
 
     st.markdown(
-        f"<div style='background:#F8FAFC;border:1px solid #D0DFF0;border-radius:6px;"
-        f"padding:8px 14px;margin:6px 0;font-size:12px;color:#334155;line-height:1.8;'>"
-        f"💰 <b>LLM cost this report</b><br>"
+        f"<div style='background:#0a0a0a;border:1px solid #2a1f10;border-radius:2px;"
+        f"padding:8px 14px;margin:6px 0;font-size:12px;color:#a87f30;"
+        f"font-family:monospace;line-height:1.8;'>"
+        f"💰 <b style='color:#FFA028;'>LLM cost this report</b><br>"
         f"{rows_html}"
-        + (f"<br><span style='color:#1B3F6E'>{total_html}</span>" if total_html else "")
+        + (f"<br><span style='color:#FFA028;font-weight:700;'>{total_html}</span>" if total_html else "")
         + "</div>",
         unsafe_allow_html=True,
     )
@@ -594,18 +601,18 @@ with st.sidebar:
     with st.expander("📡 Data Sources & Waterfall", expanded=True):
         st.markdown("""
 <style>
-.wf-tier   { font-size:11px; font-weight:700; color:#888; letter-spacing:.06em;
-             text-transform:uppercase; margin:10px 0 2px 0; }
+.wf-tier   { font-size:11px; font-weight:700; color:#8a6a30; letter-spacing:.06em;
+             text-transform:uppercase; margin:10px 0 2px 0; font-family:monospace; }
 .wf-row    { display:flex; align-items:flex-start; gap:7px; margin:3px 0; }
 .wf-badge  { flex-shrink:0; font-size:10px; font-weight:700; padding:1px 6px;
-             border-radius:3px; margin-top:1px; }
-.wf-paid   { background:#1B3F6E; color:#fff; }
-.wf-free   { background:#D6E8F7; color:#1B3F6E; }
-.wf-ctx    { background:#EEF5FB; color:#555; }
-.wf-body   { font-size:12px; line-height:1.4; color:#333; }
-.wf-body b { color:#111; }
-.wf-arrow  { color:#BBCCDD; font-size:13px; margin:1px 0 1px 10px; }
-.wf-miss   { font-size:11px; color:#888; margin:4px 0 0 0; }
+             border-radius:2px; margin-top:1px; font-family:monospace; }
+.wf-paid   { background:#FFA028; color:#000000; }
+.wf-free   { background:#000000; color:#FFA028; border:1px solid #4a3818; }
+.wf-ctx    { background:#0a0a0a; color:#8a6a30; border:1px solid #2a1f10; }
+.wf-body   { font-size:12px; line-height:1.4; color:#FFA028; font-family:monospace; }
+.wf-body b { color:#FFD89C; }
+.wf-arrow  { color:#4a3818; font-size:13px; margin:1px 0 1px 10px; }
+.wf-miss   { font-size:11px; color:#8a6a30; margin:4px 0 0 0; font-family:monospace; }
 </style>
 
 <div class="wf-tier">① Always — market skeleton</div>
@@ -690,8 +697,9 @@ st.markdown(
     ".eq-page-title {"
     "  position: relative;"
     "  z-index: 1000001;"
-    "  background: #FFFFFF;"
+    "  background: #000000;"
     "  padding: 4px 0 6px 0;"
+    "  border-bottom: 1px solid #2a1f10;"
     "}"
     # Centre the title on mobile so it doesn't sit hard-left under
     # the burger / sidebar icon.
@@ -762,7 +770,8 @@ st.markdown(
     "<div class='eq-page-title' "
     "style='display:flex;align-items:center;gap:8px;margin:0;'>"
     "<span style='font-size:20px;'>📊</span>"
-    "<span style='font-size:16px;font-weight:600;color:#1B3F6E;'>"
+    "<span style='font-size:16px;font-weight:700;color:#FFA028;"
+    "font-family:monospace;letter-spacing:1px;text-transform:uppercase;'>"
     "Report Generator</span></div>",
     unsafe_allow_html=True,
 )
@@ -2268,8 +2277,8 @@ if st.session_state.report_result:
         if adv is not None:
             agree_icon = "✓" if adv.recs_agree else "⚠"
             st.markdown(
-                f"<span style='background:#1B3F6E;color:white;padding:2px 8px;"
-                f"border-radius:4px;font-size:12px;font-weight:600;'>⚔ Adversarial</span>  "
+                f"<span style='background:#FFA028;color:#000000;padding:2px 8px;"
+                f"border-radius:2px;font-size:12px;font-weight:700;font-family:monospace;'>⚔ Adversarial</span>  "
                 f"Claude: **{adv.primary_rec}**  ·  GPT-4o: **{adv.secondary_rec}**  ·  "
                 f"{agree_icon} {'Agree' if adv.recs_agree else 'Contested'}  ·  "
                 f"Consensus: {len(adv.consensus_fields)} fields  ·  "

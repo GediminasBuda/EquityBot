@@ -162,35 +162,41 @@ def _show_login() -> None:
         max-width: 380px;
         margin: 80px auto 0 auto;
         padding: 36px 40px 32px;
-        background: #fff;
-        border: 1px solid #D0DFF0;
-        border-radius: 12px;
-        box-shadow: 0 4px 24px rgba(27,63,110,0.10);
+        background: #000000;
+        border: 1px solid #FFA028;
+        border-radius: 4px;
+        box-shadow: 0 0 24px rgba(255,160,40,0.18);
     }
     .login-logo {
         text-align: center;
         font-size: 42px;
         margin-bottom: 4px;
+        color: #FFA028;
     }
     .login-title {
         text-align: center;
-        color: #1B3F6E;
-        font-size: 20px;
+        color: #FFA028;
+        font-family: monospace;
+        font-size: 18px;
         font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
         margin-bottom: 2px;
     }
     .login-sub {
         text-align: center;
-        color: #888;
-        font-size: 13px;
+        color: #C97A1E;
+        font-family: monospace;
+        font-size: 11px;
+        letter-spacing: 0.5px;
         margin-bottom: 24px;
     }
     </style>
 
     <div class="login-wrap">
       <div class="login-logo">📊</div>
-      <div class="login-title">Your Humble EquityBot</div>
-      <div class="login-sub">Private research tool — please sign in</div>
+      <div class="login-title">EquityBot Terminal</div>
+      <div class="login-sub">Private research tool · sign in</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -245,13 +251,10 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+      /* ── Existing layout overrides (unchanged) ─────────────────── */
       .st-emotion-cache-zy6yx3 { padding: 3rem 1rem 4rem; }
       .st-emotion-cache-1yu3o6t { padding: 0.95rem 0.75rem; }
 
-      /* On mobile the sidebar drawer must overlay every other layer
-         (toolbar, page-title sticky banner, modal-style elements).
-         Streamlit's own toolbar uses z-index ~999999, so push the
-         sidebar far above it. */
       @media (max-width: 768px) {
         .stSidebar { z-index: 999999999999 !important; }
         .st-emotion-cache-1yu3o6t { padding: 0rem 0.75rem; }
@@ -264,6 +267,123 @@ st.markdown(
           height: 65px;
         }
       }
+
+      /* ── Bloomberg-terminal global tone ───────────────────────────
+         Streamlit's theme handles black bg + amber text by default,
+         but a few elements need explicit overrides to read as a
+         terminal: buttons, inputs, dividers, metrics, captions. */
+      body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"],
+      [data-testid="stSidebar"], [data-testid="stHeader"] {
+        background-color: #000000 !important;
+        color: #FFA028 !important;
+        font-family: monospace !important;
+      }
+      [data-testid="stSidebar"] {
+        background-color: #050505 !important;
+        border-right: 1px solid #1a1208;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        color: #FFA028 !important;
+        font-family: monospace !important;
+        letter-spacing: 0.5px;
+      }
+      a, a:visited { color: #FFA028 !important; }
+      a:hover { color: #FFD89C !important; }
+
+      hr, .stDivider, [data-testid="stDivider"] {
+        border-color: #2a1f10 !important;
+        background-color: #2a1f10 !important;
+      }
+
+      /* Buttons: bordered amber on idle, filled amber on primary */
+      div[data-testid="stButton"] > button,
+      div[data-testid="stDownloadButton"] > button,
+      div[data-testid="stFormSubmitButton"] > button {
+        background: #000000 !important;
+        color: #FFA028 !important;
+        border: 1px solid #FFA028 !important;
+        border-radius: 2px !important;
+        font-family: monospace !important;
+        letter-spacing: 0.3px !important;
+        text-transform: uppercase;
+      }
+      div[data-testid="stButton"] > button:hover,
+      div[data-testid="stDownloadButton"] > button:hover,
+      div[data-testid="stFormSubmitButton"] > button:hover {
+        background: #1a1208 !important;
+        border-color: #FFD89C !important;
+        color: #FFD89C !important;
+      }
+      div[data-testid="stButton"] > button[kind="primary"],
+      div[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+        background: #FFA028 !important;
+        color: #000000 !important;
+      }
+      div[data-testid="stButton"] > button[kind="primary"]:hover,
+      div[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover {
+        background: #FFD89C !important;
+        color: #000000 !important;
+      }
+
+      /* Inputs & selects: dark + amber */
+      input, textarea, select {
+        background-color: #000000 !important;
+        color: #FFA028 !important;
+        font-family: monospace !important;
+      }
+      [data-baseweb="input"] > div,
+      [data-baseweb="select"] > div {
+        background-color: #050505 !important;
+        border-color: #4a3818 !important;
+      }
+      [data-baseweb="input"] > div:focus-within,
+      [data-baseweb="select"] > div:focus-within {
+        border-color: #FFA028 !important;
+        box-shadow: 0 0 0 1px #FFA028 !important;
+      }
+
+      /* Metrics */
+      [data-testid="stMetricValue"] {
+        color: #FFA028 !important;
+        font-family: monospace !important;
+      }
+      [data-testid="stMetricLabel"] {
+        color: #8a6a30 !important;
+        font-family: monospace !important;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      [data-testid="stMetricDelta"] svg { display: none; }
+      [data-testid="stMetricDelta"] {
+        color: #4D9FFF !important;
+        font-family: monospace !important;
+      }
+
+      /* Captions / small text */
+      [data-testid="stCaptionContainer"], small, .stCaption {
+        color: #8a6a30 !important;
+        font-family: monospace !important;
+      }
+
+      /* Radio / checkbox labels */
+      [data-testid="stRadio"] label, [data-testid="stCheckbox"] label,
+      [data-baseweb="radio"] div { color: #FFA028 !important; }
+
+      /* Expander headers */
+      [data-testid="stExpander"] summary { color: #FFA028 !important; }
+
+      /* Code blocks */
+      code, pre {
+        background: #0a0a0a !important;
+        color: #FFA028 !important;
+        border: 1px solid #2a1f10;
+      }
+
+      /* Tables */
+      table { color: #FFA028 !important; font-family: monospace !important; }
+      th { background: #0e0e0e !important; color: #FFA028 !important;
+           border-bottom: 1px solid #4a3818 !important; }
+      td { border-bottom: 1px solid #1a1208 !important; }
     </style>
     """,
     unsafe_allow_html=True,
