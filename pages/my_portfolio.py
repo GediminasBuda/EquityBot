@@ -19,6 +19,7 @@ fundamentals fall back to real-time + EOD only.
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -28,7 +29,6 @@ import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
-from streamlit.components.v1 import html as _components_html
 from streamlit_searchbox import st_searchbox
 
 from config import EODHD_API_KEY, REQUEST_HEADERS
@@ -752,7 +752,7 @@ selected_ticker = st_searchbox(
 # default padding so it doesn't add an empty gap below the searchbox.
 st.markdown("<div class='pf-style-iframe-anchor'></div>",
             unsafe_allow_html=True)
-_components_html(
+st.iframe(
     """
     <script>
     (function () {

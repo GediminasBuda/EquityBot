@@ -13,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
-from streamlit.components.v1 import html as _components_html
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -952,7 +951,7 @@ with col_left:
     # so it doesn't add empty vertical space between Ticker and Peers.
     st.markdown("<div class='rg-style-iframe-anchor'></div>",
                 unsafe_allow_html=True)
-    _components_html(
+    st.iframe(
         """
         <script>
         (function () {
