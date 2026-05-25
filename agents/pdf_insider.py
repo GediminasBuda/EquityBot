@@ -55,6 +55,14 @@ LGRAY    = HexColor("#F5F5F5")
 LBLUE    = HexColor("#E0EEF4")
 ROW_ALT  = HexColor("#FAFAFA")
 
+# Plain-string hex constants for Paragraph XML markup. We cannot use
+# HexColor.hexval() inside `<font color='...'>` — that helper returns
+# "0xRRGGBB" which ReportLab then rejects as an invalid colour string.
+GREEN_HEX = "#1A7E3D"
+RED_HEX   = "#C0392B"
+MGRAY_HEX = "#666666"
+DGRAY_HEX = "#333333"
+
 BASE_FONT = "Helvetica"
 BOLD_FONT = "Helvetica-Bold"
 
@@ -89,20 +97,25 @@ def _fmt_money(v: Any, currency: str = "") -> str:
     return f"{txt} {currency}".strip()
 
 
-def _fmt_signed(v: Any, currency: str = "") -> tuple[str, HexColor]:
-    """Return (text, color) — green for positive, red for negative."""
+def _fmt_signed(v: Any, currency: str = "") -> tuple[str, str]:
+    """Return (text, hex_color_str) — green for positive, red for negative.
+
+    The colour is returned as a plain "#RRGGBB" string, ready to drop
+    into a Paragraph `<font color='...'>` markup (HexColor.hexval()
+    returns "0xRRGGBB" which Paragraph rejects).
+    """
     if v is None:
-        return "—", DGRAY
+        return "—", DGRAY_HEX
     try:
         x = float(v)
     except (ValueError, TypeError):
-        return "—", DGRAY
+        return "—", DGRAY_HEX
     txt = _fmt_money(x, currency)
     if x > 0:
-        return f"+{txt}", GREEN
+        return f"+{txt}", GREEN_HEX
     if x < 0:
-        return txt, RED
-    return txt, DGRAY
+        return txt, RED_HEX
+    return txt, DGRAY_HEX
 
 
 # ── Styles ───────────────────────────────────────────────────────────────────
@@ -244,27 +257,29 @@ def _monthly_summary_section(
         net_shares_text = _fmt_num(agg["net_shares"], 0)
         if agg["net_shares"] > 0:
             net_shares_text = f"+{net_shares_text}"
-        net_value_text, net_value_color = _fmt_signed(
+            net_shares_html = (
+                f"<font color='{GREEN_HEX}'>{net_shares_text}</font>"
+            )
+        elif agg["net_shares"] < 0:
+            net_shares_html = (
+                f"<font color='{RED_HEX}'>{net_shares_text}</font>"
+            )
+        else:
+            net_shares_html = net_shares_text
+
+        net_value_text, net_value_hex = _fmt_signed(
             agg["net_value"], currency,
         )
+        net_value_html = (
+            f"<font color='{net_value_hex}'>{net_value_text}</font>"
+        )
+
         rows.append([
             Paragraph(label, styles["cellL"]),
             Paragraph(str(agg["buys"]),  styles["cell"]),
             Paragraph(str(agg["sells"]), styles["cell"]),
-            Paragraph(
-                f"<font color='{GREEN.hexval()[2:].zfill(6)}'>{net_shares_text}</font>"
-                if agg["net_shares"] > 0
-                else f"<font color='{RED.hexval()[2:].zfill(6)}'>{net_shares_text}</font>"
-                if agg["net_shares"] < 0
-                else net_shares_text,
-                styles["cellR"],
-            ),
-            Paragraph(
-                f"<font color='#{int(net_value_color.red*255):02X}"
-                f"{int(net_value_color.green*255):02X}"
-                f"{int(net_value_color.blue*255):02X}'>{net_value_text}</font>",
-                styles["cellR"],
-            ),
+            Paragraph(net_shares_html, styles["cellR"]),
+            Paragraph(net_value_html,  styles["cellR"]),
         ])
 
     t = Table(rows, colWidths=col_widths, repeatRows=1)
@@ -328,19 +343,15 @@ def _txn_log_section(
     for t in txns:
         code = (t.get("transactionCode") or "?").upper()
         if code == "P":
-            type_label, type_color = "BUY",  GREEN
+            type_label, type_hex = "BUY",  GREEN_HEX
         elif code == "S":
-            type_label, type_color = "SELL", RED
+            type_label, type_hex = "SELL", RED_HEX
         elif code == "A":
-            type_label, type_color = "GRANT", MGRAY
+            type_label, type_hex = "GRANT", MGRAY_HEX
         else:
-            type_label, type_color = code or "—", MGRAY
+            type_label, type_hex = code or "—", MGRAY_HEX
 
-        type_html = (
-            f"<font color='#{int(type_color.red*255):02X}"
-            f"{int(type_color.green*255):02X}"
-            f"{int(type_color.blue*255):02X}'><b>{type_label}</b></font>"
-        )
+        type_html = f"<font color='{type_hex}'><b>{type_label}</b></font>"
 
         rows.append([
             Paragraph(t.get("transactionDate") or "—", styles["cellL"]),
