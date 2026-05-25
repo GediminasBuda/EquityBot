@@ -108,11 +108,20 @@ def _candidate_urls(yf_ticker: str, company_name: str) -> list[str]:
 
 
 def _parse_date(raw: str) -> Optional[str]:
-    """Try common date formats; return ISO YYYY-MM-DD or None."""
+    """
+    Try common date formats; return ISO YYYY-MM-DD or None.
+
+    insidertrades.info is a US-focused site that renders dates as
+    M/D/YYYY (e.g. "5/8/2026" = May 8, 2026). The previous order tried
+    %d/%m/%Y first and silently mis-parsed those dates as 5-Aug. M/D/Y
+    is now first; EU formats stay as fallbacks for any rare ambiguous
+    row. ISO comes first because it's unambiguous.
+    """
     if not raw:
         return None
     raw = raw.strip()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y", "%m/%d/%Y", "%d-%m-%Y",
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y",
+                "%d/%m/%Y", "%d.%m.%Y", "%d-%m-%Y",
                 "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"):
         try:
             return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
@@ -183,81 +192,102 @@ def _scrape_url(url: str) -> Optional[list[dict]]:
 
     soup = BeautifulSoup(r.text, "lxml" if _has_lxml() else "html.parser")
 
-    # Heuristic: find every <table>, pick the one whose header row mentions
-    # an insider-transaction column (Date / Insider / Shares / Price /
-    # Transaction). The exact column set varies but those four words are
-    # common enough.
-    target_table = None
-    target_headers: list[str] = []
+    # The site renders multiple tables (e.g. recent activity strip + the
+    # full historical table). Collect rows from EVERY <table> whose
+    # header row looks like an insider-transaction table — not just the
+    # first match. De-duplicate by (date, owner, price) at the end.
+    all_rows: list[dict] = []
+
     for table in soup.find_all("table"):
         ths = [th.get_text(strip=True).lower() for th in table.find_all("th")]
         if not ths:
-            # Fallback: first row of <td>s
             first_tr = table.find("tr")
             if first_tr:
-                ths = [td.get_text(strip=True).lower() for td in first_tr.find_all("td")]
+                ths = [td.get_text(strip=True).lower()
+                       for td in first_tr.find_all("td")]
         header_text = " ".join(ths)
-        if any(k in header_text for k in ("insider", "shares", "transaction")):
-            target_table = table
-            target_headers = ths
-            break
+        if not any(k in header_text for k in
+                   ("insider", "shares", "transaction", "filer",
+                    "trade", "owner", "officer", "director")):
+            continue
 
-    if not target_table:
+        # Map column names → index for THIS table (each table may have
+        # a different schema).
+        def _col(*keys: str) -> Optional[int]:
+            for k in keys:
+                for i, h in enumerate(ths):
+                    if k in h:
+                        return i
+            return None
+
+        i_date   = _col("date")
+        i_owner  = _col("insider", "name", "filer", "owner", "officer")
+        i_role   = _col("role", "relation", "position", "title")
+        i_type   = _col("transaction", "type", "action", "trade")
+        i_shares = _col("volume", "shares", "quantity", "qty",
+                        "amount", "units")
+        i_price  = _col("price", "per share", "share price")
+        i_value  = _col("worth", "value", "total", "net", "eur", "usd",
+                        "amount value", "trade value")
+
+        for tr in table.find_all("tr")[1:]:
+            cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+            if not cells:
+                continue
+
+            def _get(idx: Optional[int]) -> str:
+                if idx is None or idx >= len(cells):
+                    return ""
+                return cells[idx]
+
+            date_iso = _parse_date(_get(i_date))
+            if not date_iso:
+                continue
+
+            shares = _parse_number(_get(i_shares))
+            price  = _parse_number(_get(i_price))
+            value  = _parse_number(_get(i_value))
+
+            # Fill the missing leg of the value=shares*price triangle.
+            if value is None and shares is not None and price is not None:
+                value = shares * price
+            if shares is None and value is not None and price is not None and price > 0:
+                shares = value / price
+
+            all_rows.append({
+                "transactionDate":          date_iso,
+                "ownerName":                _get(i_owner),
+                "ownerRelationship":        _get(i_role),
+                "transactionCode":          _classify_transaction_code(_get(i_type)),
+                "transactionShares":        shares,
+                "transactionPricePerShare": price,
+                "transactionValue":         value,
+                "source":                   "insidertrades.info",
+            })
+
+    if not all_rows:
         return []
 
-    # Map column names → index (best effort).
-    def _col(*keys: str) -> Optional[int]:
-        for k in keys:
-            for i, h in enumerate(target_headers):
-                if k in h:
-                    return i
-        return None
-
-    i_date   = _col("date")
-    i_owner  = _col("insider", "name", "filer")
-    i_role   = _col("role", "relation", "position", "title")
-    i_type   = _col("transaction", "type", "action", "trade")
-    # Site uses "volume" in several places where other vendors use
-    # "shares"; cover both plus a few synonyms.
-    i_shares = _col("volume", "shares", "quantity", "qty",
-                    "amount", "units")
-    i_price  = _col("price", "per share", "share price")
-    # "Worth" / "Total" / "Net value" / currency hints — broad catch.
-    i_value  = _col("worth", "value", "total", "net", "eur", "usd",
-                    "amount value", "trade value")
-
+    # De-duplicate by (date, owner, price) — the site repeats rows in
+    # multiple tables (recent strip + historical table). Keep the first
+    # one we saw.
+    seen: set[tuple] = set()
     out: list[dict] = []
-    for tr in target_table.find_all("tr")[1:]:
-        cells = [td.get_text(strip=True) for td in tr.find_all("td")]
-        if not cells:
+    for r in all_rows:
+        key = (
+            r["transactionDate"],
+            (r.get("ownerName") or "").lower().strip(),
+            r.get("transactionPricePerShare"),
+        )
+        if key in seen:
             continue
+        seen.add(key)
+        out.append(r)
 
-        def _get(idx: Optional[int]) -> str:
-            if idx is None or idx >= len(cells):
-                return ""
-            return cells[idx]
-
-        date_iso = _parse_date(_get(i_date))
-        if not date_iso:
-            continue
-
-        shares = _parse_number(_get(i_shares))
-        price  = _parse_number(_get(i_price))
-        value  = _parse_number(_get(i_value))
-        if value is None and shares is not None and price is not None:
-            value = shares * price
-
-        out.append({
-            "transactionDate":          date_iso,
-            "ownerName":                _get(i_owner),
-            "ownerRelationship":        _get(i_role),
-            "transactionCode":          _classify_transaction_code(_get(i_type)),
-            "transactionShares":        shares,
-            "transactionPricePerShare": price,
-            "transactionValue":         value,
-            "source":                   "insidertrades.info",
-        })
-
+    logger.info(
+        f"[insidertrades] parsed {len(all_rows)} raw rows → "
+        f"{len(out)} unique after de-dup ({url})"
+    )
     return out
 
 

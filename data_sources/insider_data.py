@@ -49,33 +49,45 @@ def _yf_to_eodhd(yf_ticker: str) -> str:
 def _fetch_eodhd_insider(eodhd_ticker: str, months_back: int) -> list[dict]:
     """Call EODHD /insider-transactions for the past `months_back` months."""
     if not EODHD_API_KEY:
+        logger.warning("[eodhd-insider] EODHD_API_KEY not set — skipping")
         return []
     end   = datetime.utcnow().date()
     start = end - timedelta(days=months_back * 31)
+    params = {
+        "api_token": EODHD_API_KEY,
+        "fmt":       "json",
+        "code":      eodhd_ticker,
+        "from":      start.isoformat(),
+        "to":        end.isoformat(),
+        "limit":     1000,
+        "order":     "d",
+    }
     try:
         r = requests.get(
             f"{_EODHD_BASE}/insider-transactions",
-            params={
-                "api_token": EODHD_API_KEY,
-                "fmt":       "json",
-                "code":      eodhd_ticker,
-                "from":      start.isoformat(),
-                "to":        end.isoformat(),
-                "limit":     1000,
-                "order":     "d",
-            },
+            params=params,
             headers=REQUEST_HEADERS,
             timeout=_TIMEOUT,
         )
         if r.status_code != 200:
             logger.info(
-                f"[eodhd-insider] {eodhd_ticker} → HTTP {r.status_code}"
+                f"[eodhd-insider] {eodhd_ticker} → HTTP {r.status_code} "
+                f"body[:200]={r.text[:200]!r}"
             )
             return []
         data = r.json()
         if not isinstance(data, list):
+            logger.info(
+                f"[eodhd-insider] {eodhd_ticker} → non-list response "
+                f"type={type(data).__name__} preview={str(data)[:200]}"
+            )
             return []
-        return [_normalise_eodhd_row(x) for x in data if isinstance(x, dict)]
+        rows = [_normalise_eodhd_row(x) for x in data if isinstance(x, dict)]
+        logger.info(
+            f"[eodhd-insider] {eodhd_ticker} → {len(rows)} rows "
+            f"(window {start} → {end})"
+        )
+        return rows
     except Exception as e:
         logger.warning(f"[eodhd-insider] {eodhd_ticker} request failed: {e}")
         return []
