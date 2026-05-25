@@ -2302,8 +2302,10 @@ if generate_clicked and ticker_input:
                 import importlib
                 import data_sources.insider_data as _ind_mod
                 import data_sources.insidertrades_scraper as _its_mod
+                import data_sources.openinsider_scraper as _oi_mod
                 import agents.pdf_insider as _pi_mod
                 importlib.reload(_its_mod)
+                importlib.reload(_oi_mod)
                 importlib.reload(_ind_mod)
                 importlib.reload(_pi_mod)
                 from data_sources.insider_data import fetch_insider_data

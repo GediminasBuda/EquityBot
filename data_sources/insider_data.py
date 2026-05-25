@@ -23,6 +23,10 @@ from data_sources.eodhd_adapter import _YF_TO_EODHD
 from data_sources.insidertrades_scraper import (
     fetch_insider_transactions as _scrape_insider,
 )
+from data_sources.openinsider_scraper import (
+    fetch_insider_transactions as _scrape_openinsider,
+    _is_us_ticker as _openinsider_supports,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,21 +73,26 @@ def _fetch_eodhd_insider(eodhd_ticker: str, months_back: int) -> list[dict]:
             headers=REQUEST_HEADERS,
             timeout=_TIMEOUT,
         )
+        # Elevated to WARNING so Streamlit Cloud's default log filter
+        # (which hides INFO) still shows the diagnostic line — without
+        # it we can't tell whether EODHD returned nothing because the
+        # endpoint isn't on the user's plan, the ticker code is wrong,
+        # or the date window is off.
         if r.status_code != 200:
-            logger.info(
+            logger.warning(
                 f"[eodhd-insider] {eodhd_ticker} → HTTP {r.status_code} "
                 f"body[:200]={r.text[:200]!r}"
             )
             return []
         data = r.json()
         if not isinstance(data, list):
-            logger.info(
+            logger.warning(
                 f"[eodhd-insider] {eodhd_ticker} → non-list response "
                 f"type={type(data).__name__} preview={str(data)[:200]}"
             )
             return []
         rows = [_normalise_eodhd_row(x) for x in data if isinstance(x, dict)]
-        logger.info(
+        logger.warning(
             f"[eodhd-insider] {eodhd_ticker} → {len(rows)} rows "
             f"(window {start} → {end})"
         )
@@ -186,11 +195,19 @@ def fetch_insider_data(
             break
     source_used = "eodhd" if txns else "none"
 
+    # Fallback chain (in order, stop at first non-empty source):
+    #   1. openinsider.com (US only, SEC Form 4, free, full history)
+    #   2. insidertrades.info (EU + US, free, anonymous limit = 5 rows)
+    if not txns and _openinsider_supports(yf_ticker):
+        rows = _scrape_openinsider(yf_ticker, months_back)
+        if rows:
+            txns = rows
+            source_used = "openinsider.com"
+
     if not txns:
-        # Fallback: scrape insidertrades.info
-        scraped = _scrape_insider(yf_ticker, company_name, months_back)
-        if scraped:
-            txns = scraped
+        rows = _scrape_insider(yf_ticker, company_name, months_back)
+        if rows:
+            txns = rows
             source_used = "insidertrades.info"
 
     # Final sort by date desc, drop rows without a date.

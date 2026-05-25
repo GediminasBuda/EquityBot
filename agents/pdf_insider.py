@@ -481,6 +481,7 @@ class InsiderTransactionsGenerator:
         story.append(Spacer(1, 8))
         src_human = {
             "eodhd":              "EODHD /insider-transactions",
+            "openinsider.com":    "openinsider.com (SEC Form 4 feed)",
             "insidertrades.info": "insidertrades.info (fallback scrape)",
             "none":               "no source returned data",
         }.get(source_used, source_used)
