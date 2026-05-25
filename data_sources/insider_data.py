@@ -82,8 +82,16 @@ def _fetch_eodhd_insider(eodhd_ticker: str, months_back: int) -> list[dict]:
 
 
 def _normalise_eodhd_row(row: dict) -> dict:
-    """Reshape an EODHD response row into the unified format the report
-    pages consume."""
+    """Reshape an EODHD /insider-transactions row into the unified format
+    the report pages consume.
+
+    EODHD's response field names differ from what some other vendors use:
+      shares-count → transactionAmount          (NOT transactionShares)
+      per-share $  → transactionPrice           (NOT transactionPricePerShare)
+      total $      → transactionAmountValue     (NOT transactionValue)
+    We accept both spellings so the row works whether EODHD ever renames
+    them or whether the scraper produces the longer names.
+    """
     def _f(v) -> Optional[float]:
         if v is None or v == "":
             return None
@@ -92,9 +100,23 @@ def _normalise_eodhd_row(row: dict) -> dict:
         except (TypeError, ValueError):
             return None
 
-    shares = _f(row.get("transactionShares"))
-    price  = _f(row.get("transactionPricePerShare"))
-    value  = _f(row.get("transactionValue"))
+    shares = (
+        _f(row.get("transactionAmount"))
+        or _f(row.get("transactionShares"))
+        or _f(row.get("shares"))
+        or _f(row.get("amount"))
+    )
+    price = (
+        _f(row.get("transactionPrice"))
+        or _f(row.get("transactionPricePerShare"))
+        or _f(row.get("price"))
+    )
+    value = (
+        _f(row.get("transactionAmountValue"))
+        or _f(row.get("transactionValue"))
+        or _f(row.get("value"))
+        or _f(row.get("total"))
+    )
     if value is None and shares is not None and price is not None:
         value = shares * price
 

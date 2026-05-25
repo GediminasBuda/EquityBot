@@ -216,10 +216,15 @@ def _scrape_url(url: str) -> Optional[list[dict]]:
     i_date   = _col("date")
     i_owner  = _col("insider", "name", "filer")
     i_role   = _col("role", "relation", "position", "title")
-    i_type   = _col("transaction", "type", "action")
-    i_shares = _col("shares", "qty", "amount")
-    i_price  = _col("price")
-    i_value  = _col("value", "total")
+    i_type   = _col("transaction", "type", "action", "trade")
+    # Site uses "volume" in several places where other vendors use
+    # "shares"; cover both plus a few synonyms.
+    i_shares = _col("volume", "shares", "quantity", "qty",
+                    "amount", "units")
+    i_price  = _col("price", "per share", "share price")
+    # "Worth" / "Total" / "Net value" / currency hints — broad catch.
+    i_value  = _col("worth", "value", "total", "net", "eur", "usd",
+                    "amount value", "trade value")
 
     out: list[dict] = []
     for tr in target_table.find_all("tr")[1:]:

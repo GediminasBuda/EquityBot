@@ -2316,6 +2316,66 @@ if generate_clicked and ticker_input:
                     st.session_state.get("rg_insider_period", 60)
                 )
 
+                # ── Back-fill the company header from EODHD ───────────────
+                # DataManager.get() can leave company.market_cap / price
+                # blank or wrong (e.g. units bug: SAP.DE came back as
+                # "177.21K EUR" instead of "177.21B EUR"). Hit EODHD's
+                # /fundamentals and /real-time directly so the header
+                # shows correct numbers regardless of DataManager state.
+                from data_sources.eodhd_all_in_one import EODHDAllInOneFetcher
+                _ihdr_fetcher = EODHDAllInOneFetcher()
+                try:
+                    _ihdr_eod_ticker = _ihdr_fetcher._get and None  # noqa
+                    from data_sources.eodhd_all_in_one import (
+                        _convert_ticker as _ihdr_convert,
+                    )
+                    _eod_t = _ihdr_convert(ticker_input)
+                    _ihdr_fund     = _ihdr_fetcher.fetch_fundamentals(_eod_t) or {}
+                    _ihdr_realtime = _ihdr_fetcher.fetch_realtime(_eod_t) or {}
+                except Exception:
+                    _ihdr_fund, _ihdr_realtime = {}, {}
+
+                def _ihdr_float(v):
+                    if v is None or v == "" or v == "NA":
+                        return None
+                    try:
+                        return float(v)
+                    except (ValueError, TypeError):
+                        return None
+
+                _ihdr_general    = _ihdr_fund.get("General")    or {}
+                _ihdr_highlights = _ihdr_fund.get("Highlights") or {}
+
+                # Always overwrite with the EODHD values when present, so a
+                # bad DataManager value doesn't leak into the header.
+                _rt_close = _ihdr_float(_ihdr_realtime.get("close"))
+                if _rt_close and _rt_close > 0:
+                    company.current_price = _rt_close
+                else:
+                    _rt_prev = _ihdr_float(_ihdr_realtime.get("previousClose"))
+                    if _rt_prev and _rt_prev > 0:
+                        company.current_price = _rt_prev
+
+                _curr = (_ihdr_general.get("CurrencyCode")
+                         or _ihdr_general.get("CurrencySymbol")
+                         or _ihdr_realtime.get("currency"))
+                if _curr:
+                    company.currency_price = _curr
+                    if not company.currency:
+                        company.currency = _curr
+
+                _mc_mln = _ihdr_float(_ihdr_highlights.get("MarketCapitalizationMln"))
+                if _mc_mln is not None:
+                    company.market_cap = _mc_mln * 1e6
+                else:
+                    _mc_raw = _ihdr_float(_ihdr_highlights.get("MarketCapitalization"))
+                    if _mc_raw is not None:
+                        company.market_cap = _mc_raw
+
+                _name = _ihdr_general.get("Name")
+                if _name and not company.name:
+                    company.name = _name
+
                 insider_bundle = fetch_insider_data(
                     yf_ticker=ticker_input,
                     company_name=getattr(company, "name", "") or "",
