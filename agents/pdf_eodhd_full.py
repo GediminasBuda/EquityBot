@@ -1,5 +1,5 @@
 """
-pdf_eodhd_full.py — "EODHD duomenys" comprehensive report.
+pdf_eodhd_full.py — "EODHD Direct" comprehensive report.
 
 Renders every section EODHD's All-In-One API exposes for a single ticker
 into a 10-12 page PDF. The input is the dict produced by

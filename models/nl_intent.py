@@ -190,7 +190,7 @@ FRAMEWORK MAPPING
 - "Fisher", "15 Fisher", "Helmer", "Fisher Alternatives"    → "fisher"
 - "Gravity", "Taxer", "Gravity Taxers", "choke-point"       → "gravity"
 - "Overview", "Memo", "Investment Memo"                     → "overview_v2"
-- "EODHD duomenys", "data sheet", "raw data"                → "eodhd_full"
+- "EODHD Direct", "EODHD duomenys", "data sheet", "raw data" → "eodhd_full"
 
 EXAMPLES
 Input: "trauk pirmas 10 imoniu is SP500 pagal market cap"

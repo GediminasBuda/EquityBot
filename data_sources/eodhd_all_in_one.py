@@ -3,7 +3,7 @@ eodhd_all_in_one.py — Standalone fetcher for the EODHD All-In-One plan.
 
 Unlike eodhd_adapter.py (which feeds the unified CompanyData pipeline), this
 module talks to EODHD directly and bundles every endpoint into a single
-dict consumed by the "EODHD duomenys" PDF generator. The report is meant
+dict consumed by the "EODHD Direct" PDF generator. The report is meant
 to display 100% of the data EODHD's All-In-One subscription exposes —
 nothing is merged or transformed against other sources.
 
