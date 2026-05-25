@@ -41,14 +41,142 @@ from data_sources.eodhd_adapter import _YF_TO_EODHD
 _EODHD_TO_YF = {v: k for k, v in _YF_TO_EODHD.items()}
 
 # ── Storage ───────────────────────────────────────────────────────────────────
+# Streamlit Cloud's container filesystem is ephemeral — the local
+# data/portfolio.json gets wiped every time the infra restarts the
+# container (typically once a day or on deploy / wake-from-sleep).
+# To keep the portfolio across restarts we mirror it to a private
+# GitHub Gist via the REST API; the local file stays as a fast
+# in-session cache / dev fallback.
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _DATA_DIR.mkdir(exist_ok=True)
 _PORTFOLIO_FILE = _DATA_DIR / "portfolio.json"
 
 EODHD_BASE = "https://eodhistoricaldata.com/api"
 
+_GIST_DESC      = "EquityBot Portfolio (do not delete)"
+_GIST_FILENAME  = "portfolio.json"
+_GIST_API       = "https://api.github.com"
+_GIST_TIMEOUT   = 15
+
+
+def _gist_token() -> Optional[str]:
+    """Return a Classic PAT with the `gist` scope, or None if unset."""
+    try:
+        if "GITHUB_GIST_TOKEN" in st.secrets:
+            return str(st.secrets["GITHUB_GIST_TOKEN"]) or None
+    except Exception:
+        pass
+    return os.environ.get("GITHUB_GIST_TOKEN") or None
+
+
+def _gist_headers(token: str) -> dict:
+    return {
+        "Authorization":          f"Bearer {token}",
+        "Accept":                 "application/vnd.github+json",
+        "X-GitHub-Api-Version":   "2022-11-28",
+        "User-Agent":             "EquityBot-Portfolio/1.0",
+    }
+
+
+def _portfolio_gist_id(token: str) -> Optional[str]:
+    """
+    Resolve the portfolio Gist's ID. On first call per session we scan
+    the user's gists for one whose description == _GIST_DESC; if none
+    exists we create a new private gist and cache its ID in
+    st.session_state._pf_gist_id.
+    """
+    cached = st.session_state.get("_pf_gist_id")
+    if cached:
+        return cached
+
+    # 1) Look up an existing portfolio gist (max 100 personal gists,
+    # which is enough for any normal user).
+    try:
+        r = requests.get(
+            f"{_GIST_API}/gists",
+            headers=_gist_headers(token),
+            params={"per_page": 100},
+            timeout=_GIST_TIMEOUT,
+        )
+        if r.status_code == 200:
+            for g in r.json():
+                if g.get("description") == _GIST_DESC:
+                    st.session_state._pf_gist_id = g["id"]
+                    return g["id"]
+        else:
+            # Common: 401 (invalid token) / 403 (wrong scope: fine-
+            # grained PATs cannot access /gists, only Classic PATs with
+            # the `gist` scope can). Fall through to local-only mode.
+            return None
+    except Exception:
+        return None
+
+    # 2) Not found — create a fresh private gist seeded with empty list.
+    try:
+        r = requests.post(
+            f"{_GIST_API}/gists",
+            headers=_gist_headers(token),
+            json={
+                "description": _GIST_DESC,
+                "public":      False,
+                "files": {
+                    _GIST_FILENAME: {
+                        "content": json.dumps({"tickers": []}, indent=2),
+                    },
+                },
+            },
+            timeout=_GIST_TIMEOUT,
+        )
+        if r.status_code == 201:
+            gist_id = r.json()["id"]
+            st.session_state._pf_gist_id = gist_id
+            return gist_id
+    except Exception:
+        pass
+
+    return None
+
 
 def _load_portfolio() -> list[str]:
+    """
+    Load portfolio tickers. Tries the GitHub Gist first (the
+    persistent source of truth across container restarts), then falls
+    back to the local file if the Gist is unreachable / unauthorised.
+    """
+    token = _gist_token()
+    if token:
+        gist_id = _portfolio_gist_id(token)
+        if gist_id:
+            try:
+                r = requests.get(
+                    f"{_GIST_API}/gists/{gist_id}",
+                    headers=_gist_headers(token),
+                    timeout=_GIST_TIMEOUT,
+                )
+                if r.status_code == 200:
+                    files = r.json().get("files") or {}
+                    f = files.get(_GIST_FILENAME) or {}
+                    content = f.get("content") or ""
+                    if content:
+                        try:
+                            data = json.loads(content)
+                            tickers = list(data.get("tickers", []))
+                            # Mirror to local file so dev / offline reads work.
+                            try:
+                                _PORTFOLIO_FILE.write_text(
+                                    json.dumps({"tickers": tickers}, indent=2),
+                                    encoding="utf-8",
+                                )
+                            except Exception:
+                                pass
+                            return tickers
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+    # Fallback: local file (works in dev mode without a token,
+    # and as a last resort if the Gist API is unreachable).
     if not _PORTFOLIO_FILE.exists():
         return []
     try:
@@ -59,10 +187,36 @@ def _load_portfolio() -> list[str]:
 
 
 def _save_portfolio(tickers: list[str]) -> None:
-    _PORTFOLIO_FILE.write_text(
-        json.dumps({"tickers": tickers}, indent=2),
-        encoding="utf-8",
-    )
+    """Persist the portfolio to the GitHub Gist (primary, durable)
+    and mirror to the local file (in-session cache / dev fallback)."""
+    payload_json = json.dumps({"tickers": tickers}, indent=2)
+
+    # 1) Local file — always write so dev / fallback path stays warm.
+    try:
+        _PORTFOLIO_FILE.write_text(payload_json, encoding="utf-8")
+    except Exception:
+        pass
+
+    # 2) Gist — the only copy that survives a Streamlit Cloud restart.
+    token = _gist_token()
+    if not token:
+        return
+    gist_id = _portfolio_gist_id(token)
+    if not gist_id:
+        return
+    try:
+        requests.patch(
+            f"{_GIST_API}/gists/{gist_id}",
+            headers=_gist_headers(token),
+            json={
+                "files": {
+                    _GIST_FILENAME: {"content": payload_json},
+                },
+            },
+            timeout=_GIST_TIMEOUT,
+        )
+    except Exception:
+        pass
 
 
 # ── Ticker conversion (Yahoo → EODHD) ─────────────────────────────────────────
