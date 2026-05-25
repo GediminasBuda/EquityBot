@@ -50,7 +50,7 @@ ORDER_FILE = _DATA_DIR / "framework_order.json"
 # current set of shipped built-ins.
 BUILTIN_IDS = frozenset({
     "overview_v2", "fisher", "gravity",
-    "eodhd_full", "index_overview",
+    "eodhd_full", "index_overview", "insider_transactions",
 })
 
 

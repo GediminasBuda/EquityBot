@@ -505,7 +505,7 @@ REPORT_TYPES = _build_report_types()
 # Builtin framework ids (for runner dispatch logic)
 _BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "eodhd_full", "overview_v2", "index_overview",
-                "industry_analysis"}
+                "industry_analysis", "insider_transactions"}
 
 EXCHANGE_HINTS = {
     "Amsterdam (AEX)":   ".AS  e.g. WKL.AS, ASML.AS",
@@ -1360,6 +1360,22 @@ with col_right:
         value=False,
         help="Bypass the 24-hour cache and re-fetch all data from source.",
     )
+
+    # Insider Transactions: period selector (only shown when that
+    # framework is selected). The 12-month monthly summary table in the
+    # PDF always uses the past year regardless of this — the selector
+    # only controls how far back the individual-transaction log goes.
+    if report_type == "insider_transactions":
+        _period_choice = st.radio(
+            "Transaction log window",
+            options=("1y", "2y", "5y"),
+            index=2,                       # default = 5 years
+            horizontal=True,
+            key="rg_insider_period_choice",
+        )
+        st.session_state.rg_insider_period = {
+            "1y": 12, "2y": 24, "5y": 60,
+        }[_period_choice]
 
     # Adversarial mode — needs both Claude and OpenAI keys
     _adv_available = bool(
@@ -2275,6 +2291,68 @@ if generate_clicked and ticker_input:
                 analysis = {}
                 extra = {}
 
+            elif report_type == "insider_transactions":
+                # ── Insider Transactions report ─────────────────────────────
+                # Small header (name · ticker · price · mcap) + 12-month
+                # monthly summary table + individual-transaction log filtered
+                # by the user's period selector (1y / 2y / 5y). Primary data
+                # from EODHD /insider-transactions; falls back to
+                # insidertrades.info for EU tickers EODHD doesn't cover.
+                _prog.progress(40, text="👥  Fetching insider transactions…")
+                st.write("👥  Fetching insider transactions…")
+                import importlib
+                import data_sources.insider_data as _ind_mod
+                import data_sources.insidertrades_scraper as _its_mod
+                import agents.pdf_insider as _pi_mod
+                importlib.reload(_its_mod)
+                importlib.reload(_ind_mod)
+                importlib.reload(_pi_mod)
+                from data_sources.insider_data import fetch_insider_data
+                from agents.pdf_insider import InsiderTransactionsGenerator
+
+                # period_months chosen via the radio next to the framework
+                # picker; defaults to 60 (5y) if the selector wasn't shown.
+                _period_months = int(
+                    st.session_state.get("rg_insider_period", 60)
+                )
+
+                insider_bundle = fetch_insider_data(
+                    yf_ticker=ticker_input,
+                    company_name=getattr(company, "name", "") or "",
+                    months_back=_period_months,
+                )
+                _prog.progress(
+                    75,
+                    text=(f"✓  {len(insider_bundle.get('transactions', []))} "
+                          f"txns via {insider_bundle.get('source_used', 'none')}"),
+                )
+                st.write(
+                    f"✓  {len(insider_bundle.get('transactions', []))} "
+                    f"transactions via "
+                    f"**{insider_bundle.get('source_used', 'none')}**"
+                )
+
+                _prog.progress(88, text="📄  Rendering Insider PDF…")
+                st.write("📄  Rendering Insider PDF…")
+                safe = ticker_input.replace(".", "_").replace("-", "_")
+                date = datetime.now().strftime("%Y-%m-%d")
+                pdf_path = str(
+                    OUTPUTS_DIR
+                    / f"{safe}_insider_{_period_months}m_{date}.pdf"
+                )
+                os.makedirs(OUTPUTS_DIR, exist_ok=True)
+                InsiderTransactionsGenerator().render(
+                    company=company,
+                    insider_bundle=insider_bundle,
+                    period_months=_period_months,
+                    output_path=pdf_path,
+                )
+                analysis = {}
+                extra = {
+                    "insider_count": len(insider_bundle.get("transactions", [])),
+                    "insider_source": insider_bundle.get("source_used", "none"),
+                }
+
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
                 from models.generic_runner import GenericRunner
@@ -2395,7 +2473,7 @@ if generate_clicked and ticker_input:
             if adv_result is not None:
                 _usage_claude = adv_result.claude_usage
                 _usage_openai = adv_result.openai_usage
-            elif report_type == "eodhd_full":
+            elif report_type in ("eodhd_full", "insider_transactions"):
                 _usage_claude = {}
                 _usage_openai = None
             else:

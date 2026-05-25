@@ -1,0 +1,15 @@
+{
+  "id": "insider_transactions",
+  "name": "Insider Transactions",
+  "icon": "👥",
+  "description": "Insider buys/sells — 12-month monthly summary + full transaction log over 1y/2y/5y. EODHD primary; insidertrades.info fallback for tickers EODHD doesn't cover.",
+  "is_builtin": true,
+  "base_id": null,
+  "version": 1,
+  "created_at": "2026-05-18T00:00:00",
+  "modified_at": "2026-05-18T00:00:00",
+  "system_prompt": "",
+  "prompt_template": "__builtin__",
+  "output_schema": [],
+  "report_sections": []
+}
