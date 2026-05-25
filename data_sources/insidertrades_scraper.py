@@ -131,19 +131,29 @@ def _parse_date(raw: str) -> Optional[str]:
 
 
 def _parse_number(raw: str) -> Optional[float]:
-    """Extract a float from a string like '1,234.50' or '€42.500,00'."""
+    """Extract a float from a money/number string.
+
+    insidertrades.info is US-formatted: comma = thousands, dot =
+    decimal ("$369,460" or "$290.0"). Default to that. Only treat
+    comma as decimal separator when the string clearly follows the
+    European 1.234.567,89 pattern (multiple dots + a final comma).
+    """
     if not raw:
         return None
     s = str(raw).strip()
-    # Strip currency symbols / letters
+    # Strip currency symbols / letters / spaces
     s = re.sub(r"[€$£¥]", "", s)
     s = re.sub(r"[a-zA-Z\s]", "", s)
     if not s:
         return None
-    # Try EU style: 42.500,00 → 42500.00
-    if "," in s and s.rfind(",") > s.rfind("."):
+    dot_count   = s.count(".")
+    comma_count = s.count(",")
+    # EU pattern: comma is the LAST separator AND there are multiple
+    # dots before it (e.g. "1.234.567,89") — typical European number.
+    if comma_count == 1 and dot_count >= 2 and s.rfind(",") > s.rfind("."):
         s = s.replace(".", "").replace(",", ".")
     else:
+        # US (and most other) — comma = thousands. Drop them.
         s = s.replace(",", "")
     try:
         return float(s)
@@ -224,11 +234,16 @@ def _scrape_url(url: str) -> Optional[list[dict]]:
         i_owner  = _col("insider", "name", "filer", "owner", "officer")
         i_role   = _col("role", "relation", "position", "title")
         i_type   = _col("transaction", "type", "action", "trade")
-        i_shares = _col("volume", "shares", "quantity", "qty",
-                        "amount", "units")
+        # On insidertrades.info "Volume" is the total $ amount of the
+        # trade (e.g. "$71,189,722") — i.e. the trade VALUE, not a
+        # share count. Map volume to the value column and leave the
+        # shares column for the rarer "shares"/"qty" headers other
+        # vendors use. Shares for this site are then reverse-derived
+        # from value / price further down.
+        i_value  = _col("volume", "worth", "value", "total", "net",
+                        "eur", "usd", "amount value", "trade value")
+        i_shares = _col("shares", "quantity", "qty", "amount", "units")
         i_price  = _col("price", "per share", "share price")
-        i_value  = _col("worth", "value", "total", "net", "eur", "usd",
-                        "amount value", "trade value")
 
         for tr in table.find_all("tr")[1:]:
             cells = [td.get_text(strip=True) for td in tr.find_all("td")]

@@ -153,8 +153,12 @@ def fetch_insider_data(
     months_back: int = 60,
 ) -> dict:
     """
-    Top-level orchestrator. Tries EODHD first; if it returns nothing, falls
-    back to the insidertrades.info scraper. Returns:
+    Top-level orchestrator. Tries EODHD first (with a couple of ticker
+    spellings, since EODHD's /insider-transactions sometimes wants the
+    bare US symbol "AAPL" rather than "AAPL.US"); if it still returns
+    nothing, falls back to the insidertrades.info scraper.
+
+    Returns:
         {
             "ticker":       "BAS.DE",
             "eodhd_ticker": "BAS.XETRA",
@@ -165,7 +169,21 @@ def fetch_insider_data(
     """
     eodhd_ticker = _yf_to_eodhd(yf_ticker)
 
-    txns = _fetch_eodhd_insider(eodhd_ticker, months_back)
+    # Try the canonical EODHD code first, then the bare US symbol if
+    # the canonical one didn't return anything.
+    eodhd_candidates: list[str] = [eodhd_ticker]
+    if eodhd_ticker.endswith(".US"):
+        bare = eodhd_ticker[:-3]
+        if bare and bare not in eodhd_candidates:
+            eodhd_candidates.append(bare)
+
+    txns: list[dict] = []
+    for code in eodhd_candidates:
+        rows = _fetch_eodhd_insider(code, months_back)
+        if rows:
+            txns = rows
+            eodhd_ticker = code   # remember the spelling that actually worked
+            break
     source_used = "eodhd" if txns else "none"
 
     if not txns:
