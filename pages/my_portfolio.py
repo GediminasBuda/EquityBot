@@ -836,7 +836,7 @@ st.iframe(
     })();
     </script>
     """,
-    height=0,
+    height=1,
 )
 
 if selected_ticker:

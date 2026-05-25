@@ -1042,7 +1042,7 @@ with col_left:
         })();
         </script>
         """,
-        height=0,
+        height=1,
     )
 
     # ── Mobile-only Peer Tickers (CSS hides this block on desktop) ────────
