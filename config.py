@@ -21,7 +21,7 @@ try:
     import streamlit as st
     for _k, _v in st.secrets.items():
         if isinstance(_v, str):
-            os.environ.setdefault(_k, _v)
+            os.environ[_k] = _v  # always override — secrets win over any stale env var
 except Exception:
     pass  # Not in a Streamlit context, or no secrets configured — that's fine.
 

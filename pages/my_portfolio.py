@@ -31,7 +31,11 @@ import requests
 import streamlit as st
 from streamlit_searchbox import st_searchbox
 
-from config import EODHD_API_KEY, REQUEST_HEADERS
+import config as _config
+from config import REQUEST_HEADERS
+# Read EODHD_API_KEY at runtime (not module-level) so secrets injected by
+# app.py are always visible, even if config was imported early by Streamlit.
+EODHD_API_KEY = os.environ.get("EODHD_API_KEY", "") or _config.EODHD_API_KEY
 from data_sources.eodhd_adapter import _YF_TO_EODHD
 
 # Reverse mapping: EODHD exchange code → Yahoo Finance suffix.
