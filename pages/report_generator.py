@@ -2417,59 +2417,122 @@ if generate_clicked and ticker_input:
 
             elif report_type == "valuemeter":
                 # ── ValueMeter — Prudent Value Score vs. peer group ───────────
+                # Architecture:
+                #   Call 1 (small): LLM identifies peer tickers.
+                #   Python:         Fetches EODHD data for each peer, extracts metrics.
+                #   Call 2 (main):  LLM receives REAL data, computes scores + interpretation.
                 import importlib
                 import models.valuemeter as _vm_mod
                 import agents.pdf_valuemeter as _vmpdf_mod
                 importlib.reload(_vm_mod)
                 importlib.reload(_vmpdf_mod)
-                from models.valuemeter import _build_valuemeter_prompt, SYSTEM_PROMPT as VM_SYS
-                from agents.pdf_valuemeter import ValueMeterGenerator
-
-                # Step 1: Use EODHD-only data for the subject company
-                from data_sources.eodhd_only_builder import fetch_company_data_eodhd_only
-                _prog.progress(22, text="💎  Fetching EODHD-only data for ValueMeter…")
-                st.write("💎  Fetching EODHD bundle (fundamentals + /eod)…")
-                company, _vm_bundle = fetch_company_data_eodhd_only(ticker_input)
-                st.write(f"✓  EODHD endpoints used: {_vm_bundle.get('endpoints_used', 0)}/9")
-
-                # Step 2: Build prompt
-                cacheable_pfx, dynamic_prompt = _build_valuemeter_prompt(company)
-
-                # Step 3: LLM call — high token budget (peer data + scores + interpretation)
-                _prog.progress(40, text="🤖  Running ValueMeter analysis — typically 45–90 s…")
-                st.write(
-                    "🤖  Running ValueMeter analysis "
-                    f"({LLM_PROVIDER}/{LLM_MODEL}) — "
-                    "building peer group, computing scores…"
+                from models.valuemeter import (
+                    build_peer_id_prompt, extract_metrics,
+                    build_scoring_prompt, SYSTEM_PROMPT as VM_SYS,
                 )
-                raw_vm = llm.generate_json(
-                    dynamic_prompt, VM_SYS,
-                    max_tokens=7000,
-                    cacheable_prefix=cacheable_pfx,
+                from agents.pdf_valuemeter import ValueMeterGenerator
+                from data_sources.eodhd_only_builder import fetch_company_data_eodhd_only
+
+                # ── Step 1: EODHD-only subject data ──────────────────────────
+                _prog.progress(20, text="💎  Fetching EODHD-only subject data…")
+                st.write("💎  Fetching EODHD bundle for subject company…")
+                company, _vm_bundle = fetch_company_data_eodhd_only(ticker_input)
+                st.write(f"✓  Subject: {company.name}  ·  "
+                         f"{_vm_bundle.get('endpoints_used', 0)}/9 EODHD endpoints")
+
+                # ── Step 2: LLM Call 1 — identify peers ──────────────────────
+                _prog.progress(30, text="🔍  Identifying peer group…")
+                st.write("🔍  LLM Call 1: identifying peer group…")
+                _pid_pfx, _pid_dyn = build_peer_id_prompt(company)
+                _peer_id = llm.generate_json(
+                    _pid_dyn, VM_SYS,
+                    max_tokens=1000,
+                    cacheable_prefix=_pid_pfx,
+                )
+                _peer_tickers = [
+                    p["ticker"].strip().upper()
+                    for p in (_peer_id.get("peers") or [])
+                    if p.get("ticker")
+                ]
+                _peer_reasons = {
+                    p["ticker"].strip().upper(): p.get("reason", "")
+                    for p in (_peer_id.get("peers") or [])
+                    if p.get("ticker")
+                }
+                _excluded_peers = _peer_id.get("excluded") or []
+                st.write(f"✓  {len(_peer_tickers)} peers identified: "
+                         f"{', '.join(_peer_tickers)}")
+                _prog.progress(38, text=f"✓  {len(_peer_tickers)} peers identified")
+
+                # ── Step 3: Fetch EODHD data for each peer ────────────────────
+                _prog.progress(40, text="📡  Fetching EODHD peer data…")
+                st.write(f"📡  Fetching EODHD data for {len(_peer_tickers)} peers…")
+                _peer_data: dict[str, CompanyData] = {}
+                for _pt in _peer_tickers[:8]:
+                    try:
+                        _pd, _ = fetch_company_data_eodhd_only(_pt)
+                        if _pd.name or _pd.market_cap:
+                            _peer_data[_pt] = _pd
+                            st.write(f"   ✓ {_pt}: {_pd.name}")
+                        else:
+                            st.write(f"   ⚠ {_pt}: no EODHD data — skipped")
+                    except Exception as _pe:
+                        st.write(f"   ⚠ {_pt}: fetch error ({_pe}) — skipped")
+                _prog.progress(58, text=f"✓  {len(_peer_data)} peers loaded from EODHD")
+                st.write(f"✓  {len(_peer_data)} peers with EODHD data")
+
+                # ── Step 4: Extract metrics for all companies ─────────────────
+                _subj_metrics = extract_metrics(
+                    company, is_subject=True,
+                    reason="Subject company under analysis",
+                )
+                _all_metrics = [_subj_metrics] + [
+                    extract_metrics(_pd, is_subject=False,
+                                    reason=_peer_reasons.get(_pt, ""))
+                    for _pt, _pd in _peer_data.items()
+                ]
+
+                # ── Step 5: LLM Call 2 — scoring + interpretation ─────────────
+                _prog.progress(62, text="🤖  Running ValueMeter scoring — typically 30–60 s…")
+                st.write(
+                    f"🤖  LLM Call 2: scoring {len(_all_metrics)} companies "
+                    f"with real EODHD data ({LLM_PROVIDER}/{LLM_MODEL})…"
+                )
+                _score_pfx, _score_dyn = build_scoring_prompt(_all_metrics)
+                _score_result = llm.generate_json(
+                    _score_dyn, VM_SYS,
+                    max_tokens=4000,
+                    cacheable_prefix=_score_pfx,
                 )
                 _show_token_usage(llm.last_usage)
 
-                # Basic validation
-                if not isinstance(raw_vm, dict) or not raw_vm.get("scores"):
-                    st.warning(
-                        "⚠ ValueMeter returned incomplete data — "
-                        "scores or peer_group may be missing. Check the PDF."
-                    )
-                analysis = raw_vm or {}
+                # ── Merge into final analysis dict ────────────────────────────
+                # peer_group = EODHD metrics + reasons from LLM Call 1
+                _pg_lookup = {m["ticker"]: m for m in _all_metrics}
+                analysis = {
+                    "peer_group":    _all_metrics,
+                    "excluded_peers": _excluded_peers,
+                    "scores":        _score_result.get("scores") or [],
+                    "subject_ticker": ticker_input,
+                    "interpretation": _score_result.get("interpretation") or {},
+                    "conclusion":     _score_result.get("conclusion") or {},
+                }
 
-                subject_tick = analysis.get("subject_ticker", ticker_input)
-                n_peers = len(analysis.get("peer_group") or [])
-                n_scores = len(analysis.get("scores") or [])
-                rating = (analysis.get("conclusion") or {}).get("rating", "n/a")
-                verdict = (analysis.get("interpretation") or {}).get("verdict", "n/a")
+                # Validate
+                if not analysis["scores"]:
+                    st.warning("⚠ ValueMeter scoring returned no scores — PDF may be sparse.")
+
+                n_peers  = len(_peer_data)
+                n_scores = len(analysis["scores"])
+                rating   = (analysis["conclusion"] or {}).get("rating", "n/a")
+                verdict  = (analysis["interpretation"] or {}).get("verdict", "n/a")
                 st.write(
-                    f"✓  {n_peers} companies in peer group · "
-                    f"{n_scores} scored · "
+                    f"✓  {n_peers} peers · {n_scores} scored · "
                     f"Rating: **{rating}** · Verdict: **{verdict}**"
                 )
-                _prog.progress(80, text="✓  ValueMeter analysis complete")
+                _prog.progress(85, text="✓  Scoring complete")
 
-                # Step 4: Render PDF
+                # ── Step 6: Render PDF ─────────────────────────────────────────
                 _prog.progress(88, text="📄  Rendering ValueMeter PDF…")
                 st.write("📄  Rendering ValueMeter PDF…")
                 safe = ticker_input.replace(".", "_").replace("-", "_")
@@ -2478,16 +2541,9 @@ if generate_clicked and ticker_input:
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
                 ValueMeterGenerator().render(company, analysis, pdf_path)
 
-                extra = {
-                    "n_peers": n_peers,
-                    "verdict": verdict,
-                    "rating":  rating,
-                }
-                # Map rating → recommendation chip colour
+                extra = {"n_peers": n_peers, "verdict": verdict, "rating": rating}
                 _vm_rec_map = {
-                    "Attractive":   "BUY",
-                    "Neutral":      "HOLD",
-                    "Unattractive": "SELL",
+                    "Attractive": "BUY", "Neutral": "HOLD", "Unattractive": "SELL",
                 }
                 analysis["recommendation"] = _vm_rec_map.get(rating, "HOLD")
 

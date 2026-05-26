@@ -1,29 +1,29 @@
 """
 pdf_valuemeter.py — ReportLab PDF renderer for the ValueMeter model.
 
-Produces a 3-page PDF:
-  Page 1: Header + Peer Group Definition (included + excluded) + Raw Data Table
-  Page 2: Score & Rankings Table + Interpretation (verdict, drivers, risks)
-  Page 3: Conclusion + Final Summary Table (Ticker, CCY, Price, Mcap, ROE,
-           EBIT Margin, EV/Sales, Value Score)
+Compact layout — fits all required content in 2 pages (may spill to 3 if
+the peer group is large, but 6-8 peers typically stay within 2 pages):
 
-Visual style: consistent with pdf_gravity.py and pdf_fisher.py.
+  Page 1: Header + Peer group table (included + excluded) +
+           Raw financial data table + Valuation yields table
 
-ReportLab rules (DO NOT violate):
-  - Never use Unicode sub/superscript characters — use <sub>/<super> XML tags.
-  - Never call HexColor.hexval() for markup — use plain "#RRGGBB" string constants.
-  - Color in Paragraph XML: <font color="#RRGGBB">text</font>.
+  Page 2: Score & Rankings table + Verdict + Interpretation +
+           Conclusion + Final summary table (Ticker, CCY, Price,
+           MCap, ROE, EBIT Margin, EV/Sales, Value Score, Rank)
+
+ReportLab rules (do not violate):
+  - Never use Unicode sub/superscript — use <sub>/<super> XML tags.
+  - Never call HexColor.hexval() for markup — use plain "#RRGGBB" constants.
 """
 
 from __future__ import annotations
 import logging
 from datetime import datetime
-from typing import Optional
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.lib.colors import HexColor, white, black
+from reportlab.lib.colors import HexColor, white
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Table, TableStyle,
@@ -34,28 +34,24 @@ from data_sources.base import CompanyData
 
 logger = logging.getLogger(__name__)
 
-# ── Page geometry ─────────────────────────────────────────────────────────────
-W, H = A4
-ML = MR = 15 * mm
-MT = 36 * mm
-MB = 14 * mm
-CW = W - ML - MR
+# ── Geometry ──────────────────────────────────────────────────────────────────
+W, H  = A4
+ML = MR = 14 * mm
+MT     = 34 * mm
+MB     = 12 * mm
+CW     = W - ML - MR
 
-# ── Colours — plain string constants (never use .hexval()) ────────────────────
-NAVY_HEX    = "#003F54"
-BLUE_HEX    = "#2E75B6"
-GREEN_HEX   = "#1A7E3D"
-RED_HEX     = "#C0392B"
-AMBER_HEX   = "#D68910"
-MGRAY_HEX   = "#555555"
-LGRAY_HEX   = "#F0F0F0"
-DGRAY_HEX   = "#333333"
-WHITE_HEX   = "#FFFFFF"
-LGREEN_HEX  = "#D4EDDA"
-LRED_HEX    = "#FADBD8"
-LAMBER_HEX  = "#FDEBD0"
-LBLUE_HEX   = "#D6E8F7"
-BORDER_HEX  = "#BBCCDD"
+# ── Colours (plain string constants — never use .hexval()) ───────────────────
+NAVY_HEX   = "#003F54"
+BLUE_HEX   = "#2E75B6"
+GREEN_HEX  = "#1A7E3D"
+RED_HEX    = "#C0392B"
+AMBER_HEX  = "#D68910"
+MGRAY_HEX  = "#666666"
+DGRAY_HEX  = "#222222"
+LGRAY_HEX  = "#F2F2F2"
+LBLUE_HEX  = "#D6E8F7"
+BORDER_HEX = "#CCDDEE"
 
 NAVY   = HexColor(NAVY_HEX)
 BLUE   = HexColor(BLUE_HEX)
@@ -64,605 +60,431 @@ RED    = HexColor(RED_HEX)
 AMBER  = HexColor(AMBER_HEX)
 MGRAY  = HexColor(MGRAY_HEX)
 LGRAY  = HexColor(LGRAY_HEX)
-LGREEN = HexColor(LGREEN_HEX)
-LRED   = HexColor(LRED_HEX)
-LAMBER = HexColor(LAMBER_HEX)
 LBLUE  = HexColor(LBLUE_HEX)
 BORDER = HexColor(BORDER_HEX)
 
-BASE_FONT = "Helvetica"
-BOLD_FONT = "Helvetica-Bold"
+BF = "Helvetica-Bold"
+NF = "Helvetica"
 
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 
-def _styles() -> dict:
-    def S(name, **kw):
+def _S() -> dict:
+    def mk(name, **kw):
         return ParagraphStyle(name, **kw)
-
     return {
-        "section_title": S("section_title",
-            fontName=BOLD_FONT, fontSize=9, textColor=NAVY,
-            spaceBefore=8, spaceAfter=3, leading=11,
-        ),
-        "body": S("body",
-            fontName=BASE_FONT, fontSize=8.5, textColor=HexColor(DGRAY_HEX),
-            leading=13, alignment=TA_JUSTIFY, spaceAfter=4,
-        ),
-        "body_small": S("body_small",
-            fontName=BASE_FONT, fontSize=7.5, textColor=MGRAY,
-            leading=11, alignment=TA_JUSTIFY,
-        ),
-        "table_header": S("th",
-            fontName=BOLD_FONT, fontSize=7, textColor=white,
-            alignment=TA_CENTER, leading=9,
-        ),
-        "table_header_l": S("thl",
-            fontName=BOLD_FONT, fontSize=7, textColor=white,
-            alignment=TA_LEFT, leading=9,
-        ),
-        "table_cell": S("tc",
-            fontName=BASE_FONT, fontSize=7, textColor=HexColor(DGRAY_HEX),
-            alignment=TA_RIGHT, leading=9,
-        ),
-        "table_cell_l": S("tcl",
-            fontName=BASE_FONT, fontSize=7, textColor=HexColor(DGRAY_HEX),
-            alignment=TA_LEFT, leading=9,
-        ),
-        "table_cell_c": S("tcc",
-            fontName=BASE_FONT, fontSize=7, textColor=HexColor(DGRAY_HEX),
-            alignment=TA_CENTER, leading=9,
-        ),
-        "table_bold": S("tb",
-            fontName=BOLD_FONT, fontSize=7, textColor=NAVY,
-            alignment=TA_LEFT, leading=9,
-        ),
-        "table_bold_r": S("tbr",
-            fontName=BOLD_FONT, fontSize=7, textColor=NAVY,
-            alignment=TA_RIGHT, leading=9,
-        ),
-        "bullet": S("bullet",
-            fontName=BASE_FONT, fontSize=8.5, textColor=HexColor(DGRAY_HEX),
-            leading=13, leftIndent=12, spaceAfter=3,
-        ),
-        "verdict_title": S("verdict_title",
-            fontName=BOLD_FONT, fontSize=10, textColor=white,
-            alignment=TA_CENTER, leading=13,
-        ),
-        "verdict_body": S("verdict_body",
-            fontName=BASE_FONT, fontSize=8, textColor=white,
-            alignment=TA_JUSTIFY, leading=12,
-        ),
-        "conclusion_label": S("conclusion_label",
-            fontName=BOLD_FONT, fontSize=8, textColor=NAVY,
-            leading=11, spaceAfter=2,
-        ),
-        "conclusion_body": S("conclusion_body",
-            fontName=BASE_FONT, fontSize=8.5, textColor=HexColor(DGRAY_HEX),
-            leading=13, alignment=TA_JUSTIFY, spaceAfter=6,
-        ),
+        "sec":    mk("sec",  fontName=BF, fontSize=8, textColor=NAVY,
+                     spaceBefore=5, spaceAfter=2, leading=10),
+        "body":   mk("body", fontName=NF, fontSize=7.5, textColor=HexColor(DGRAY_HEX),
+                     leading=11, alignment=TA_JUSTIFY, spaceAfter=3),
+        "small":  mk("small", fontName=NF, fontSize=6.5, textColor=MGRAY,
+                     leading=9,  alignment=TA_JUSTIFY),
+        "th":     mk("th",  fontName=BF, fontSize=6.5, textColor=white,
+                     alignment=TA_CENTER, leading=8),
+        "thl":    mk("thl", fontName=BF, fontSize=6.5, textColor=white,
+                     alignment=TA_LEFT,   leading=8),
+        "td":     mk("td",  fontName=NF, fontSize=6.5, textColor=HexColor(DGRAY_HEX),
+                     alignment=TA_RIGHT,  leading=8),
+        "tdl":    mk("tdl", fontName=NF, fontSize=6.5, textColor=HexColor(DGRAY_HEX),
+                     alignment=TA_LEFT,   leading=8),
+        "tdc":    mk("tdc", fontName=NF, fontSize=6.5, textColor=HexColor(DGRAY_HEX),
+                     alignment=TA_CENTER, leading=8),
+        "tdb":    mk("tdb", fontName=BF, fontSize=6.5, textColor=NAVY,
+                     alignment=TA_LEFT,   leading=8),
+        "tdbr":   mk("tdbr", fontName=BF, fontSize=6.5, textColor=NAVY,
+                     alignment=TA_RIGHT,  leading=8),
+        "bullet": mk("bullet", fontName=NF, fontSize=7.5, textColor=HexColor(DGRAY_HEX),
+                     leading=11, leftIndent=10, spaceAfter=2),
     }
 
 
 # ── Formatters ────────────────────────────────────────────────────────────────
 
-def _n(v, decimals=1, suffix="") -> str:
-    """Format a float nicely; returns '—' for None."""
-    if v is None:
-        return "—"
-    try:
-        return f"{float(v):,.{decimals}f}{suffix}"
-    except (TypeError, ValueError):
-        return "—"
-
+def _f(v, dec=1, suf="") -> str:
+    if v is None: return "—"
+    try:    return f"{float(v):,.{dec}f}{suf}"
+    except: return "—"
 
 def _pct(v) -> str:
-    if v is None:
-        return "—"
-    try:
-        return f"{float(v):.1f}%"
-    except (TypeError, ValueError):
-        return "—"
-
+    return _f(v, 1, "%")
 
 def _bn(v) -> str:
-    if v is None:
-        return "—"
-    try:
-        f = float(v)
-        return f"{f:.1f}B"
-    except (TypeError, ValueError):
-        return "—"
-
+    return _f(v, 1, "B")
 
 def _score_color(score) -> HexColor:
-    """Green for high scores, amber for mid, red for low."""
     try:
         s = float(score)
-        if s >= 65:
-            return GREEN
-        if s >= 40:
-            return AMBER
+        if s >= 65: return GREEN
+        if s >= 40: return AMBER
         return RED
-    except (TypeError, ValueError):
-        return MGRAY
-
-
-def _rating_colors(rating: str) -> tuple:
-    """(bg, text) colours for conclusion rating banner."""
-    r = (rating or "").lower()
-    if r == "attractive":
-        return GREEN, white
-    if r == "unattractive":
-        return RED, white
-    return AMBER, white
-
+    except: return MGRAY
 
 def _verdict_color(verdict: str) -> HexColor:
     v = (verdict or "").lower()
-    if "opportunity" in v:
-        return GREEN
-    if "trap" in v or "mirage" in v:
-        return RED
+    if "opportunity" in v:  return GREEN
+    if "trap" in v or "mirage" in v: return RED
     return AMBER
 
-
 def _verdict_label(verdict: str) -> str:
-    mapping = {
+    return {
         "value_opportunity":        "VALUE OPPORTUNITY",
         "value_trap":               "VALUE TRAP",
         "cyclical_mirage":          "CYCLICAL MIRAGE",
         "fairly_priced_compounder": "FAIRLY PRICED COMPOUNDER",
-    }
-    return mapping.get((verdict or "").lower().strip(), (verdict or "UNKNOWN").upper())
+    }.get((verdict or "").lower().strip(), (verdict or "UNKNOWN").upper())
+
+def _rating_color(rating: str) -> HexColor:
+    r = (rating or "").lower()
+    if r == "attractive":   return GREEN
+    if r == "unattractive": return RED
+    return AMBER
+
+
+# ── Standard table style ──────────────────────────────────────────────────────
+
+def _base_ts(subject_rows: list[int] | None = None) -> TableStyle:
+    cmds = [
+        ("BACKGROUND",    (0, 0), (-1, 0),  NAVY),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  white),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [white, LGRAY]),
+        ("GRID",          (0, 0), (-1, -1), 0.25, BORDER),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 3),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]
+    if subject_rows:
+        for r in subject_rows:
+            cmds.append(("BACKGROUND", (0, r), (-1, r), LBLUE))
+    return TableStyle(cmds)
 
 
 # ── Page header / footer ──────────────────────────────────────────────────────
 
-def _page_header(canvas, doc, company: CompanyData, report_date: str) -> None:
+def _header(canvas, doc, company: CompanyData, report_date: str) -> None:
     canvas.saveState()
     canvas.setFillColor(NAVY)
     canvas.rect(0, H - MT, W, MT, fill=1, stroke=0)
 
-    # Title left
     canvas.setFillColor(white)
-    canvas.setFont(BOLD_FONT, 14)
-    canvas.drawString(ML, H - 18 * mm, "ValueMeter")
-
-    canvas.setFont(BASE_FONT, 9)
+    canvas.setFont(BF, 13)
+    canvas.drawString(ML, H - 16*mm, "ValueMeter")
+    canvas.setFont(NF, 8)
     canvas.setFillColor(HexColor("#AACCDD"))
-    canvas.drawString(ML, H - 24 * mm, "Prudent Value Score — Peer-Relative Valuation")
+    canvas.drawString(ML, H - 22*mm, "Prudent Value Score — Peer-Relative Valuation")
 
-    # Company name right
-    name = (company.name or company.ticker or "")[:40]
-    ccy = company.currency or ""
+    name = (company.name or company.ticker or "")[:42]
     canvas.setFillColor(white)
-    canvas.setFont(BOLD_FONT, 11)
-    canvas.drawRightString(W - MR, H - 18 * mm, name)
-    canvas.setFont(BASE_FONT, 8)
+    canvas.setFont(BF, 10)
+    canvas.drawRightString(W - MR, H - 16*mm, name)
+    canvas.setFont(NF, 7.5)
     canvas.setFillColor(HexColor("#AACCDD"))
-    canvas.drawRightString(
-        W - MR, H - 24 * mm,
-        f"{company.ticker or ''}  ·  {ccy}  ·  {report_date}"
-    )
+    canvas.drawRightString(W - MR, H - 22*mm,
+        f"{company.ticker or ''}  ·  {company.currency or ''}  ·  {report_date}")
 
-    # Footer
     canvas.setFillColor(NAVY)
     canvas.rect(0, 0, W, MB, fill=1, stroke=0)
     canvas.setFillColor(HexColor("#AACCDD"))
-    canvas.setFont(BASE_FONT, 7)
-    canvas.drawString(ML, 5 * mm, "ValueMeter — screening tool only, not an investment recommendation")
-    canvas.drawRightString(W - MR, 5 * mm, f"Page {doc.page}")
+    canvas.setFont(NF, 6.5)
+    canvas.drawString(ML, 4*mm,
+        "ValueMeter is a screening tool — not an investment recommendation.")
+    canvas.drawRightString(W - MR, 4*mm, f"Page {doc.page}")
     canvas.restoreState()
 
 
-# ── Section heading helper ────────────────────────────────────────────────────
-
-def _section(title: str, st: dict) -> list:
+def _sec(title: str, st: dict) -> list:
     return [
-        Spacer(1, 3 * mm),
-        Paragraph(title.upper(), st["section_title"]),
-        HRFlowable(width=CW, thickness=0.5, color=BORDER, spaceAfter=3),
+        Spacer(1, 2*mm),
+        Paragraph(title.upper(), st["sec"]),
+        HRFlowable(width=CW, thickness=0.4, color=BORDER, spaceAfter=2),
     ]
 
 
-# ── Page 1: Peer Group + Raw Data Table ──────────────────────────────────────
+# ── Page 1 ────────────────────────────────────────────────────────────────────
 
-def _build_page1(analysis: dict, st: dict, company: CompanyData) -> list:
+def _page1(analysis: dict, st: dict) -> list:
     elems = []
-    peer_group = analysis.get("peer_group") or []
-    excluded   = analysis.get("excluded_peers") or []
+    peers    = analysis.get("peer_group") or []
+    excluded = analysis.get("excluded_peers") or []
 
-    # ── Included peers ────────────────────────────────────────────────────────
-    elems += _section("Peer Group — Included", st)
-
-    if peer_group:
-        for p in peer_group:
-            is_subj = p.get("is_subject", False)
-            ticker  = p.get("ticker", "?")
-            name    = p.get("name", "")
-            reason  = p.get("reason_included", "")
-            label_color = NAVY_HEX if is_subj else DGRAY_HEX
-            marker  = " ★" if is_subj else ""
+    # ── Peer group: included ──────────────────────────────────────────────────
+    elems += _sec("Peer Group — Included", st)
+    if peers:
+        for p in peers:
+            is_s   = p.get("is_subject", False)
+            ticker = p.get("ticker", "?")
+            name   = p.get("name", "")
+            reason = p.get("reason_included") or p.get("reason", "")
+            star   = " ★" if is_s else ""
+            color  = NAVY_HEX if is_s else DGRAY_HEX
             elems.append(Paragraph(
-                f'<font color="{label_color}"><b>{ticker}{marker}  {name}</b></font>  '
-                f'<font color="{MGRAY_HEX}">— {reason}</font>',
-                st["body_small"],
+                f'<font color="{color}"><b>{ticker}{star}  {name}</b></font>'
+                f'<font color="{MGRAY_HEX}"> — {reason}</font>',
+                st["small"],
             ))
     else:
-        elems.append(Paragraph("No peer group data returned.", st["body"]))
+        elems.append(Paragraph("No peer group data.", st["body"]))
 
-    # ── Excluded peers ────────────────────────────────────────────────────────
+    # ── Excluded ──────────────────────────────────────────────────────────────
     if excluded:
-        elems += _section("Excluded Peers", st)
+        elems += _sec("Excluded Peers", st)
         for ex in excluded:
             elems.append(Paragraph(
-                f'<b>{ex.get("name", "?")}:</b>  {ex.get("reason", "")}',
-                st["body_small"],
+                f'<b>{ex.get("name","?")}:</b>  {ex.get("reason","")}',
+                st["small"],
             ))
 
-    # ── Raw data table ────────────────────────────────────────────────────────
-    elems += _section("Raw Financial Data", st)
+    # ── Raw financial data ────────────────────────────────────────────────────
+    elems += _sec("Raw Financial Data (EODHD)", st)
+    if peers:
+        subj_rows = [i+1 for i, p in enumerate(peers) if p.get("is_subject")]
+        hdrs = ["Company", "CCY", "MCap\nB", "EV\nB", "Rev\nB",
+                "EBIT\nB", "EBITDA\nB", "FCF\nB", "Net Debt\nB", "EBIT\nMgn%", "ROE%"]
+        cw = [CW*.16, CW*.05, CW*.08, CW*.08, CW*.07,
+              CW*.07, CW*.08, CW*.07, CW*.09, CW*.08, CW*.07]
+        rows = [[Paragraph(h, st["th"]) for h in hdrs]]
+        for p in peers:
+            is_s = p.get("is_subject", False)
+            sl   = st["tdb"]  if is_s else st["tdl"]
+            sr   = st["tdbr"] if is_s else st["td"]
+            t    = (p.get("ticker") or "?") + (" ★" if is_s else "")
+            rows.append([
+                Paragraph(f"{t} {(p.get('name') or '')[:16]}", sl),
+                Paragraph(p.get("currency") or "—", st["tdc"]),
+                Paragraph(_bn(p.get("market_cap_bn")), sr),
+                Paragraph(_bn(p.get("ev_bn")), sr),
+                Paragraph(_bn(p.get("revenue_bn")), sr),
+                Paragraph(_bn(p.get("ebit_bn")), sr),
+                Paragraph(_bn(p.get("ebitda_bn")), sr),
+                Paragraph(_bn(p.get("fcf_bn")), sr),
+                Paragraph(_bn(p.get("net_debt_bn")), sr),
+                Paragraph(_pct(p.get("ebit_margin_pct")), sr),
+                Paragraph(_pct(p.get("roe_pct")), sr),
+            ])
+        t1 = Table(rows, colWidths=cw, repeatRows=1)
+        t1.setStyle(_base_ts(subj_rows))
+        elems.append(t1)
 
-    if peer_group:
-        # Columns: Company | CCY | MCap | EV | Rev | EBIT | EBITDA | FCF | Net Debt | EBIT Mgn | ROE/ROIC
-        col_headers = ["Company", "CCY", "MCap\n(B)", "EV\n(B)", "Rev\n(B)",
-                       "EBIT\n(B)", "EBITDA\n(B)", "FCF\n(B)", "Net Debt\n(B)",
-                       "EBIT\nMgn%", "ROE\n%"]
-        # Column widths — total = CW
-        cw = CW
-        col_w = [cw*0.17, cw*0.05, cw*0.08, cw*0.08, cw*0.08,
-                 cw*0.08, cw*0.08, cw*0.08, cw*0.08, cw*0.07, cw*0.07]
-
-        header_row = [Paragraph(h, st["table_header"]) for h in col_headers]
-
-        rows = [header_row]
-        for p in peer_group:
-            is_subj = p.get("is_subject", False)
-            sty_name = st["table_bold"] if is_subj else st["table_cell_l"]
-            sty_num  = st["table_bold_r"] if is_subj else st["table_cell"]
-            ticker   = p.get("ticker", "?")
-            name_str = (p.get("name") or "")[:22]
-            label    = f"{ticker} ★" if is_subj else ticker
-
-            row = [
-                Paragraph(f"{label}  {name_str}", sty_name),
-                Paragraph(p.get("currency") or "—", st["table_cell_c"]),
-                Paragraph(_bn(p.get("market_cap_bn")), sty_num),
-                Paragraph(_bn(p.get("ev_bn")), sty_num),
-                Paragraph(_bn(p.get("revenue_bn")), sty_num),
-                Paragraph(_bn(p.get("ebit_bn")), sty_num),
-                Paragraph(_bn(p.get("ebitda_bn")), sty_num),
-                Paragraph(_bn(p.get("fcf_bn")), sty_num),
-                Paragraph(_bn(p.get("net_debt_bn")), sty_num),
-                Paragraph(_pct(p.get("ebit_margin_pct")), sty_num),
-                Paragraph(_pct(p.get("roe_pct")), sty_num),
-            ]
-            rows.append(row)
-
-        tbl = Table(rows, colWidths=col_w, repeatRows=1)
-        ts = TableStyle([
-            # Header
-            ("BACKGROUND",  (0, 0), (-1, 0), NAVY),
-            ("TEXTCOLOR",   (0, 0), (-1, 0), white),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, LGRAY]),
-            ("GRID",        (0, 0), (-1, -1), 0.3, BORDER),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 3),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING",   (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
-        ])
-        # Highlight subject row
-        for i, p in enumerate(peer_group, start=1):
-            if p.get("is_subject"):
-                ts.add("BACKGROUND", (0, i), (-1, i), LBLUE)
-        tbl.setStyle(ts)
-        elems.append(tbl)
-
-    # ── Valuation yields table ─────────────────────────────────────────────────
-    elems += _section("Valuation Yields", st)
-
-    if peer_group:
-        col_headers2 = ["Company", "EBIT/EV\n%", "FCF/EV\n%", "Book/\nPrice",
-                        "Sales/\nEV", "ROIC/\nROE%", "ND/\nEBITDA", "Int.\nCover",
-                        "FCF/\nNI", "Mom.\n6m%"]
-        col_w2 = [cw*0.18, cw*0.09, cw*0.09, cw*0.08, cw*0.08,
-                  cw*0.09, cw*0.09, cw*0.09, cw*0.08, cw*0.09]
-
-        header_row2 = [Paragraph(h, st["table_header"]) for h in col_headers2]
-        rows2 = [header_row2]
-        for p in peer_group:
-            is_subj = p.get("is_subject", False)
-            sty_name = st["table_bold"] if is_subj else st["table_cell_l"]
-            sty_num  = st["table_bold_r"] if is_subj else st["table_cell"]
-            label    = (p.get("ticker") or "?") + (" ★" if is_subj else "")
-
-            row2 = [
-                Paragraph(label, sty_name),
-                Paragraph(_pct(p.get("ebit_ev")), sty_num),
-                Paragraph(_pct(p.get("fcf_ev")), sty_num),
-                Paragraph(_n(p.get("book_price"), 2), sty_num),
-                Paragraph(_n(p.get("sales_ev"), 2), sty_num),
-                Paragraph(_pct(p.get("roic_pct") or p.get("roe_pct")), sty_num),
-                Paragraph(_n(p.get("net_debt_ebitda"), 1, "x"), sty_num),
-                Paragraph(_n(p.get("interest_cover"), 1, "x"), sty_num),
-                Paragraph(_n(p.get("fcf_net_income"), 2), sty_num),
-                Paragraph(_pct(p.get("momentum_6m_pct")), sty_num),
-            ]
-            rows2.append(row2)
-
-        tbl2 = Table(rows2, colWidths=col_w2, repeatRows=1)
-        ts2 = TableStyle([
-            ("BACKGROUND",  (0, 0), (-1, 0), NAVY),
-            ("TEXTCOLOR",   (0, 0), (-1, 0), white),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, LGRAY]),
-            ("GRID",        (0, 0), (-1, -1), 0.3, BORDER),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 3),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING",   (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
-        ])
-        for i, p in enumerate(peer_group, start=1):
-            if p.get("is_subject"):
-                ts2.add("BACKGROUND", (0, i), (-1, i), LBLUE)
-        tbl2.setStyle(ts2)
-        elems.append(tbl2)
+    # ── Valuation yields ──────────────────────────────────────────────────────
+    elems += _sec("Valuation Yields", st)
+    if peers:
+        subj_rows = [i+1 for i, p in enumerate(peers) if p.get("is_subject")]
+        hdrs2 = ["Company", "EBIT/EV\n%", "FCF/EV\n%", "Book/\nPrice",
+                 "Sales/\nEV", "ROIC/\nROE%", "ND/\nEBITDA", "Int.\nCover",
+                 "FCF/\nNI", "Mom.\n6m%"]
+        cw2 = [CW*.17, CW*.09, CW*.09, CW*.09, CW*.09,
+               CW*.10, CW*.09, CW*.09, CW*.09, CW*.09]
+        rows2 = [[Paragraph(h, st["th"]) for h in hdrs2]]
+        for p in peers:
+            is_s = p.get("is_subject", False)
+            sl   = st["tdb"]  if is_s else st["tdl"]
+            sr   = st["tdbr"] if is_s else st["td"]
+            t    = (p.get("ticker") or "?") + (" ★" if is_s else "")
+            rows2.append([
+                Paragraph(t, sl),
+                Paragraph(_pct(p.get("ebit_ev")), sr),
+                Paragraph(_pct(p.get("fcf_ev")), sr),
+                Paragraph(_f(p.get("book_price"), 3), sr),
+                Paragraph(_f(p.get("sales_ev"), 3), sr),
+                Paragraph(_pct(p.get("quality_return_pct") or p.get("roe_pct")), sr),
+                Paragraph(_f(p.get("net_debt_ebitda"), 1, "x"), sr),
+                Paragraph(_f(p.get("interest_cover"), 1, "x"), sr),
+                Paragraph(_f(p.get("fcf_net_income"), 2), sr),
+                Paragraph(_pct(p.get("momentum_6m_pct")), sr),
+            ])
+        t2 = Table(rows2, colWidths=cw2, repeatRows=1)
+        t2.setStyle(_base_ts(subj_rows))
+        elems.append(t2)
 
     return elems
 
 
-# ── Page 2: Scores + Interpretation ──────────────────────────────────────────
+# ── Page 2 ────────────────────────────────────────────────────────────────────
 
-def _build_page2(analysis: dict, st: dict) -> list:
+def _page2(analysis: dict, st: dict) -> list:
     elems = [PageBreak()]
-    scores       = analysis.get("scores") or []
-    interp       = analysis.get("interpretation") or {}
-    subject_tick = analysis.get("subject_ticker", "")
+    scores  = sorted(analysis.get("scores") or [], key=lambda x: x.get("rank") or 999)
+    interp  = analysis.get("interpretation") or {}
+    concl   = analysis.get("conclusion") or {}
+    sub_t   = analysis.get("subject_ticker", "")
 
-    # ── Score & Rankings table ────────────────────────────────────────────────
-    elems += _section("Prudent Value Score — Rankings", st)
+    # ── Score & Rankings ──────────────────────────────────────────────────────
+    elems += _sec("Prudent Value Score — Rankings", st)
 
     if scores:
-        col_headers = ["Rank", "Company", "Cheapness\nScore", "Quality\nScore",
-                       "Momentum\nScore", "Total\nScore", "Percentile"]
-        col_w = [CW*0.07, CW*0.28, CW*0.13, CW*0.13, CW*0.13, CW*0.13, CW*0.13]
-        header_row = [Paragraph(h, st["table_header_l"]) for h in col_headers]
-        rows = [header_row]
-
-        sorted_scores = sorted(scores, key=lambda x: x.get("rank") or 999)
-        for s in sorted_scores:
-            is_subj = s.get("is_subject", False) or s.get("ticker") == subject_tick
-            sty_l   = st["table_bold"] if is_subj else st["table_cell_l"]
-            sty_c   = st["table_bold_r"] if is_subj else st["table_cell_c"]
-            ticker  = s.get("ticker", "?")
-            name    = (s.get("name") or "")[:28]
-            label   = f"{ticker} ★" if is_subj else ticker
-
-            total   = s.get("total_score")
-            cheap   = s.get("cheapness_score")
-            qual    = s.get("quality_score")
-            mom     = s.get("momentum_score")
-            pct     = s.get("percentile")
-            rank    = s.get("rank")
-
-            row = [
-                Paragraph(str(rank) if rank else "—", sty_c),
-                Paragraph(f"{label}  {name}", sty_l),
-                Paragraph(_n(cheap, 1), sty_c),
-                Paragraph(_n(qual,  1), sty_c),
-                Paragraph(_n(mom,   1), sty_c),
-                Paragraph(_n(total, 1), sty_c),
-                Paragraph(f"{int(pct)}th" if pct else "—", sty_c),
-            ]
-            rows.append(row)
-
-        tbl = Table(rows, colWidths=col_w, repeatRows=1)
-        ts = TableStyle([
-            ("BACKGROUND",  (0, 0), (-1, 0), NAVY),
-            ("TEXTCOLOR",   (0, 0), (-1, 0), white),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, LGRAY]),
-            ("GRID",        (0, 0), (-1, -1), 0.3, BORDER),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-            ("TOPPADDING",   (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
-        ])
-        # Highlight subject + colour code total score
-        for i, s in enumerate(sorted_scores, start=1):
-            is_subj = s.get("is_subject") or s.get("ticker") == subject_tick
-            if is_subj:
-                ts.add("BACKGROUND", (0, i), (-1, i), LBLUE)
-            total = s.get("total_score")
-            if total is not None:
-                c = _score_color(total)
-                ts.add("TEXTCOLOR", (5, i), (5, i), c)
-                ts.add("FONTNAME",  (5, i), (5, i), BOLD_FONT)
+        subj_rows = [i+1 for i, s in enumerate(scores)
+                     if s.get("is_subject") or s.get("ticker") == sub_t]
+        hdrs = ["Rank", "Company", "Cheapness\n(0-100)", "Quality\n(0-100)",
+                "Momentum\n(0-100)", "TOTAL\nSCORE", "Pctile"]
+        cw = [CW*.07, CW*.28, CW*.13, CW*.13, CW*.13, CW*.14, CW*.12]
+        rows = [[Paragraph(h, st["thl"] if i == 1 else st["th"])
+                 for i, h in enumerate(hdrs)]]
+        for s in scores:
+            is_s = s.get("is_subject") or s.get("ticker") == sub_t
+            sl   = st["tdb"]  if is_s else st["tdl"]
+            sr   = st["tdbr"] if is_s else st["td"]
+            sc   = st["tdc"]
+            rows.append([
+                Paragraph(str(s.get("rank") or "—"), sc),
+                Paragraph(
+                    f'{(s.get("ticker") or "?")}{"★" if is_s else ""}  {(s.get("name") or "")[:26]}',
+                    sl,
+                ),
+                Paragraph(_f(s.get("cheapness_score"),  1), sr),
+                Paragraph(_f(s.get("quality_score"),    1), sr),
+                Paragraph(_f(s.get("momentum_score"),   1), sr),
+                Paragraph(_f(s.get("total_score"),      1), sr),
+                Paragraph(f'{int(s["percentile"])}th' if s.get("percentile") else "—", sc),
+            ])
+        tbl = Table(rows, colWidths=cw, repeatRows=1)
+        ts  = _base_ts(subj_rows)
+        # Colour-code total score column
+        for i, s in enumerate(scores, start=1):
+            c = _score_color(s.get("total_score"))
+            ts.add("TEXTCOLOR", (5, i), (5, i), c)
+            ts.add("FONTNAME",  (5, i), (5, i), BF)
         tbl.setStyle(ts)
         elems.append(tbl)
-        elems.append(Spacer(1, 2 * mm))
         elems.append(Paragraph(
-            "Score 0–100 · Cheapness 50% weight · Quality 30% weight · Momentum 10% weight · "
-            "All metrics winsorised at 5th/95th percentile · Higher = more attractive.",
-            st["body_small"],
+            "Weights: EBIT/EV 20% · FCF/EV 20% · Book/Price 10% · Sales/EV 10% · "
+            "ROIC/ROE 15% · Balance sheet 10% · FCF/NI 5% · Momentum 10%",
+            st["small"],
         ))
 
     # ── Verdict banner ────────────────────────────────────────────────────────
     verdict = interp.get("verdict", "")
-    verdict_label = _verdict_label(verdict)
-    verdict_color = _verdict_color(verdict)
-    verdict_expl  = interp.get("verdict_explanation", "")
+    v_color = _verdict_color(verdict)
+    v_label = _verdict_label(verdict)
+    v_expl  = interp.get("verdict_explanation", "")
 
-    elems.append(Spacer(1, 4 * mm))
-    verdict_data = [[
-        Paragraph(verdict_label, st["verdict_title"]),
-        Paragraph(verdict_expl or "", st["verdict_body"]),
+    elems.append(Spacer(1, 3*mm))
+    vdata = [[
+        Paragraph(v_label, ParagraphStyle("vt", fontName=BF, fontSize=9,
+                  textColor=white, alignment=TA_CENTER, leading=11)),
+        Paragraph(v_expl,  ParagraphStyle("vb", fontName=NF, fontSize=7,
+                  textColor=white, alignment=TA_JUSTIFY, leading=10)),
     ]]
-    verdict_tbl = Table(verdict_data, colWidths=[CW * 0.28, CW * 0.72])
-    verdict_tbl.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, -1), verdict_color),
-        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING",   (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
-        ("ROUNDEDCORNERS", [4]),
+    vtbl = Table(vdata, colWidths=[CW*.28, CW*.72])
+    vtbl.setStyle(TableStyle([
+        ("BACKGROUND",   (0,0),(-1,-1), v_color),
+        ("VALIGN",       (0,0),(-1,-1), "MIDDLE"),
+        ("LEFTPADDING",  (0,0),(-1,-1), 7),
+        ("RIGHTPADDING", (0,0),(-1,-1), 7),
+        ("TOPPADDING",   (0,0),(-1,-1), 7),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 7),
     ]))
-    elems.append(verdict_tbl)
+    elems.append(vtbl)
 
-    # ── Is it cheap? ──────────────────────────────────────────────────────────
-    elems += _section("Cheapness Assessment", st)
-    is_cheap    = interp.get("is_cheap", "")
-    cheap_reason = interp.get("cheap_reason", "")
-    cheap_color = GREEN_HEX if is_cheap == "Yes" else (RED_HEX if is_cheap == "No" else AMBER_HEX)
+    # ── Interpretation ────────────────────────────────────────────────────────
+    elems += _sec("Interpretation", st)
+
+    is_cheap = interp.get("is_cheap", "")
+    chp_col  = GREEN_HEX if is_cheap == "Yes" else (RED_HEX if is_cheap == "No" else AMBER_HEX)
     elems.append(Paragraph(
-        f'<font color="{cheap_color}"><b>Cheap relative to peers: {is_cheap}</b></font>  '
-        f'— {cheap_reason}',
+        f'<font color="{chp_col}"><b>Cheap vs. peers: {is_cheap}</b></font>'
+        f' — {interp.get("cheap_reason", "")}',
         st["body"],
     ))
 
-    # ── Top drivers ───────────────────────────────────────────────────────────
-    elems += _section("Top 3 Score Drivers", st)
-    for d in (interp.get("top_drivers") or [])[:3]:
-        elems.append(Paragraph(f"• {d}", st["bullet"]))
+    # Drivers + Risks side by side
+    drivers = (interp.get("top_drivers") or [])[:3]
+    risks   = (interp.get("top_risks")   or [])[:3]
 
-    # ── Top risks ─────────────────────────────────────────────────────────────
-    elems += _section("Top 3 Risks to Score", st)
-    for r in (interp.get("top_risks") or [])[:3]:
-        elems.append(Paragraph(f"• {r}", st["bullet"]))
+    dr_text = "<b>Top 3 score drivers</b><br/>" + "<br/>".join(f"• {d}" for d in drivers)
+    ri_text = "<b>Top 3 risks to score</b><br/>"  + "<br/>".join(f"• {r}" for r in risks)
+    dr_para = Paragraph(dr_text, st["small"])
+    ri_para = Paragraph(ri_text, st["small"])
 
-    return elems
+    side = Table([[dr_para, ri_para]], colWidths=[CW*.5, CW*.5])
+    side.setStyle(TableStyle([
+        ("VALIGN",      (0,0),(-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0),(-1,-1), 0),
+        ("RIGHTPADDING",(0,0),(-1,-1), 4),
+    ]))
+    elems.append(side)
 
-
-# ── Page 3: Conclusion + Final Summary Table ──────────────────────────────────
-
-def _build_page3(analysis: dict, st: dict, company: CompanyData) -> list:
-    elems = [PageBreak()]
-    concl  = analysis.get("conclusion") or {}
-    scores = analysis.get("scores") or []
-
-    # ── Conclusion banner ─────────────────────────────────────────────────────
-    rating = concl.get("rating", "Neutral")
+    # ── Conclusion ────────────────────────────────────────────────────────────
+    rating     = concl.get("rating", "Neutral")
     confidence = concl.get("confidence", "Medium")
-    bg_color, txt_color = _rating_colors(rating)
+    r_color    = _rating_color(rating)
 
-    banner_data = [[
+    elems.append(Spacer(1, 3*mm))
+    banner = Table([[
         Paragraph(
             f"<b>{rating.upper()}</b>",
-            ParagraphStyle("b_title", fontName=BOLD_FONT, fontSize=16,
-                           textColor=txt_color, alignment=TA_CENTER),
+            ParagraphStyle("rt", fontName=BF, fontSize=12,
+                           textColor=white, alignment=TA_CENTER),
         ),
         Paragraph(
             f"<b>Confidence: {confidence}</b>",
-            ParagraphStyle("b_conf", fontName=BASE_FONT, fontSize=10,
-                           textColor=txt_color, alignment=TA_CENTER),
+            ParagraphStyle("rc", fontName=NF, fontSize=8,
+                           textColor=white, alignment=TA_CENTER),
         ),
-    ]]
-    banner = Table(banner_data, colWidths=[CW * 0.5, CW * 0.5])
+    ]], colWidths=[CW*.4, CW*.6])
     banner.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, -1), bg_color),
-        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",   (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 10),
+        ("BACKGROUND",   (0,0),(-1,-1), r_color),
+        ("VALIGN",       (0,0),(-1,-1), "MIDDLE"),
+        ("TOPPADDING",   (0,0),(-1,-1), 8),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 8),
     ]))
     elems.append(banner)
-    elems.append(Spacer(1, 4 * mm))
+    elems.append(Spacer(1, 2*mm))
 
-    # ── Manual checks ─────────────────────────────────────────────────────────
-    elems += _section("What to Check Manually Before Acting", st)
-    elems.append(Paragraph(concl.get("manual_checks") or "—", st["conclusion_body"]))
-
-    # ── What changes the conclusion ───────────────────────────────────────────
-    elems += _section("What Would Change the Conclusion", st)
-    elems.append(Paragraph(concl.get("what_changes_conclusion") or "—", st["conclusion_body"]))
-
-    # ── Disclaimer ────────────────────────────────────────────────────────────
-    elems.append(Spacer(1, 3 * mm))
-    elems.append(Paragraph(
-        "The ValueMeter score is a screening tool, not an investment decision. "
-        "Cheapness is evidence, not proof. Do not let the model replace judgment.",
-        st["body_small"],
-    ))
+    mc_text = concl.get("manual_checks", "")
+    wc_text = concl.get("what_changes_conclusion", "")
+    if mc_text or wc_text:
+        mc_para = Paragraph(
+            f"<b>Check before acting:</b> {mc_text}", st["small"])
+        wc_para = Paragraph(
+            f"<b>What changes the conclusion:</b> {wc_text}", st["small"])
+        elems.append(mc_para)
+        elems.append(Spacer(1, 1*mm))
+        elems.append(wc_para)
 
     # ── Final summary table ───────────────────────────────────────────────────
-    elems += _section("Summary Table — All Companies", st)
+    elems += _sec("Summary Table", st)
 
     if scores:
-        col_headers = ["Ticker", "CCY", "Price", "Mkt Cap\n(B)",
-                       "ROE %", "EBIT Mgn %", "EV/Sales", "Value\nScore", "Rank"]
-        col_w = [CW*0.11, CW*0.06, CW*0.09, CW*0.10,
-                 CW*0.09, CW*0.11, CW*0.09, CW*0.10, CW*0.07]
-        # Remainder for "Name" column
-        name_w = CW - sum(col_w)
-        col_headers = ["Ticker", "Name"] + col_headers[1:]
-        col_w = [CW*0.09, CW*0.19, CW*0.06, CW*0.09, CW*0.10,
-                 CW*0.09, CW*0.11, CW*0.09, CW*0.10, CW*0.08]
+        hdrs2 = ["Rank", "Ticker", "Name", "CCY", "Price",
+                 "Mkt Cap B", "ROE %", "EBIT Mgn %", "EV/Sales", "Value Score"]
+        cw2 = [CW*.06, CW*.09, CW*.19, CW*.05, CW*.08,
+               CW*.09, CW*.08, CW*.10, CW*.08, CW*.10]
+        # Remaining for rank column
+        rows2 = [[Paragraph(h, st["th"]) for h in hdrs2]]
+        subj_rows2 = [i+1 for i, s in enumerate(scores)
+                      if s.get("is_subject") or s.get("ticker") == sub_t]
+        for s in scores:
+            is_s = s.get("is_subject") or s.get("ticker") == sub_t
+            sl   = st["tdb"]  if is_s else st["tdl"]
+            sr   = st["tdbr"] if is_s else st["td"]
+            sc   = st["tdc"]
+            rows2.append([
+                Paragraph(str(s.get("rank") or "—"), sc),
+                Paragraph((s.get("ticker") or "?") + ("★" if is_s else ""), sl),
+                Paragraph((s.get("name") or "")[:24], sl),
+                Paragraph(s.get("currency") or "—", sc),
+                Paragraph(_f(s.get("price"), 2), sr),
+                Paragraph(_bn(s.get("market_cap_bn")), sr),
+                Paragraph(_pct(s.get("roe_pct")), sr),
+                Paragraph(_pct(s.get("ebit_margin_pct")), sr),
+                Paragraph(_f(s.get("ev_sales"), 2, "x"), sr),
+                Paragraph(_f(s.get("total_score"), 1), sr),
+            ])
+        t3 = Table(rows2, colWidths=cw2, repeatRows=1)
+        ts3 = _base_ts(subj_rows2)
+        for i, s in enumerate(scores, start=1):
+            c = _score_color(s.get("total_score"))
+            ts3.add("TEXTCOLOR", (9, i), (9, i), c)
+            ts3.add("FONTNAME",  (9, i), (9, i), BF)
+        t3.setStyle(ts3)
+        elems.append(t3)
 
-        header_row = [Paragraph(h, st["table_header"]) for h in col_headers]
-        rows = [header_row]
-
-        sorted_scores = sorted(scores, key=lambda x: x.get("rank") or 999)
-        subject_tick  = analysis.get("subject_ticker", "")
-
-        for s in sorted_scores:
-            is_subj = s.get("is_subject") or s.get("ticker") == subject_tick
-            sty_l   = st["table_bold"] if is_subj else st["table_cell_l"]
-            sty_r   = st["table_bold_r"] if is_subj else st["table_cell"]
-            sty_c   = st["table_cell_c"]
-
-            ticker   = s.get("ticker", "?") + (" ★" if is_subj else "")
-            name     = (s.get("name") or "")[:22]
-            ccy      = s.get("currency") or "—"
-            price    = _n(s.get("price"), 2)
-            mcap     = _bn(s.get("market_cap_bn"))
-            roe      = _pct(s.get("roe_pct"))
-            ebit_mgn = _pct(s.get("ebit_margin_pct"))
-            ev_sales = _n(s.get("ev_sales"), 2, "x")
-            total    = s.get("total_score")
-            rank     = s.get("rank")
-
-            row = [
-                Paragraph(ticker, sty_l),
-                Paragraph(name, sty_l),
-                Paragraph(ccy, sty_c),
-                Paragraph(price, sty_r),
-                Paragraph(mcap, sty_r),
-                Paragraph(roe, sty_r),
-                Paragraph(ebit_mgn, sty_r),
-                Paragraph(ev_sales, sty_r),
-                Paragraph(_n(total, 1), sty_r),
-                Paragraph(str(rank) if rank else "—", sty_c),
-            ]
-            rows.append(row)
-
-        tbl = Table(rows, colWidths=col_w, repeatRows=1)
-        ts = TableStyle([
-            ("BACKGROUND",  (0, 0), (-1, 0), NAVY),
-            ("TEXTCOLOR",   (0, 0), (-1, 0), white),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [white, LGRAY]),
-            ("GRID",        (0, 0), (-1, -1), 0.3, BORDER),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 3),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING",   (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
-        ])
-        for i, s in enumerate(sorted_scores, start=1):
-            is_subj = s.get("is_subject") or s.get("ticker") == subject_tick
-            if is_subj:
-                ts.add("BACKGROUND", (0, i), (-1, i), LBLUE)
-            total = s.get("total_score")
-            if total is not None:
-                c = _score_color(total)
-                ts.add("TEXTCOLOR", (8, i), (8, i), c)
-                ts.add("FONTNAME",  (8, i), (8, i), BOLD_FONT)
-        tbl.setStyle(ts)
-        elems.append(tbl)
-
-    # ── Weighting legend ──────────────────────────────────────────────────────
-    elems.append(Spacer(1, 3 * mm))
+    elems.append(Spacer(1, 2*mm))
     elems.append(Paragraph(
-        "Weights: EBIT/EV 20% · FCF/EV 20% · Book/Price 10% · Sales/EV 10% · "
-        "ROIC/ROE 15% · Balance sheet safety 10% · FCF conversion 5% · Momentum 10%",
-        st["body_small"],
+        "★ = subject company  ·  All data from EODHD  ·  "
+        "Score 0–100 (green ≥65, amber 40–65, red <40)  ·  "
+        "Screening tool only — not an investment recommendation.",
+        st["small"],
     ))
 
     return elems
@@ -671,35 +493,24 @@ def _build_page3(analysis: dict, st: dict, company: CompanyData) -> list:
 # ── Main renderer ─────────────────────────────────────────────────────────────
 
 class ValueMeterGenerator:
-    """Entry point: call .render(company, analysis, output_path)."""
 
-    def render(
-        self,
-        company: CompanyData,
-        analysis: dict,
-        output_path: str,
-    ) -> str:
+    def render(self, company: CompanyData, analysis: dict, output_path: str) -> str:
         report_date = datetime.now().strftime("%d %b %Y")
-        st = _styles()
+        st = _S()
 
         doc = SimpleDocTemplate(
             output_path,
             pagesize=A4,
             leftMargin=ML, rightMargin=MR,
-            topMargin=MT,  bottomMargin=MB,
+            topMargin=MT, bottomMargin=MB,
             title=f"ValueMeter — {company.name or company.ticker}",
             author="EquityBot",
         )
 
-        def _header(canvas, doc_inner):
-            _page_header(canvas, doc_inner, company, report_date)
+        def _hdr(canvas, doc_inner):
+            _header(canvas, doc_inner, company, report_date)
 
-        # ── Build content ──────────────────────────────────────────────────────
-        story = []
-        story += _build_page1(analysis, st, company)
-        story += _build_page2(analysis, st)
-        story += _build_page3(analysis, st, company)
-
-        doc.build(story, onFirstPage=_header, onLaterPages=_header)
-        logger.info("ValueMeter PDF written: %s", output_path)
+        story = _page1(analysis, st) + _page2(analysis, st)
+        doc.build(story, onFirstPage=_hdr, onLaterPages=_hdr)
+        logger.info("ValueMeter PDF: %s", output_path)
         return output_path
