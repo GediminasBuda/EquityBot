@@ -47,5 +47,6 @@
       "description": "{rating, confidence, manual_checks, what_changes_conclusion}",
       "required": true
     }
-  ]
+  ],
+  "report_sections": []
 }
