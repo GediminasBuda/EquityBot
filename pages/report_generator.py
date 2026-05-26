@@ -504,7 +504,8 @@ REPORT_TYPES = _build_report_types()
 # Builtin framework ids (for runner dispatch logic)
 _BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "eodhd_full", "overview_v2", "index_overview",
-                "industry_analysis", "insider_transactions"}
+                "industry_analysis", "insider_transactions",
+                "valuemeter"}
 
 EXCHANGE_HINTS = {
     "Amsterdam (AEX)":   ".AS  e.g. WKL.AS, ASML.AS",
@@ -2413,6 +2414,82 @@ if generate_clicked and ticker_input:
                     "insider_count": len(insider_bundle.get("transactions", [])),
                     "insider_source": insider_bundle.get("source_used", "none"),
                 }
+
+            elif report_type == "valuemeter":
+                # ── ValueMeter — Prudent Value Score vs. peer group ───────────
+                import importlib
+                import models.valuemeter as _vm_mod
+                import agents.pdf_valuemeter as _vmpdf_mod
+                importlib.reload(_vm_mod)
+                importlib.reload(_vmpdf_mod)
+                from models.valuemeter import _build_valuemeter_prompt, SYSTEM_PROMPT as VM_SYS
+                from agents.pdf_valuemeter import ValueMeterGenerator
+
+                # Step 1: Use EODHD-only data for the subject company
+                from data_sources.eodhd_only_builder import fetch_company_data_eodhd_only
+                _prog.progress(22, text="💎  Fetching EODHD-only data for ValueMeter…")
+                st.write("💎  Fetching EODHD bundle (fundamentals + /eod)…")
+                company, _vm_bundle = fetch_company_data_eodhd_only(ticker_input)
+                st.write(f"✓  EODHD endpoints used: {_vm_bundle.get('endpoints_used', 0)}/9")
+
+                # Step 2: Build prompt
+                cacheable_pfx, dynamic_prompt = _build_valuemeter_prompt(company)
+
+                # Step 3: LLM call — high token budget (peer data + scores + interpretation)
+                _prog.progress(40, text="🤖  Running ValueMeter analysis — typically 45–90 s…")
+                st.write(
+                    "🤖  Running ValueMeter analysis "
+                    f"({LLM_PROVIDER}/{LLM_MODEL}) — "
+                    "building peer group, computing scores…"
+                )
+                raw_vm = llm.generate_json(
+                    dynamic_prompt, VM_SYS,
+                    max_tokens=7000,
+                    cacheable_prefix=cacheable_pfx,
+                )
+                _show_token_usage(llm.last_usage)
+
+                # Basic validation
+                if not isinstance(raw_vm, dict) or not raw_vm.get("scores"):
+                    st.warning(
+                        "⚠ ValueMeter returned incomplete data — "
+                        "scores or peer_group may be missing. Check the PDF."
+                    )
+                analysis = raw_vm or {}
+
+                subject_tick = analysis.get("subject_ticker", ticker_input)
+                n_peers = len(analysis.get("peer_group") or [])
+                n_scores = len(analysis.get("scores") or [])
+                rating = (analysis.get("conclusion") or {}).get("rating", "n/a")
+                verdict = (analysis.get("interpretation") or {}).get("verdict", "n/a")
+                st.write(
+                    f"✓  {n_peers} companies in peer group · "
+                    f"{n_scores} scored · "
+                    f"Rating: **{rating}** · Verdict: **{verdict}**"
+                )
+                _prog.progress(80, text="✓  ValueMeter analysis complete")
+
+                # Step 4: Render PDF
+                _prog.progress(88, text="📄  Rendering ValueMeter PDF…")
+                st.write("📄  Rendering ValueMeter PDF…")
+                safe = ticker_input.replace(".", "_").replace("-", "_")
+                date = datetime.now().strftime("%Y-%m-%d")
+                pdf_path = str(OUTPUTS_DIR / f"{safe}_valuemeter_{date}.pdf")
+                os.makedirs(OUTPUTS_DIR, exist_ok=True)
+                ValueMeterGenerator().render(company, analysis, pdf_path)
+
+                extra = {
+                    "n_peers": n_peers,
+                    "verdict": verdict,
+                    "rating":  rating,
+                }
+                # Map rating → recommendation chip colour
+                _vm_rec_map = {
+                    "Attractive":   "BUY",
+                    "Neutral":      "HOLD",
+                    "Unattractive": "SELL",
+                }
+                analysis["recommendation"] = _vm_rec_map.get(rating, "HOLD")
 
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
