@@ -117,13 +117,13 @@ def extract_metrics(company: CompanyData, is_subject: bool = False,
     mkt = company.market_cap      # millions
     ev  = company.enterprise_value  # millions
 
-    rev     = la.revenue    if la else None  # millions
-    ebit    = la.ebit       if la else None
-    ebitda  = la.ebitda     if la else None
-    ni      = la.net_income if la else None
-    fcf     = la.fcf        if la else None
-    equity  = la.equity     if la else None
-    net_debt = la.net_debt  if la else None
+    rev      = la.revenue      if la else None  # millions
+    ebit     = la.ebit         if la else None
+    ebitda   = la.ebitda       if la else None
+    ni       = la.net_income   if la else None
+    fcf      = la.fcf          if la else None
+    equity   = la.total_equity if la else None
+    net_debt = la.net_debt     if la else None
 
     # Yield metrics (expressed as percentages)
     ebit_ev   = _sdiv(ebit,  ev)  # ebit/ev raw ratio → *100 for %
