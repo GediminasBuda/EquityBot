@@ -369,6 +369,61 @@ class EODHDAdapter:
         company.pct_insiders      = self._parse_float(shares_stats.get("PercentInsiders"))
         company.pct_institutions  = self._parse_float(shares_stats.get("PercentInstitutions"))
 
+        # ── Short Interest (point-in-time from SharesStats) ───────────────────
+        ss_short_raw = shares_stats.get("SharesShort")
+        if ss_short_raw is not None:
+            company.shares_short = self._to_m(ss_short_raw)
+        ss_short_prior_raw = shares_stats.get("SharesShortPriorMonth")
+        if ss_short_prior_raw is not None:
+            company.shares_short_prior_month = self._to_m(ss_short_prior_raw)
+        # ShortPercent = short / float (decimal: 0.05 = 5%)
+        company.short_percent_of_float = self._parse_float(shares_stats.get("ShortPercent"))
+        company.short_ratio            = self._parse_float(shares_stats.get("ShortRatio"))
+
+        # ── Short Interest history (/shorts endpoint) ─────────────────────────
+        # Fetches up to ~24 months of monthly short interest data.
+        # Each record: {"date": "YYYY-MM-DD", "short": <raw_shares>}
+        # We convert to millions and derive short_pct_float where possible.
+        try:
+            time.sleep(EODHD_DELAY)
+            shorts_url = f"{EODHD_BASE}/shorts/{eodhd_ticker}"
+            shorts_resp = requests.get(
+                shorts_url,
+                params={"api_token": self.api_key, "fmt": "json"},
+                headers=REQUEST_HEADERS,
+                timeout=15,
+            )
+            if shorts_resp.status_code == 200:
+                raw_shorts = shorts_resp.json()
+                if isinstance(raw_shorts, list):
+                    float_m = company.shares_float  # millions
+                    history = []
+                    for rec in raw_shorts:
+                        if not isinstance(rec, dict):
+                            continue
+                        d = rec.get("date") or rec.get("Date")
+                        s = rec.get("short") or rec.get("Short")
+                        if not d or s is None:
+                            continue
+                        try:
+                            shares_m = float(s) / 1_000_000
+                            pct_float = (
+                                (float(s) / (float_m * 1_000_000))
+                                if float_m and float_m > 0 else None
+                            )
+                            history.append({
+                                "date":           str(d)[:10],
+                                "shares_short_m": round(shares_m, 3),
+                                "short_pct_float": round(pct_float, 5) if pct_float else None,
+                            })
+                        except (ValueError, TypeError):
+                            continue
+                    # Sort newest first
+                    history.sort(key=lambda x: x["date"], reverse=True)
+                    company.short_interest_history = history
+        except Exception as e:
+            logger.debug(f"[eodhd] Short interest history fetch failed for {eodhd_ticker}: {e}")
+
         # ── Splits & Dividends ────────────────────────────────────────────────
         splits_divs = raw.get("SplitsDividends") or {}
         company.forward_annual_dividend_rate  = self._parse_float(

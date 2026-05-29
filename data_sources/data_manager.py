@@ -212,6 +212,10 @@ class DataManager:
                         "beta", "week_52_high", "week_52_low", "ma_50", "ma_200",
                         # Ownership structure
                         "shares_float", "pct_insiders", "pct_institutions",
+                        # Short interest
+                        "shares_short", "shares_short_prior_month",
+                        "short_percent_of_float", "short_ratio",
+                        "short_interest_history",
                         # Dividends & splits
                         "payout_ratio",
                         "forward_annual_dividend_rate", "forward_annual_dividend_yield",

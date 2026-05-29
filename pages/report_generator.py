@@ -505,7 +505,7 @@ REPORT_TYPES = _build_report_types()
 _BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "eodhd_full", "overview_v2", "index_overview",
                 "industry_analysis", "insider_transactions",
-                "valuemeter"}
+                "valuemeter", "short_interest"}
 
 EXCHANGE_HINTS = {
     "Amsterdam (AEX)":   ".AS  e.g. WKL.AS, ASML.AS",
@@ -2547,6 +2547,28 @@ if generate_clicked and ticker_input:
                 }
                 analysis["recommendation"] = _vm_rec_map.get(rating, "HOLD")
 
+            elif report_type == "short_interest":
+                # ── Short Interest report ──────────────────────────────────────
+                # Pure data report — no LLM. Uses standard DataManager pipeline
+                # (company object already fetched above). Short interest fields
+                # are populated by EODHD adapter from SharesStats + /shorts endpoint.
+                import importlib
+                import agents.pdf_short_interest as _si_mod
+                importlib.reload(_si_mod)
+                from agents.pdf_short_interest import ShortInterestGenerator
+
+                _prog.progress(80, text="📄  Rendering Short Interest PDF…")
+                st.write("📄  Rendering Short Interest PDF…")
+
+                safe = ticker_input.replace(".", "_").replace("-", "_")
+                date = datetime.now().strftime("%Y-%m-%d")
+                pdf_path = str(OUTPUTS_DIR / f"{safe}_short_interest_{date}.pdf")
+                os.makedirs(OUTPUTS_DIR, exist_ok=True)
+                ShortInterestGenerator().render(company, pdf_path)
+
+                analysis = {}
+                extra    = {}
+
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
                 from models.generic_runner import GenericRunner
@@ -2667,7 +2689,7 @@ if generate_clicked and ticker_input:
             if adv_result is not None:
                 _usage_claude = adv_result.claude_usage
                 _usage_openai = adv_result.openai_usage
-            elif report_type in ("eodhd_full", "insider_transactions"):
+            elif report_type in ("eodhd_full", "insider_transactions", "short_interest"):
                 _usage_claude = {}
                 _usage_openai = None
             else:

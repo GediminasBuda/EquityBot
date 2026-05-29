@@ -307,6 +307,15 @@ class CompanyData:
     pct_insiders: Optional[float] = None        # % held by insiders (decimal)
     pct_institutions: Optional[float] = None    # % held by institutions (decimal)
 
+    # ── Short Interest ────────────────────────────────────────────────────────
+    shares_short: Optional[float] = None            # Shares sold short (millions)
+    shares_short_prior_month: Optional[float] = None # Prior month short (millions)
+    short_percent_of_float: Optional[float] = None  # Short % of float (decimal: 0.05=5%)
+    short_ratio: Optional[float] = None             # Days to cover (shares_short / avg vol)
+    # Historical monthly short interest (list of dicts, newest first):
+    # [{"date": "2024-06-15", "shares_short_m": 12.3, "short_pct_float": 0.045}, ...]
+    short_interest_history: List[dict] = field(default_factory=list)
+
     # ── Dividends & Corporate Actions ────────────────────────────────────────
     payout_ratio: Optional[float] = None
     forward_annual_dividend_rate: Optional[float] = None   # Per-share annual div
