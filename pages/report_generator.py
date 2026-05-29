@@ -2549,15 +2549,97 @@ if generate_clicked and ticker_input:
 
             elif report_type == "short_interest":
                 # ── Short Interest report ──────────────────────────────────────
-                # Pure data report — no LLM. Uses standard DataManager pipeline
-                # (company object already fetched above). Short interest fields
-                # are populated by EODHD adapter from SharesStats + /shorts endpoint.
+                # Snapshot (current short %, shares short, days to cover) comes
+                # from the company object already fetched via DataManager/EODHD.
+                # Historical bi-monthly data is fetched HERE directly from the
+                # EODHD /shorts/ endpoint — bypasses cache/merge pipeline so it
+                # always returns the latest records.
                 import importlib
                 import agents.pdf_short_interest as _si_mod
                 importlib.reload(_si_mod)
                 from agents.pdf_short_interest import ShortInterestGenerator
 
-                _prog.progress(80, text="📄  Rendering Short Interest PDF…")
+                # ── Fetch /shorts/ historical data directly ────────────────────
+                _prog.progress(60, text="📊  Fetching short interest history from EODHD…")
+                st.write("📊  Fetching short interest history from EODHD…")
+
+                import requests as _req
+                import config as _cfg
+
+                _eodhd_key = os.environ.get("EODHD_API_KEY", "") or _cfg.EODHD_API_KEY or ""
+                _si_history = []
+
+                if _eodhd_key:
+                    # Convert Yahoo Finance ticker to EODHD format (same logic as adapter)
+                    _si_ticker = ticker_input.upper()
+                    _yf_to_eo  = {
+                        ".DE": ".XETRA", ".L": ".LSE", ".PA": ".PA",
+                        ".AS": ".AS", ".MI": ".MI", ".MC": ".MC",
+                        ".SW": ".SW", ".HE": ".HE", ".ST": ".ST",
+                        ".OL": ".OL", ".CO": ".CO", ".TO": ".TO",
+                        ".HK": ".HK",
+                    }
+                    _si_eo_ticker = _si_ticker
+                    for _yfsuf, _eosuf in _yf_to_eo.items():
+                        if _si_ticker.endswith(_yfsuf):
+                            _si_eo_ticker = _si_ticker[:-len(_yfsuf)] + _eosuf
+                            break
+                    else:
+                        # No suffix → US stock
+                        if "." not in _si_ticker:
+                            _si_eo_ticker = _si_ticker + ".US"
+
+                    try:
+                        _shorts_url = f"https://eodhd.com/api/shorts/{_si_eo_ticker}"
+                        _resp = _req.get(
+                            _shorts_url,
+                            params={"api_token": _eodhd_key, "fmt": "json"},
+                            timeout=20,
+                        )
+                        if _resp.status_code == 200:
+                            _raw = _resp.json()
+                            if isinstance(_raw, list) and _raw:
+                                # Determine shares_float in millions for pct calc.
+                                _float_m = company.shares_float  # from EODHD SharesStats
+                                # Fallback: derive from point-in-time short data
+                                if not _float_m or _float_m <= 0:
+                                    if (company.shares_short and company.shares_short > 0
+                                            and company.short_percent_of_float
+                                            and company.short_percent_of_float > 0):
+                                        _float_m = (company.shares_short
+                                                    / company.short_percent_of_float)
+
+                                for _rec in _raw:
+                                    _d = _rec.get("date") or _rec.get("Date")
+                                    _s = _rec.get("short") or _rec.get("Short")
+                                    if not _d or _s is None:
+                                        continue
+                                    try:
+                                        _sm = float(_s) / 1_000_000
+                                        _pf = (_sm / _float_m
+                                               if _float_m and _float_m > 0 else None)
+                                        _si_history.append({
+                                            "date":            str(_d)[:10],
+                                            "shares_short_m":  round(_sm, 3),
+                                            "short_pct_float": round(_pf, 5) if _pf else None,
+                                        })
+                                    except (ValueError, TypeError):
+                                        continue
+                                _si_history.sort(key=lambda x: x["date"], reverse=True)
+                                st.write(f"✓  {len(_si_history)} short interest records fetched")
+                            else:
+                                st.write("ℹ️  EODHD /shorts returned no records for this ticker")
+                        else:
+                            st.write(f"ℹ️  EODHD /shorts returned {_resp.status_code} — history unavailable")
+                    except Exception as _e:
+                        st.write(f"⚠️  Short interest history fetch error: {_e}")
+                else:
+                    st.write("⚠️  EODHD_API_KEY not set — cannot fetch short interest history")
+
+                # Inject history into company object for PDF renderer
+                company.short_interest_history = _si_history
+
+                _prog.progress(85, text="📄  Rendering Short Interest PDF…")
                 st.write("📄  Rendering Short Interest PDF…")
 
                 safe = ticker_input.replace(".", "_").replace("-", "_")
