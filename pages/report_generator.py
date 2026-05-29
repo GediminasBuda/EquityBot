@@ -2568,6 +2568,7 @@ if generate_clicked and ticker_input:
 
                 _eodhd_key = os.environ.get("EODHD_API_KEY", "") or _cfg.EODHD_API_KEY or ""
                 _si_history = []
+                print(f"[SI-DIAG] key_set={bool(_eodhd_key)} key_len={len(_eodhd_key)}", flush=True)
 
                 if _eodhd_key:
                     # Convert Yahoo Finance ticker to EODHD format (same logic as adapter)
@@ -2589,10 +2590,11 @@ if generate_clicked and ticker_input:
                         if "." not in _si_ticker:
                             _si_eo_ticker = _si_ticker + ".US"
 
+                    print(f"[SI-DIAG] yf_ticker={_si_ticker} eo_ticker={_si_eo_ticker}", flush=True)
+
                     try:
                         _shorts_url = f"https://eodhistoricaldata.com/api/shorts/{_si_eo_ticker}"
-                        _log_si = logging.getLogger("short_interest_diag")
-                        _log_si.info(f"[SI] Calling {_shorts_url}")
+                        print(f"[SI-DIAG] Calling {_shorts_url}", flush=True)
                         st.write(f"🔗  Calling: `{_shorts_url}`")
 
                         _resp = _req.get(
@@ -2600,26 +2602,26 @@ if generate_clicked and ticker_input:
                             params={"api_token": _eodhd_key, "fmt": "json"},
                             timeout=20,
                         )
-                        _log_si.info(f"[SI] HTTP {_resp.status_code} for {_si_eo_ticker}")
+                        print(f"[SI-DIAG] HTTP {_resp.status_code} for {_si_eo_ticker}", flush=True)
                         st.write(f"📡  HTTP status: {_resp.status_code}")
 
                         if _resp.status_code == 200:
                             _raw = _resp.json()
                             _raw_type = type(_raw).__name__
                             _raw_len  = len(_raw) if isinstance(_raw, (list, dict)) else "n/a"
-                            _log_si.info(f"[SI] Response {_raw_type} len={_raw_len}")
+                            print(f"[SI-DIAG] Response {_raw_type} len={_raw_len}", flush=True)
                             st.write(f"📦  Response: {_raw_type}, {_raw_len} records")
 
                             if isinstance(_raw, list) and _raw:
-                                _log_si.info(f"[SI] First record: {_raw[0]}")
+                                print(f"[SI-DIAG] First record: {_raw[0]}", flush=True)
                                 st.write(f"🔍  First record: `{_raw[0]}`")
                             elif isinstance(_raw, dict):
-                                _log_si.info(f"[SI] Dict keys: {list(_raw.keys())[:5]}")
+                                print(f"[SI-DIAG] Dict keys: {list(_raw.keys())[:5]}", flush=True)
                                 st.write(f"🔍  Dict keys: `{list(_raw.keys())[:5]}`")
 
                             if isinstance(_raw, list) and _raw:
                                 _float_m = company.shares_float
-                                _log_si.info(f"[SI] shares_float={_float_m}")
+                                print(f"[SI-DIAG] shares_float={_float_m}", flush=True)
                                 st.write(f"📊  shares_float: {_float_m}")
                                 if not _float_m or _float_m <= 0:
                                     if (company.shares_short and company.shares_short > 0
@@ -2627,7 +2629,7 @@ if generate_clicked and ticker_input:
                                             and company.short_percent_of_float > 0):
                                         _float_m = (company.shares_short
                                                     / company.short_percent_of_float)
-                                        _log_si.info(f"[SI] Derived float={_float_m:.1f}M")
+                                        print(f"[SI-DIAG] Derived float={_float_m:.1f}M", flush=True)
                                         st.write(f"📊  Derived shares_float: {_float_m:.1f}M")
 
                                 for _rec in _raw:
@@ -2647,16 +2649,16 @@ if generate_clicked and ticker_input:
                                     except (ValueError, TypeError):
                                         continue
                                 _si_history.sort(key=lambda x: x["date"], reverse=True)
-                                _log_si.info(f"[SI] Parsed {len(_si_history)} records. Sample: {_si_history[0] if _si_history else 'none'}")
+                                print(f"[SI-DIAG] Parsed {len(_si_history)} records. Sample: {_si_history[0] if _si_history else 'none'}", flush=True)
                                 st.write(f"✓  {len(_si_history)} records. Sample: `{_si_history[0] if _si_history else 'none'}`")
                             else:
-                                _log_si.warning(f"[SI] Not a list or empty. Raw[:200]: {str(_raw)[:200]}")
+                                print(f"[SI-DIAG] Not a list or empty. Raw[:200]: {str(_raw)[:200]}", flush=True)
                                 st.write(f"⚠️  Not a list or empty. Raw: `{str(_raw)[:200]}`")
                         else:
-                            _log_si.warning(f"[SI] HTTP {_resp.status_code}: {_resp.text[:300]}")
+                            print(f"[SI-DIAG] HTTP {_resp.status_code}: {_resp.text[:300]}", flush=True)
                             st.write(f"⚠️  HTTP {_resp.status_code}: `{_resp.text[:300]}`")
                     except Exception as _e:
-                        _log_si.exception(f"[SI] Exception: {_e}")
+                        print(f"[SI-DIAG] Exception: {type(_e).__name__}: {_e}", flush=True)
                         st.write(f"⚠️  Exception: {type(_e).__name__}: {_e}")
                 else:
                     st.write("⚠️  EODHD_API_KEY not set — cannot fetch short interest history")
