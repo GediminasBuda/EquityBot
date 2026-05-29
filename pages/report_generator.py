@@ -2590,41 +2590,44 @@ if generate_clicked and ticker_input:
                             _si_eo_ticker = _si_ticker + ".US"
 
                     try:
-                        # Try eodhistoricaldata.com first (same as main adapter),
-                        # fall back to eodhd.com if needed
                         _shorts_url = f"https://eodhistoricaldata.com/api/shorts/{_si_eo_ticker}"
-                        st.write(f"🔗  Calling: `{_shorts_url}` (ticker: {_si_eo_ticker})")
+                        _log_si = logging.getLogger("short_interest_diag")
+                        _log_si.info(f"[SI] Calling {_shorts_url}")
+                        st.write(f"🔗  Calling: `{_shorts_url}`")
 
                         _resp = _req.get(
                             _shorts_url,
                             params={"api_token": _eodhd_key, "fmt": "json"},
                             timeout=20,
                         )
+                        _log_si.info(f"[SI] HTTP {_resp.status_code} for {_si_eo_ticker}")
                         st.write(f"📡  HTTP status: {_resp.status_code}")
 
                         if _resp.status_code == 200:
                             _raw = _resp.json()
                             _raw_type = type(_raw).__name__
                             _raw_len  = len(_raw) if isinstance(_raw, (list, dict)) else "n/a"
-                            st.write(f"📦  Response type: {_raw_type}, length: {_raw_len}")
+                            _log_si.info(f"[SI] Response {_raw_type} len={_raw_len}")
+                            st.write(f"📦  Response: {_raw_type}, {_raw_len} records")
 
-                            # Show first record for diagnosis
                             if isinstance(_raw, list) and _raw:
+                                _log_si.info(f"[SI] First record: {_raw[0]}")
                                 st.write(f"🔍  First record: `{_raw[0]}`")
                             elif isinstance(_raw, dict):
+                                _log_si.info(f"[SI] Dict keys: {list(_raw.keys())[:5]}")
                                 st.write(f"🔍  Dict keys: `{list(_raw.keys())[:5]}`")
 
                             if isinstance(_raw, list) and _raw:
-                                # Determine shares_float in millions for pct calc.
                                 _float_m = company.shares_float
-                                st.write(f"📊  shares_float from EODHD: {_float_m}")
-                                # Fallback: derive from point-in-time short data
+                                _log_si.info(f"[SI] shares_float={_float_m}")
+                                st.write(f"📊  shares_float: {_float_m}")
                                 if not _float_m or _float_m <= 0:
                                     if (company.shares_short and company.shares_short > 0
                                             and company.short_percent_of_float
                                             and company.short_percent_of_float > 0):
                                         _float_m = (company.shares_short
                                                     / company.short_percent_of_float)
+                                        _log_si.info(f"[SI] Derived float={_float_m:.1f}M")
                                         st.write(f"📊  Derived shares_float: {_float_m:.1f}M")
 
                                 for _rec in _raw:
@@ -2644,14 +2647,17 @@ if generate_clicked and ticker_input:
                                     except (ValueError, TypeError):
                                         continue
                                 _si_history.sort(key=lambda x: x["date"], reverse=True)
-                                st.write(f"✓  {len(_si_history)} records parsed. "
-                                         f"Sample: {_si_history[0] if _si_history else 'none'}")
+                                _log_si.info(f"[SI] Parsed {len(_si_history)} records. Sample: {_si_history[0] if _si_history else 'none'}")
+                                st.write(f"✓  {len(_si_history)} records. Sample: `{_si_history[0] if _si_history else 'none'}`")
                             else:
-                                st.write(f"⚠️  Response is not a non-empty list. Raw: `{str(_raw)[:200]}`")
+                                _log_si.warning(f"[SI] Not a list or empty. Raw[:200]: {str(_raw)[:200]}")
+                                st.write(f"⚠️  Not a list or empty. Raw: `{str(_raw)[:200]}`")
                         else:
-                            st.write(f"⚠️  HTTP {_resp.status_code}: {_resp.text[:200]}")
+                            _log_si.warning(f"[SI] HTTP {_resp.status_code}: {_resp.text[:300]}")
+                            st.write(f"⚠️  HTTP {_resp.status_code}: `{_resp.text[:300]}`")
                     except Exception as _e:
-                        st.write(f"⚠️  Exception during /shorts fetch: {type(_e).__name__}: {_e}")
+                        _log_si.exception(f"[SI] Exception: {_e}")
+                        st.write(f"⚠️  Exception: {type(_e).__name__}: {_e}")
                 else:
                     st.write("⚠️  EODHD_API_KEY not set — cannot fetch short interest history")
 
