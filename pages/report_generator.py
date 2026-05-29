@@ -2560,112 +2560,133 @@ if generate_clicked and ticker_input:
                 from agents.pdf_short_interest import ShortInterestGenerator
 
                 # ── Fetch /shorts/ historical data directly ────────────────────
-                _prog.progress(60, text="📊  Fetching short interest history from EODHD…")
-                st.write("📊  Fetching short interest history from EODHD…")
+                # ── Historical short interest: FINRA (US) ─────────────────────
+                # EODHD's /shorts/ endpoint is not available on this plan.
+                # FINRA is the SEC-mandated source for US equity short interest
+                # (bi-monthly). Non-US tickers have no equivalent free source.
+                _prog.progress(60, text="📊  Fetching short interest history from FINRA…")
+                st.write("📊  Fetching short interest history from FINRA…")
 
                 import requests as _req
-                import config as _cfg
+                import json    as _json
 
-                _eodhd_key = os.environ.get("EODHD_API_KEY", "") or _cfg.EODHD_API_KEY or ""
+                _si_ticker  = ticker_input.upper()
+                _is_us_ticker = "." not in _si_ticker  # bare ticker = US (no exchange suffix)
                 _si_history = []
-                print(f"[SI-DIAG] key_set={bool(_eodhd_key)} key_len={len(_eodhd_key)}", flush=True)
 
-                if _eodhd_key:
-                    # Convert Yahoo Finance ticker to EODHD format (same logic as adapter)
-                    _si_ticker = ticker_input.upper()
-                    _yf_to_eo  = {
-                        ".DE": ".XETRA", ".L": ".LSE", ".PA": ".PA",
-                        ".AS": ".AS", ".MI": ".MI", ".MC": ".MC",
-                        ".SW": ".SW", ".HE": ".HE", ".ST": ".ST",
-                        ".OL": ".OL", ".CO": ".CO", ".TO": ".TO",
-                        ".HK": ".HK",
-                    }
-                    # Convert YF ticker → EODHD format for non-US exchanges.
-                    # The /shorts/ endpoint uses FINRA-style tickers:
-                    #   US stocks  → plain ticker, NO .US suffix  (AAPL, not AAPL.US)
-                    #   Non-US     → EODHD exchange suffix        (RHM.XETRA)
-                    _si_eo_ticker = _si_ticker
-                    _is_us_ticker = "." not in _si_ticker  # bare ticker = US
-                    for _yfsuf, _eosuf in _yf_to_eo.items():
-                        if _si_ticker.endswith(_yfsuf):
-                            _si_eo_ticker = _si_ticker[:-len(_yfsuf)] + _eosuf
-                            _is_us_ticker = False
-                            break
-                    # US stocks: leave bare (no suffix) for the /shorts/ endpoint
-                    # (do NOT append .US — that causes 404 "Symbol not found")
+                print(f"[SI-DIAG] ticker={_si_ticker} is_us={_is_us_ticker}", flush=True)
 
-                    print(f"[SI-DIAG] yf_ticker={_si_ticker} eo_ticker={_si_eo_ticker} us={_is_us_ticker}", flush=True)
+                if _is_us_ticker:
+                    # FINRA equity short interest API.
+                    # Try two candidate endpoints; log the raw first record so we
+                    # can identify the correct field names if the schema changes.
+                    _finra_candidates = [
+                        # (url, symbol_field, date_field, short_field)
+                        (
+                            "https://api.finra.org/data/group/OTCMarket/name/regShoThreshold",
+                            "symbolName", "settlementDate", "shortInterest",
+                        ),
+                        (
+                            "https://api.finra.org/data/group/consolidated/name/equitiesShortInterest",
+                            "issueSymbol", "settlementDate", "shortInterest",
+                        ),
+                    ]
 
-                    try:
-                        _shorts_url = f"https://eodhistoricaldata.com/api/shorts/{_si_eo_ticker}"
-                        print(f"[SI-DIAG] Calling {_shorts_url}", flush=True)
-                        st.write(f"🔗  Calling: `{_shorts_url}`")
+                    for _furl, _fsym, _fdate, _fshort in _finra_candidates:
+                        _ep_name = _furl.split("/name/")[-1]
+                        try:
+                            _fp = {
+                                "limit":          30,
+                                "compareFilters": _json.dumps([{
+                                    "fieldName":   _fsym,
+                                    "fieldValue":  _si_ticker,
+                                    "compareType": "EQUAL",
+                                }]),
+                                "sortFields":     _json.dumps([f"-{_fdate}"]),
+                            }
+                            print(f"[SI-DIAG] FINRA {_ep_name} → {_furl}", flush=True)
+                            st.write(f"🔗  Trying FINRA `{_ep_name}`…")
+                            _fr = _req.get(
+                                _furl,
+                                params=_fp,
+                                headers={"Accept": "application/json"},
+                                timeout=20,
+                            )
+                            print(f"[SI-DIAG] FINRA {_ep_name} HTTP {_fr.status_code}", flush=True)
+                            st.write(f"📡  HTTP {_fr.status_code}")
 
-                        _resp = _req.get(
-                            _shorts_url,
-                            params={"api_token": _eodhd_key, "fmt": "json"},
-                            timeout=20,
-                        )
-                        print(f"[SI-DIAG] HTTP {_resp.status_code} for {_si_eo_ticker}", flush=True)
-                        st.write(f"📡  HTTP status: {_resp.status_code}")
+                            if _fr.status_code == 200:
+                                _fraw = _fr.json()
+                                _flen = len(_fraw) if isinstance(_fraw, (list, dict)) else "n/a"
+                                print(f"[SI-DIAG] FINRA response type={type(_fraw).__name__} len={_flen}", flush=True)
+                                st.write(f"📦  Response: {type(_fraw).__name__}, {_flen} records")
 
-                        if _resp.status_code == 200:
-                            _raw = _resp.json()
-                            _raw_type = type(_raw).__name__
-                            _raw_len  = len(_raw) if isinstance(_raw, (list, dict)) else "n/a"
-                            print(f"[SI-DIAG] Response {_raw_type} len={_raw_len}", flush=True)
-                            st.write(f"📦  Response: {_raw_type}, {_raw_len} records")
+                                if isinstance(_fraw, list) and _fraw:
+                                    print(f"[SI-DIAG] FINRA first record: {_fraw[0]}", flush=True)
+                                    st.write(f"🔍  First record: `{_fraw[0]}`")
 
-                            if isinstance(_raw, list) and _raw:
-                                print(f"[SI-DIAG] First record: {_raw[0]}", flush=True)
-                                st.write(f"🔍  First record: `{_raw[0]}`")
-                            elif isinstance(_raw, dict):
-                                print(f"[SI-DIAG] Dict keys: {list(_raw.keys())[:5]}", flush=True)
-                                st.write(f"🔍  Dict keys: `{list(_raw.keys())[:5]}`")
+                                    # Resolve shares_float for % calculation
+                                    _float_m = company.shares_float
+                                    if not _float_m or _float_m <= 0:
+                                        if (company.shares_short
+                                                and company.shares_short > 0
+                                                and company.short_percent_of_float
+                                                and company.short_percent_of_float > 0):
+                                            _float_m = (company.shares_short
+                                                        / company.short_percent_of_float)
+                                            print(f"[SI-DIAG] Derived float={_float_m:.1f}M", flush=True)
 
-                            if isinstance(_raw, list) and _raw:
-                                _float_m = company.shares_float
-                                print(f"[SI-DIAG] shares_float={_float_m}", flush=True)
-                                st.write(f"📊  shares_float: {_float_m}")
-                                if not _float_m or _float_m <= 0:
-                                    if (company.shares_short and company.shares_short > 0
-                                            and company.short_percent_of_float
-                                            and company.short_percent_of_float > 0):
-                                        _float_m = (company.shares_short
-                                                    / company.short_percent_of_float)
-                                        print(f"[SI-DIAG] Derived float={_float_m:.1f}M", flush=True)
-                                        st.write(f"📊  Derived shares_float: {_float_m:.1f}M")
+                                    for _rec in _fraw:
+                                        _d = (_rec.get(_fdate)
+                                              or _rec.get("date")
+                                              or _rec.get("Date"))
+                                        _s = (_rec.get(_fshort)
+                                              or _rec.get("short")
+                                              or _rec.get("Short"))
+                                        if not _d or _s is None:
+                                            continue
+                                        try:
+                                            _sm = float(_s) / 1_000_000
+                                            _pf = (_sm / _float_m
+                                                   if _float_m and _float_m > 0
+                                                   else None)
+                                            _si_history.append({
+                                                "date":            str(_d)[:10],
+                                                "shares_short_m":  round(_sm, 3),
+                                                "short_pct_float": round(_pf, 5) if _pf else None,
+                                            })
+                                        except (ValueError, TypeError):
+                                            continue
 
-                                for _rec in _raw:
-                                    _d = _rec.get("date") or _rec.get("Date")
-                                    _s = _rec.get("short") or _rec.get("Short")
-                                    if not _d or _s is None:
-                                        continue
-                                    try:
-                                        _sm = float(_s) / 1_000_000
-                                        _pf = (_sm / _float_m
-                                               if _float_m and _float_m > 0 else None)
-                                        _si_history.append({
-                                            "date":            str(_d)[:10],
-                                            "shares_short_m":  round(_sm, 3),
-                                            "short_pct_float": round(_pf, 5) if _pf else None,
-                                        })
-                                    except (ValueError, TypeError):
-                                        continue
-                                _si_history.sort(key=lambda x: x["date"], reverse=True)
-                                print(f"[SI-DIAG] Parsed {len(_si_history)} records. Sample: {_si_history[0] if _si_history else 'none'}", flush=True)
-                                st.write(f"✓  {len(_si_history)} records. Sample: `{_si_history[0] if _si_history else 'none'}`")
+                                    if _si_history:
+                                        _si_history.sort(
+                                            key=lambda x: x["date"], reverse=True
+                                        )
+                                        print(f"[SI-DIAG] Parsed {len(_si_history)} FINRA records. "
+                                              f"Sample: {_si_history[0]}", flush=True)
+                                        st.write(f"✓  {len(_si_history)} records from FINRA")
+                                        break   # success — stop trying other endpoints
+                                    else:
+                                        print(f"[SI-DIAG] FINRA {_ep_name}: 0 records parsed", flush=True)
+                                        st.write(f"⚠️  0 records parsed from response")
+                                else:
+                                    print(f"[SI-DIAG] FINRA {_ep_name}: not a list. "
+                                          f"Raw[:200]={str(_fraw)[:200]}", flush=True)
+                                    st.write(f"⚠️  Unexpected response: `{str(_fraw)[:200]}`")
                             else:
-                                print(f"[SI-DIAG] Not a list or empty. Raw[:200]: {str(_raw)[:200]}", flush=True)
-                                st.write(f"⚠️  Not a list or empty. Raw: `{str(_raw)[:200]}`")
-                        else:
-                            print(f"[SI-DIAG] HTTP {_resp.status_code}: {_resp.text[:300]}", flush=True)
-                            st.write(f"⚠️  HTTP {_resp.status_code}: `{_resp.text[:300]}`")
-                    except Exception as _e:
-                        print(f"[SI-DIAG] Exception: {type(_e).__name__}: {_e}", flush=True)
-                        st.write(f"⚠️  Exception: {type(_e).__name__}: {_e}")
+                                print(f"[SI-DIAG] FINRA {_ep_name} HTTP {_fr.status_code}: "
+                                      f"{_fr.text[:200]}", flush=True)
+                                st.write(f"⚠️  HTTP {_fr.status_code}")
+
+                        except Exception as _fe:
+                            print(f"[SI-DIAG] FINRA {_ep_name} exception: {_fe}", flush=True)
+                            st.write(f"⚠️  Exception: {type(_fe).__name__}: {_fe}")
                 else:
-                    st.write("⚠️  EODHD_API_KEY not set — cannot fetch short interest history")
+                    # Non-US: FINRA short interest is US-only.
+                    # No free equivalent exists for European / Asian markets.
+                    print(f"[SI-DIAG] Non-US ticker — no historical short data source available", flush=True)
+                    st.write("ℹ️  Historical short interest chart is only available for "
+                             "US-listed equities (FINRA). Non-US tickers show snapshot only.")
 
                 # Inject history into company object for PDF renderer
                 company.short_interest_history = _si_history
