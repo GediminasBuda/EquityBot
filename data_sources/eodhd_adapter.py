@@ -402,9 +402,14 @@ class EODHDAdapter:
         )
 
         # ── Short Interest history (/shorts endpoint) ─────────────────────────
-        # Fetches up to ~24 months of monthly short interest data.
-        # Each record: {"date": "YYYY-MM-DD", "short": <raw_shares>}
-        # We convert to millions and derive short_pct_float where possible.
+        # Fetches up to ~24 months of bi-monthly short interest data (FINRA).
+        # Each record: {"date": "YYYY-MM-DD", "short": <raw_shares>, "volume": <int>}
+        # We convert to millions and derive short_pct_float.
+        #
+        # Shares float strategy (needed to compute Short % of Float):
+        #   1. Use SharesStats.SharesFloat if available.
+        #   2. Else derive from point-in-time: shares_short / short_percent_of_float.
+        #      This works because EODHD Technicals always has both fields for US stocks.
         try:
             time.sleep(EODHD_DELAY)
             shorts_url = f"{EODHD_BASE}/shorts/{eodhd_ticker}"
@@ -416,8 +421,22 @@ class EODHDAdapter:
             )
             if shorts_resp.status_code == 200:
                 raw_shorts = shorts_resp.json()
-                if isinstance(raw_shorts, list):
-                    float_m = company.shares_float  # millions
+                if isinstance(raw_shorts, list) and raw_shorts:
+                    # Determine shares_float in millions for pct_float calculation.
+                    float_m = company.shares_float  # from SharesStats (may be None)
+
+                    # Fallback: derive float from point-in-time short data.
+                    # implied_float = shares_short / short_pct_of_float
+                    if (not float_m or float_m <= 0):
+                        if (company.shares_short and company.shares_short > 0 and
+                                company.short_percent_of_float and
+                                company.short_percent_of_float > 0):
+                            float_m = company.shares_short / company.short_percent_of_float
+                            logger.debug(
+                                f"[eodhd] Derived shares_float={float_m:.1f}M "
+                                f"from Technicals short data for {eodhd_ticker}"
+                            )
+
                     history = []
                     for rec in raw_shorts:
                         if not isinstance(rec, dict):
@@ -429,19 +448,27 @@ class EODHDAdapter:
                         try:
                             shares_m = float(s) / 1_000_000
                             pct_float = (
-                                (float(s) / (float_m * 1_000_000))
+                                shares_m / float_m
                                 if float_m and float_m > 0 else None
                             )
                             history.append({
-                                "date":           str(d)[:10],
-                                "shares_short_m": round(shares_m, 3),
-                                "short_pct_float": round(pct_float, 5) if pct_float else None,
+                                "date":            str(d)[:10],
+                                "shares_short_m":  round(shares_m, 3),
+                                "short_pct_float": round(pct_float, 5) if pct_float is not None else None,
                             })
                         except (ValueError, TypeError):
                             continue
                     # Sort newest first
                     history.sort(key=lambda x: x["date"], reverse=True)
                     company.short_interest_history = history
+                    logger.info(
+                        f"[eodhd] Short interest history: {len(history)} records for {eodhd_ticker}"
+                    )
+            else:
+                logger.info(
+                    f"[eodhd] /shorts endpoint returned {shorts_resp.status_code} for {eodhd_ticker} "
+                    f"— historical short interest unavailable"
+                )
         except Exception as e:
             logger.debug(f"[eodhd] Short interest history fetch failed for {eodhd_ticker}: {e}")
 

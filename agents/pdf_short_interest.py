@@ -241,10 +241,13 @@ def _draw_header(canvas, doc, company: CompanyData, report_date: str) -> None:
 
 
 # ── Short % of Float chart (12 months) ────────────────────────────────────────
-def _render_short_chart(history: list, ticker: str) -> Optional[bytes]:
+def _render_short_chart(history: list, ticker: str,
+                         use_pct: bool = True) -> Optional[bytes]:
     """
-    Render a bar chart of Short % of Float for the last 12 months.
+    Render a bar chart of Short % of Float (or shares in M) for the last 12 months.
     history: list of dicts [{date, shares_short_m, short_pct_float}, ...] newest first.
+    use_pct=True  → Y-axis = Short % of Float (preferred)
+    use_pct=False → Y-axis = Shares Short (millions)
     Returns PNG bytes or None.
     """
     if not history:
@@ -258,22 +261,23 @@ def _render_short_chart(history: list, ticker: str) -> Optional[bytes]:
     except ImportError:
         return None
 
-    # Filter last 12 months and reverse to chronological
+    # Filter last 12 months and reverse to chronological order
     cutoff = (date.today() - timedelta(days=366)).isoformat()
-    rows = [r for r in history if r.get("date", "") >= cutoff
-            and r.get("short_pct_float") is not None]
-    rows = rows[:12]  # at most 12
-    rows = list(reversed(rows))  # oldest → newest
+    key    = "short_pct_float" if use_pct else "shares_short_m"
+    rows = [r for r in history
+            if r.get("date", "") >= cutoff and r.get(key) is not None]
+    rows = rows[:24]            # cap at 24 bi-monthly records = 12 months
+    rows = list(reversed(rows)) # oldest → newest
 
     if not rows:
         return None
 
-    dates = []
-    pcts  = []
+    dates  = []
+    values = []
     for r in rows:
         try:
             dates.append(_dt.strptime(r["date"], "%Y-%m-%d"))
-            pcts.append(float(r["short_pct_float"]) * 100)
+            values.append(float(r[key]) * (100 if use_pct else 1))
         except (ValueError, TypeError):
             continue
 
@@ -284,35 +288,47 @@ def _render_short_chart(history: list, ticker: str) -> Optional[bytes]:
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
 
-    # Bar chart
-    bar_colors = [RED_HEX if p >= 20 else AMBER_HEX if p >= 10 else NAVY_HEX for p in pcts]
-    bars = ax.bar(dates, pcts, color=bar_colors, width=20, alpha=0.85, zorder=3)
+    # Bar colours — only meaningful for % chart
+    if use_pct:
+        bar_colors = [RED_HEX if v >= 20 else AMBER_HEX if v >= 10 else NAVY_HEX
+                      for v in values]
+    else:
+        bar_colors = NAVY_HEX
+
+    bars = ax.bar(dates, values, color=bar_colors, width=16, alpha=0.85, zorder=3)
 
     # Value labels on bars
-    for bar, val in zip(bars, pcts):
+    fmt = "{:.1f}%" if use_pct else "{:.2f}M"
+    for bar, val in zip(bars, values):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 0.1,
-            f"{val:.1f}%",
+            bar.get_height() + max(values) * 0.01,
+            fmt.format(val),
             ha="center", va="bottom",
             fontsize=6.5, color="#333333",
         )
 
-    # Threshold lines
-    if max(pcts) > 5:
-        ax.axhline(5, color=NAVY_HEX, linewidth=0.6, linestyle="--", alpha=0.5,
-                   label="5% (elevated)")
-    if max(pcts) > 10:
-        ax.axhline(10, color=AMBER_HEX, linewidth=0.6, linestyle="--", alpha=0.7,
-                   label="10% (high)")
-    if max(pcts) > 20:
-        ax.axhline(20, color=RED_HEX, linewidth=0.6, linestyle="--", alpha=0.7,
-                   label="20% (extreme)")
+    # Threshold lines (only for % chart)
+    if use_pct and values:
+        mx = max(values)
+        if mx > 5:
+            ax.axhline(5,  color=NAVY_HEX,  linewidth=0.6, linestyle="--",
+                       alpha=0.5, label="5% (elevated)")
+        if mx > 10:
+            ax.axhline(10, color=AMBER_HEX, linewidth=0.6, linestyle="--",
+                       alpha=0.7, label="10% (high)")
+        if mx > 20:
+            ax.axhline(20, color=RED_HEX,   linewidth=0.6, linestyle="--",
+                       alpha=0.7, label="20% (extreme)")
+        if mx > 5:
+            ax.legend(fontsize=6.5, loc="upper left", framealpha=0.6,
+                      edgecolor="#DDDDDD")
 
-    ax.set_title(f"{ticker} — Short % of Float (last 12 months)",
+    title_suffix = "Short % of Float" if use_pct else "Shares Short (millions)"
+    ax.set_title(f"{ticker} — {title_suffix} (last 12 months)",
                  fontsize=9, color=NAVY_HEX, fontweight="bold",
                  loc="left", pad=4)
-    ax.set_ylabel("Short % of Float", fontsize=7, color=MGRAY_HEX)
+    ax.set_ylabel(title_suffix, fontsize=7, color=MGRAY_HEX)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
     plt.setp(ax.get_xticklabels(), rotation=30, ha="right", fontsize=7)
     ax.tick_params(axis="y", labelsize=7, colors=MGRAY_HEX, length=2)
@@ -323,10 +339,6 @@ def _render_short_chart(history: list, ticker: str) -> Optional[bytes]:
         ax.spines[sp].set_linewidth(0.5)
     ax.grid(True, axis="y", color="#DDDDDD", linewidth=0.4, alpha=0.7, zorder=0)
     ax.set_ylim(bottom=0)
-
-    if max(pcts) > 5:
-        ax.legend(fontsize=6.5, loc="upper left", framealpha=0.6,
-                  edgecolor="#DDDDDD")
 
     fig.text(0.99, 0.01, "Source: EODHD",
              ha="right", va="bottom", fontsize=5.5, color=MGRAY_HEX,
@@ -426,24 +438,49 @@ def _build_story(company: CompanyData, styles: dict) -> list:
     ))
 
     # ── Chart: 12-month Short % of Float ─────────────────────────────────────
-    elems += _sec("Short % of Float — Last 12 Months", styles)
+    cutoff_12 = (date.today() - timedelta(days=366)).isoformat()
 
-    chart_history = [r for r in history if r.get("short_pct_float") is not None]
-    if chart_history:
-        png = _render_short_chart(history, company.ticker or "")
+    has_pct_history   = any(r.get("short_pct_float") is not None
+                             and r.get("date", "") >= cutoff_12
+                             for r in history)
+    has_share_history = any(r.get("shares_short_m") is not None
+                             and r.get("date", "") >= cutoff_12
+                             for r in history)
+
+    if has_pct_history:
+        elems += _sec("Short % of Float — Last 12 Months", styles)
+        png = _render_short_chart(history, company.ticker or "", use_pct=True)
         if png:
             img = Image(io.BytesIO(png), width=170 * mm, height=60 * mm,
                         kind="proportional")
             elems.append(img)
         else:
-            elems.append(Paragraph(
-                "Chart could not be rendered (matplotlib not available).",
-                styles["small"],
-            ))
-    else:
+            elems.append(Paragraph("Chart could not be rendered.", styles["small"]))
+
+    elif has_share_history:
+        # Float data unavailable → show shares short in millions as fallback
+        elems += _sec("Shares Short — Last 12 Months (M)", styles)
         elems.append(Paragraph(
-            "No historical short interest data available from EODHD for this ticker. "
-            "Short interest history is typically available for US-listed equities only.",
+            '<font color="' + AMBER_HEX + '"><b>Note:</b></font>  '
+            "Shares Float data not available from EODHD for this ticker. "
+            "Chart shows raw shares short (millions) instead of % of Float.",
+            styles["small"],
+        ))
+        elems.append(Spacer(1, 1 * mm))
+        png = _render_short_chart(history, company.ticker or "", use_pct=False)
+        if png:
+            img = Image(io.BytesIO(png), width=170 * mm, height=60 * mm,
+                        kind="proportional")
+            elems.append(img)
+        else:
+            elems.append(Paragraph("Chart could not be rendered.", styles["small"]))
+
+    else:
+        elems += _sec("Short % of Float — Last 12 Months", styles)
+        elems.append(Paragraph(
+            "Historical short interest data not returned by EODHD /shorts endpoint "
+            "for this ticker. This data is typically available for US-listed equities "
+            "(FINRA reporting). Non-US stocks may not have short interest history.",
             styles["small"],
         ))
 
