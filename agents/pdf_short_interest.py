@@ -392,17 +392,26 @@ def _build_story(company: CompanyData, styles: dict) -> list:
     elems.append(Spacer(1, 2 * mm))
 
     # KV grid
+    # Note: pct_insiders / pct_institutions from EODHD are already in %
+    # (e.g. 1.633 = 1.633%), so we display them directly, not via _pct_float.
+    def _pct_already(v, dec=1):
+        """Value already in % (not decimal). E.g. 1.633 → '1.6%'."""
+        if v is None:
+            return "—"
+        try:
+            return f"{float(v):.{dec}f}%"
+        except Exception:
+            return "—"
+
     rows = [
-        ("Shares Short (current)",    f"{_f(shares_s, 2)}M"),
-        ("Shares Short (prior month)", f"{_f(shares_sp, 2)}M"),
-        ("Short % of Float",           _pct_float(pct_float, 2)),
+        ("Shares Short (current)",      f"{_f(shares_s, 2)}M"),
+        ("Shares Short (prior month)",  f"{_f(shares_sp, 2)}M"),
+        ("Short % of Float",            _pct_float(pct_float, 2)),
         ("Days to Cover (Short Ratio)", _f(short_rat, 1)),
-        ("Shares Float",               f"{_f(shares_f, 1)}M"),
-        ("Shares Outstanding",         f"{_f(company.shares_outstanding, 1)}M"),
-        ("% Held by Insiders",
-         _pct_float(company.pct_insiders, 1) if company.pct_insiders else "—"),
-        ("% Held by Institutions",
-         _pct_float(company.pct_institutions, 1) if company.pct_institutions else "—"),
+        ("Shares Float",                f"{_f(shares_f, 1)}M"),
+        ("Shares Outstanding",          f"{_f(company.shares_outstanding, 1)}M"),
+        ("% Held by Insiders",          _pct_already(company.pct_insiders)),
+        ("% Held by Institutions",      _pct_already(company.pct_institutions)),
     ]
     elems.append(_kv_grid(rows, styles))
 

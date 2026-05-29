@@ -369,16 +369,37 @@ class EODHDAdapter:
         company.pct_insiders      = self._parse_float(shares_stats.get("PercentInsiders"))
         company.pct_institutions  = self._parse_float(shares_stats.get("PercentInstitutions"))
 
-        # ── Short Interest (point-in-time from SharesStats) ───────────────────
-        ss_short_raw = shares_stats.get("SharesShort")
-        if ss_short_raw is not None:
-            company.shares_short = self._to_m(ss_short_raw)
-        ss_short_prior_raw = shares_stats.get("SharesShortPriorMonth")
-        if ss_short_prior_raw is not None:
-            company.shares_short_prior_month = self._to_m(ss_short_prior_raw)
-        # ShortPercent = short / float (decimal: 0.05 = 5%)
-        company.short_percent_of_float = self._parse_float(shares_stats.get("ShortPercent"))
-        company.short_ratio            = self._parse_float(shares_stats.get("ShortRatio"))
+        # ── Short Interest ─────────────────────────────────────────────────────
+        # Primary source: Technicals section — always populated for US equities.
+        # Verified field names from live EODHD API (2026):
+        #   Technicals.SharesShort            = raw share count (int)
+        #   Technicals.SharesShortPriorMonth  = raw share count (int)
+        #   Technicals.ShortRatio             = days to cover (float)
+        #   Technicals.ShortPercent           = short % of float (decimal, 0.0092 = 0.92%)
+        # Fallback: SharesStats section (same fields, but often null for non-US).
+        #   SharesStats.ShortPercentFloat     = short % of float (decimal)
+        def _tech_or_stats(tech_key, stats_key=None):
+            v = technicals.get(tech_key)
+            if v is None and stats_key:
+                v = shares_stats.get(stats_key)
+            return v
+
+        t_short_raw = _tech_or_stats("SharesShort")
+        if t_short_raw is not None:
+            company.shares_short = self._to_m(t_short_raw)
+
+        t_short_prior_raw = _tech_or_stats("SharesShortPriorMonth")
+        if t_short_prior_raw is not None:
+            company.shares_short_prior_month = self._to_m(t_short_prior_raw)
+
+        # ShortPercent in Technicals = short % of float (decimal)
+        # ShortPercentFloat in SharesStats = same metric, same decimal format
+        company.short_percent_of_float = self._parse_float(
+            _tech_or_stats("ShortPercent", "ShortPercentFloat")
+        )
+        company.short_ratio = self._parse_float(
+            _tech_or_stats("ShortRatio")
+        )
 
         # ── Short Interest history (/shorts endpoint) ─────────────────────────
         # Fetches up to ~24 months of monthly short interest data.
