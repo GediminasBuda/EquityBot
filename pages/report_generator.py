@@ -2580,17 +2580,21 @@ if generate_clicked and ticker_input:
                         ".OL": ".OL", ".CO": ".CO", ".TO": ".TO",
                         ".HK": ".HK",
                     }
+                    # Convert YF ticker → EODHD format for non-US exchanges.
+                    # The /shorts/ endpoint uses FINRA-style tickers:
+                    #   US stocks  → plain ticker, NO .US suffix  (AAPL, not AAPL.US)
+                    #   Non-US     → EODHD exchange suffix        (RHM.XETRA)
                     _si_eo_ticker = _si_ticker
+                    _is_us_ticker = "." not in _si_ticker  # bare ticker = US
                     for _yfsuf, _eosuf in _yf_to_eo.items():
                         if _si_ticker.endswith(_yfsuf):
                             _si_eo_ticker = _si_ticker[:-len(_yfsuf)] + _eosuf
+                            _is_us_ticker = False
                             break
-                    else:
-                        # No suffix → US stock
-                        if "." not in _si_ticker:
-                            _si_eo_ticker = _si_ticker + ".US"
+                    # US stocks: leave bare (no suffix) for the /shorts/ endpoint
+                    # (do NOT append .US — that causes 404 "Symbol not found")
 
-                    print(f"[SI-DIAG] yf_ticker={_si_ticker} eo_ticker={_si_eo_ticker}", flush=True)
+                    print(f"[SI-DIAG] yf_ticker={_si_ticker} eo_ticker={_si_eo_ticker} us={_is_us_ticker}", flush=True)
 
                     try:
                         _shorts_url = f"https://eodhistoricaldata.com/api/shorts/{_si_eo_ticker}"
