@@ -2604,87 +2604,39 @@ if generate_clicked and ticker_input:
 
                 if _is_us_ticker and _finra_id and _finra_sec:
                     try:
-                        # ── Strategy A: try various OAuth token URLs ───────────
-                        _tok = None
-                        _tok_url = ""
-                        _token_urls = [
-                            # (url, method) — try in order, stop on first 200
-                            ("https://api.finra.org/auth/oauth/v2/token",     "body"),
-                            ("https://api.finra.org/auth/oauth/token",         "body"),
-                            ("https://api.finra.org/oauth2/token",             "body"),
-                            ("https://api.finra.org/auth/oauth/v2/token",     "basic"),
-                        ]
-                        for _tu, _tm in _token_urls:
-                            try:
-                                print(f"[SI-DIAG] Token attempt: {_tu} method={_tm}", flush=True)
-                                if _tm == "body":
-                                    _tok = _req.post(
-                                        _tu,
-                                        headers={"Content-Type": "application/x-www-form-urlencoded"},
-                                        data={
-                                            "grant_type":    "client_credentials",
-                                            "client_id":     _finra_id,
-                                            "client_secret": _finra_sec,
-                                        },
-                                        timeout=15,
-                                    )
-                                else:
-                                    _cb = _b64.b64encode(
-                                        f"{_finra_id}:{_finra_sec}".encode()
-                                    ).decode()
-                                    _tok = _req.post(
-                                        _tu,
-                                        headers={
-                                            "Authorization": f"Basic {_cb}",
-                                            "Content-Type":  "application/x-www-form-urlencoded",
-                                        },
-                                        data="grant_type=client_credentials",
-                                        timeout=15,
-                                    )
-                                print(f"[SI-DIAG] Token HTTP {_tok.status_code}: "
-                                      f"{_tok.text[:120]}", flush=True)
-                                if _tok.status_code == 200:
-                                    _tok_url = _tu
-                                    break
-                            except Exception as _te:
-                                print(f"[SI-DIAG] Token attempt error: {_te}", flush=True)
+                        # ── Step 1: OAuth token via FINRA Identity Platform (FIP) ──
+                        # Correct endpoint per FINRA API docs:
+                        #   POST https://ews.fip.finra.org/fip/rest/ews/oauth2/access_token
+                        #        ?grant_type=client_credentials
+                        # Auth: Basic base64(clientId:clientSecret) in Authorization header
+                        # grant_type is a URL query param, NOT in the POST body.
+                        _fip_url = (
+                            "https://ews.fip.finra.org/fip/rest/ews/oauth2/access_token"
+                            "?grant_type=client_credentials"
+                        )
+                        _creds_b64 = _b64.b64encode(
+                            f"{_finra_id}:{_finra_sec}".encode()
+                        ).decode()
+                        print(f"[SI-DIAG] FIP token request → {_fip_url}", flush=True)
+                        _tok = _req.post(
+                            _fip_url,
+                            headers={"Authorization": f"Basic {_creds_b64}"},
+                            timeout=20,
+                        )
+                        print(f"[SI-DIAG] FIP token HTTP {_tok.status_code}: "
+                              f"{_tok.text[:200]}", flush=True)
 
-                        # ── Strategy B: try Client ID directly as Bearer ───────
-                        # Some FINRA app credentials act as long-lived API tokens.
-                        if (not _tok or _tok.status_code != 200):
-                            print(f"[SI-DIAG] OAuth failed — trying Client ID as Bearer token", flush=True)
-                            _probe = _req.get(
-                                "https://api.finra.org/data/group/consolidated"
-                                "/name/equitiesShortInterest",
-                                headers={
-                                    "Authorization": f"Bearer {_finra_id}",
-                                    "Accept":        "application/json",
-                                },
-                                params={"limit": 1,
-                                        "compareFilters": _json.dumps([{
-                                            "fieldName":   "issueSymbol",
-                                            "fieldValue":  _si_ticker,
-                                            "compareType": "EQUAL",
-                                        }])},
-                                timeout=15,
-                            )
-                            print(f"[SI-DIAG] Direct Bearer HTTP {_probe.status_code}: "
-                                  f"{_probe.text[:150]}", flush=True)
-
-                        # ── Determine access token for the main data call ─────
-                        _oauth_ok = _tok and _tok.status_code == 200
+                        _oauth_ok = _tok.status_code == 200
                         if not _oauth_ok:
-                            print(f"[SI-DIAG] All OAuth attempts failed — no token obtained", flush=True)
-                            st.write("⚠️  FINRA OAuth token failed (check developer.finra.org for correct token URL)")
+                            st.write(f"⚠️  FINRA token error HTTP {_tok.status_code}")
                         if _oauth_ok:
                             _access_token = _tok.json().get("access_token", "")
-                            _finra_data_base = "https://api.finra.org"
-                            print(f"[SI-DIAG] FINRA token OK (len={len(_access_token)})", flush=True)
+                            print(f"[SI-DIAG] FIP token OK (len={len(_access_token)})", flush=True)
                             st.write("🔑  FINRA OAuth token obtained")
 
                             # ── Step 2: Fetch equity short interest data ──────
                             _fr = _req.get(
-                                f"{_finra_data_base}/data/group/consolidated"
+                                "https://api.finra.org/data/group/consolidated"
                                 "/name/equitiesShortInterest",
                                 headers={
                                     "Authorization": f"Bearer {_access_token}",
