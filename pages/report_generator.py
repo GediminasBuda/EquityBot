@@ -2578,10 +2578,29 @@ if generate_clicked and ticker_input:
                 _is_us_ticker = "." not in _si_ticker   # bare ticker = US
                 _si_history   = []
 
-                _finra_id  = os.environ.get("FINRA_CLIENT_ID", "")
-                _finra_sec = os.environ.get("FINRA_CLIENT_SECRET", "")
+                # Read FINRA credentials: try os.environ first, then st.secrets
+                # directly (in case the app.py whitelist injection hasn't fired yet).
+                def _get_secret(key: str) -> str:
+                    val = os.environ.get(key, "")
+                    if not val:
+                        try:
+                            val = str(st.secrets.get(key, "") or "")
+                        except Exception:
+                            pass
+                    return val
+
+                _finra_id  = _get_secret("FINRA_CLIENT_ID")
+                _finra_sec = _get_secret("FINRA_CLIENT_SECRET")
+
+                # Diagnostic: show all st.secrets keys so we can verify what landed
+                try:
+                    _sk = [k for k in st.secrets.keys()]
+                    print(f"[SI-DIAG] st.secrets keys: {_sk}", flush=True)
+                except Exception as _ske:
+                    print(f"[SI-DIAG] st.secrets unavailable: {_ske}", flush=True)
+
                 print(f"[SI-DIAG] ticker={_si_ticker} is_us={_is_us_ticker} "
-                      f"finra_creds={bool(_finra_id and _finra_sec)}", flush=True)
+                      f"finra_id_len={len(_finra_id)} finra_sec_len={len(_finra_sec)}", flush=True)
 
                 if _is_us_ticker and _finra_id and _finra_sec:
                     try:
