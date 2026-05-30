@@ -2651,56 +2651,69 @@ if generate_clicked and ticker_input:
                             except Exception as _me:
                                 print(f"[SI-DIAG] metadata error: {_me}", flush=True)
 
-                            # Try candidate dataset paths in order
+                            # Try candidate dataset paths — stop when AAPL data found.
+                            # OTCMarket/equityShortInterest confirmed HTTP 200 but is
+                            # OTC-only; AAPL (NASDAQ) needs consolidated or exchange group.
+                            # Symbol field confirmed as "issueSymbolIdentifier" in OTCMarket.
                             _data_candidates = [
-                                ("OTCMarket",    "equityShortInterest",   "issueSymbol",  "settlementDate"),
-                                ("OTCMarket",    "equitiesShortInterest", "issueSymbol",  "settlementDate"),
-                                ("consolidated", "equityShortInterest",   "issueSymbol",  "settlementDate"),
-                                ("consolidated", "equitiesShortInterest", "issueSymbol",  "settlementDate"),
-                                ("OTCMarket",    "equityShortInterest",   "symbolName",   "settleDate"),
-                                ("OTCMarket",    "equityShortInterest",   "symbol",       "settlementDate"),
+                                # (group, dataset, sym_field, date_field)
+                                ("consolidated", "equityShortInterest",    "issueSymbolIdentifier", "settlementDate"),
+                                ("consolidated", "equitiesShortInterest",  "issueSymbolIdentifier", "settlementDate"),
+                                ("consolidated", "equityShortInterest",    "issueSymbol",           "settlementDate"),
+                                ("finra",        "equityShortInterest",    "issueSymbolIdentifier", "settlementDate"),
+                                # OTC last — AAPL is exchange-listed so won't be here
+                                ("OTCMarket",    "equityShortInterest",    "issueSymbolIdentifier", "settlementDate"),
                             ]
                             _fr = None
-                            _fr_sym_field  = "issueSymbol"
+                            _fr_sym_field  = "issueSymbolIdentifier"
                             _fr_date_field = "settlementDate"
                             for _grp, _ds, _sf, _df in _data_candidates:
                                 _test_url = f"https://api.finra.org/data/group/{_grp}/name/{_ds}"
                                 try:
-                                    _tr = _req.get(
+                                    # Probe: unfiltered limit=1 to check dataset exists
+                                    _probe = _req.get(
                                         _test_url,
                                         headers=_auth_hdr,
-                                        params={"limit": 2},
+                                        params={"limit": 1},
                                         timeout=15,
                                     )
-                                    print(f"[SI-DIAG] {_grp}/{_ds} HTTP {_tr.status_code}: "
-                                          f"{_tr.text[:150]}", flush=True)
-                                    if _tr.status_code == 200:
-                                        _fr = _tr
-                                        _fr_sym_field  = _sf
-                                        _fr_date_field = _df
-                                        st.write(f"📡  Dataset found: `{_grp}/{_ds}` — fetching {_si_ticker}…")
-                                        # Now fetch filtered for this ticker
-                                        _fr = _req.get(
-                                            _test_url,
-                                            headers=_auth_hdr,
-                                            params={
-                                                "limit": 30,
-                                                "compareFilters": _json.dumps([{
-                                                    "fieldName":   _sf,
-                                                    "fieldValue":  _si_ticker,
-                                                    "compareType": "EQUAL",
-                                                }]),
-                                                "sortFields": _json.dumps([f"-{_df}"]),
-                                            },
-                                            timeout=20,
-                                        )
-                                        print(f"[SI-DIAG] filtered HTTP {_fr.status_code}: "
-                                              f"{_fr.text[:200]}", flush=True)
-                                        break
+                                    print(f"[SI-DIAG] probe {_grp}/{_ds} HTTP {_probe.status_code}: "
+                                          f"{_probe.text[:120]}", flush=True)
+                                    if _probe.status_code != 200:
+                                        continue
+
+                                    # Dataset exists — now filter for this ticker
+                                    _fr = _req.get(
+                                        _test_url,
+                                        headers=_auth_hdr,
+                                        params={
+                                            "limit": 30,
+                                            "compareFilters": _json.dumps([{
+                                                "fieldName":   _sf,
+                                                "fieldValue":  _si_ticker,
+                                                "compareType": "EQUAL",
+                                            }]),
+                                            "sortFields": _json.dumps([f"-{_df}"]),
+                                        },
+                                        timeout=20,
+                                    )
+                                    _fr_sym_field  = _sf
+                                    _fr_date_field = _df
+                                    _fr_parsed = _fr.json() if _fr.status_code == 200 else []
+                                    _n_records = len(_fr_parsed) if isinstance(_fr_parsed, list) else 0
+                                    print(f"[SI-DIAG] filtered {_grp}/{_ds} HTTP {_fr.status_code} "
+                                          f"records={_n_records} first={_fr_parsed[0] if _fr_parsed else 'none'}",
+                                          flush=True)
+                                    if _fr.status_code == 200 and _n_records > 0:
+                                        st.write(f"📡  Dataset: `{_grp}/{_ds}` — "
+                                                 f"{_n_records} records for {_si_ticker}")
+                                        break   # found ticker data — stop
+                                    # Dataset exists but no records for ticker — try next
+                                    _fr = None
                                 except Exception as _de:
                                     print(f"[SI-DIAG] {_grp}/{_ds} error: {_de}", flush=True)
 
-                            print(f"[SI-DIAG] final _fr status: "
+                            print(f"[SI-DIAG] final _fr: "
                                   f"{_fr.status_code if _fr else 'None'}", flush=True)
 
                             if _fr and _fr.status_code == 200:
