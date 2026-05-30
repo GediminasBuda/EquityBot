@@ -2653,11 +2653,24 @@ if generate_clicked and ticker_input:
                                                 / company.short_percent_of_float)
 
                             for _row in _rows:
-                                _d = (_row.get("settlementDate")
-                                      or _row.get("date") or _row.get("Date"))
-                                # NASDAQ returns numbers with commas: "138,782,718"
-                                _raw_s = (_row.get("shortInterest")
-                                          or _row.get("sharesShort") or "")
+                                _d_raw = (_row.get("settlementDate")
+                                          or _row.get("date") or _row.get("Date") or "")
+                                # NASDAQ date format: "05/15/2026" → convert to "2026-05-15"
+                                if "/" in _d_raw:
+                                    _dp = _d_raw.split("/")
+                                    if len(_dp) == 3:
+                                        _d = f"{_dp[2]}-{_dp[0].zfill(2)}-{_dp[1].zfill(2)}"
+                                    else:
+                                        _d = _d_raw
+                                else:
+                                    _d = _d_raw[:10]
+                                # NASDAQ field name is "interest", not "shortInterest"
+                                _raw_s = (
+                                    _row.get("interest")
+                                    or _row.get("shortInterest")
+                                    or _row.get("sharesShort")
+                                    or ""
+                                )
                                 if not _d or not _raw_s:
                                     continue
                                 try:
@@ -2665,7 +2678,7 @@ if generate_clicked and ticker_input:
                                     _pf = (_sm / _float_m
                                            if _float_m and _float_m > 0 else None)
                                     _si_history.append({
-                                        "date":            str(_d)[:10],
+                                        "date":            _d,
                                         "shares_short_m":  round(_sm, 3),
                                         "short_pct_float": round(_pf, 5) if _pf else None,
                                     })
