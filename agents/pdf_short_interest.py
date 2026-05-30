@@ -288,41 +288,50 @@ def _render_short_chart(history: list, ticker: str,
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
 
-    # Bar colours — only meaningful for % chart
-    if use_pct:
-        bar_colors = [RED_HEX if v >= 20 else AMBER_HEX if v >= 10 else NAVY_HEX
-                      for v in values]
+    # Choose line colour based on latest value level
+    if use_pct and values:
+        v_last = values[-1]
+        line_col = (RED_HEX if v_last >= 20
+                    else AMBER_HEX if v_last >= 10
+                    else NAVY_HEX)
     else:
-        bar_colors = NAVY_HEX
+        line_col = NAVY_HEX
 
-    bars = ax.bar(dates, values, color=bar_colors, width=16, alpha=0.85, zorder=3)
+    # Line + shaded area
+    ax.plot(dates, values, color=line_col, linewidth=1.6,
+            marker="o", markersize=3.5, markerfacecolor=line_col,
+            markeredgewidth=0, zorder=3)
+    ax.fill_between(dates, values, alpha=0.08, color=line_col, zorder=2)
 
-    # Value labels on bars
-    fmt = "{:.1f}%" if use_pct else "{:.2f}M"
-    for bar, val in zip(bars, values):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + max(values) * 0.01,
-            fmt.format(val),
-            ha="center", va="bottom",
-            fontsize=6.5, color="#333333",
-        )
+    # Annotate min and max points
+    if len(values) > 1:
+        fmt = "{:.1f}%" if use_pct else "{:.2f}M"
+        idx_max = values.index(max(values))
+        idx_min = values.index(min(values))
+        for idx, offset in [(idx_max, 8), (idx_min, -10)]:
+            va = "bottom" if offset > 0 else "top"
+            ax.annotate(
+                fmt.format(values[idx]),
+                (dates[idx], values[idx]),
+                textcoords="offset points", xytext=(0, offset),
+                ha="center", va=va, fontsize=6.5,
+                color=line_col, fontweight="bold",
+            )
 
     # Threshold lines (only for % chart)
     if use_pct and values:
         mx = max(values)
-        if mx > 5:
+        if mx > 5 or True:   # always show 5% line for context
             ax.axhline(5,  color=NAVY_HEX,  linewidth=0.6, linestyle="--",
-                       alpha=0.5, label="5% (elevated)")
+                       alpha=0.45, label="5% elevated")
         if mx > 10:
             ax.axhline(10, color=AMBER_HEX, linewidth=0.6, linestyle="--",
-                       alpha=0.7, label="10% (high)")
+                       alpha=0.65, label="10% high")
         if mx > 20:
             ax.axhline(20, color=RED_HEX,   linewidth=0.6, linestyle="--",
-                       alpha=0.7, label="20% (extreme)")
-        if mx > 5:
-            ax.legend(fontsize=6.5, loc="upper left", framealpha=0.6,
-                      edgecolor="#DDDDDD")
+                       alpha=0.65, label="20% extreme")
+        ax.legend(fontsize=6.5, loc="upper left", framealpha=0.6,
+                  edgecolor="#DDDDDD")
 
     title_suffix = "Short % of Float" if use_pct else "Shares Short (millions)"
     ax.set_title(f"{ticker} — {title_suffix} (last 12 months)",
@@ -337,10 +346,10 @@ def _render_short_chart(history: list, ticker: str,
     for sp in ("left", "bottom"):
         ax.spines[sp].set_color("#DDDDDD")
         ax.spines[sp].set_linewidth(0.5)
-    ax.grid(True, axis="y", color="#DDDDDD", linewidth=0.4, alpha=0.7, zorder=0)
+    ax.grid(True, axis="y", color="#DDDDDD", linewidth=0.4, alpha=0.6, zorder=0)
     ax.set_ylim(bottom=0)
 
-    fig.text(0.99, 0.01, "Source: EODHD",
+    fig.text(0.99, 0.01, "Source: NASDAQ / FINRA",
              ha="right", va="bottom", fontsize=5.5, color=MGRAY_HEX,
              style="italic")
     fig.tight_layout(pad=0.5)
@@ -478,9 +487,10 @@ def _build_story(company: CompanyData, styles: dict) -> list:
     else:
         elems += _sec("Short % of Float — Last 12 Months", styles)
         elems.append(Paragraph(
-            "Historical short interest data not returned by EODHD /shorts endpoint "
-            "for this ticker. This data is typically available for US-listed equities "
-            "(FINRA reporting). Non-US stocks may not have short interest history.",
+            "Historical short interest chart not available for this ticker. "
+            "Historical data is sourced from the NASDAQ public API and is only "
+            "available for NASDAQ-listed equities. NYSE / AMEX / non-US stocks "
+            "show the current snapshot only.",
             styles["small"],
         ))
 
@@ -546,10 +556,10 @@ def _build_story(company: CompanyData, styles: dict) -> list:
     # ── Footer note ───────────────────────────────────────────────────────────
     elems.append(Spacer(1, 3 * mm))
     elems.append(Paragraph(
-        "Short interest data sourced from EODHD. Historical short interest "
-        "is reported bi-monthly for US equities (FINRA requirement). "
+        "Short interest snapshot from EODHD fundamentals. Historical chart "
+        "from NASDAQ public API (FINRA bi-monthly reporting, NASDAQ-listed equities). "
         "Short % of Float = Shares Short ÷ Shares Float. "
-        "Bar colour: green < 5% · navy 5–10% · amber 10–20% · red ≥ 20%.",
+        "Thresholds: < 5% low · 5–10% elevated · 10–20% high · ≥ 20% extreme.",
         styles["tiny"],
     ))
 
