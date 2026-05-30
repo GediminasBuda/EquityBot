@@ -46,7 +46,10 @@ def _inject_cloud_secrets() -> None:
             "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
             "ALPHA_VANTAGE_API_KEY", "FRED_API_KEY",
             "FMP_API_KEY", "EODHD_API_KEY",
+            "NEWS_API_KEY", "SIMFIN_API_KEY",
             "LLM_PROVIDER", "LLM_MODEL", "ADVERSARIAL_MODE",
+            "FINRA_CLIENT_ID", "FINRA_CLIENT_SECRET",
+            "GITHUB_GIST_TOKEN",
         ]
         for k in secret_keys:
             if k in st.secrets:
