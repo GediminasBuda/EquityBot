@@ -2634,29 +2634,76 @@ if generate_clicked and ticker_input:
                             print(f"[SI-DIAG] FIP token OK (len={len(_access_token)})", flush=True)
                             st.write("🔑  FINRA OAuth token obtained")
 
-                            # ── Step 2: Fetch equity short interest data ──────
-                            _fr = _req.get(
-                                "https://api.finra.org/data/group/consolidated"
-                                "/name/equitiesShortInterest",
-                                headers={
-                                    "Authorization": f"Bearer {_access_token}",
-                                    "Accept":        "application/json",
-                                },
-                                params={
-                                    "limit":          30,
-                                    "compareFilters": _json.dumps([{
-                                        "fieldName":   "issueSymbol",
-                                        "fieldValue":  _si_ticker,
-                                        "compareType": "EQUAL",
-                                    }]),
-                                    "sortFields": _json.dumps(["-settlementDate"]),
-                                },
-                                timeout=20,
-                            )
-                            print(f"[SI-DIAG] FINRA data HTTP {_fr.status_code}", flush=True)
-                            st.write(f"📡  FINRA data HTTP {_fr.status_code}")
+                            # ── Step 2: discover + fetch short interest data ─────
+                            _auth_hdr = {
+                                "Authorization": f"Bearer {_access_token}",
+                                "Accept":        "application/json",
+                            }
 
-                            if _fr.status_code == 200:
+                            # First: probe metadata to log available groups/datasets
+                            try:
+                                _meta = _req.get(
+                                    "https://api.finra.org/metadata",
+                                    headers=_auth_hdr, timeout=15,
+                                )
+                                print(f"[SI-DIAG] metadata HTTP {_meta.status_code}: "
+                                      f"{_meta.text[:400]}", flush=True)
+                            except Exception as _me:
+                                print(f"[SI-DIAG] metadata error: {_me}", flush=True)
+
+                            # Try candidate dataset paths in order
+                            _data_candidates = [
+                                ("OTCMarket",    "equityShortInterest",   "issueSymbol",  "settlementDate"),
+                                ("OTCMarket",    "equitiesShortInterest", "issueSymbol",  "settlementDate"),
+                                ("consolidated", "equityShortInterest",   "issueSymbol",  "settlementDate"),
+                                ("consolidated", "equitiesShortInterest", "issueSymbol",  "settlementDate"),
+                                ("OTCMarket",    "equityShortInterest",   "symbolName",   "settleDate"),
+                                ("OTCMarket",    "equityShortInterest",   "symbol",       "settlementDate"),
+                            ]
+                            _fr = None
+                            _fr_sym_field  = "issueSymbol"
+                            _fr_date_field = "settlementDate"
+                            for _grp, _ds, _sf, _df in _data_candidates:
+                                _test_url = f"https://api.finra.org/data/group/{_grp}/name/{_ds}"
+                                try:
+                                    _tr = _req.get(
+                                        _test_url,
+                                        headers=_auth_hdr,
+                                        params={"limit": 2},
+                                        timeout=15,
+                                    )
+                                    print(f"[SI-DIAG] {_grp}/{_ds} HTTP {_tr.status_code}: "
+                                          f"{_tr.text[:150]}", flush=True)
+                                    if _tr.status_code == 200:
+                                        _fr = _tr
+                                        _fr_sym_field  = _sf
+                                        _fr_date_field = _df
+                                        st.write(f"📡  Dataset found: `{_grp}/{_ds}` — fetching {_si_ticker}…")
+                                        # Now fetch filtered for this ticker
+                                        _fr = _req.get(
+                                            _test_url,
+                                            headers=_auth_hdr,
+                                            params={
+                                                "limit": 30,
+                                                "compareFilters": _json.dumps([{
+                                                    "fieldName":   _sf,
+                                                    "fieldValue":  _si_ticker,
+                                                    "compareType": "EQUAL",
+                                                }]),
+                                                "sortFields": _json.dumps([f"-{_df}"]),
+                                            },
+                                            timeout=20,
+                                        )
+                                        print(f"[SI-DIAG] filtered HTTP {_fr.status_code}: "
+                                              f"{_fr.text[:200]}", flush=True)
+                                        break
+                                except Exception as _de:
+                                    print(f"[SI-DIAG] {_grp}/{_ds} error: {_de}", flush=True)
+
+                            print(f"[SI-DIAG] final _fr status: "
+                                  f"{_fr.status_code if _fr else 'None'}", flush=True)
+
+                            if _fr and _fr.status_code == 200:
                                 _fraw = _fr.json()
                                 _flen = len(_fraw) if isinstance(_fraw, (list, dict)) else "n/a"
                                 print(f"[SI-DIAG] FINRA response type={type(_fraw).__name__} "
@@ -2679,10 +2726,12 @@ if generate_clicked and ticker_input:
                                                   flush=True)
 
                                     for _rec in _fraw:
-                                        _d = (_rec.get("settlementDate")
+                                        _d = (_rec.get(_fr_date_field)
+                                              or _rec.get("settlementDate")
                                               or _rec.get("date")
                                               or _rec.get("Date"))
                                         _s = (_rec.get("shortInterest")
+                                              or _rec.get("totalShortInterest")
                                               or _rec.get("short")
                                               or _rec.get("Short"))
                                         if not _d or _s is None:
