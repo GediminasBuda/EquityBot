@@ -2602,204 +2602,115 @@ if generate_clicked and ticker_input:
                 print(f"[SI-DIAG] ticker={_si_ticker} is_us={_is_us_ticker} "
                       f"finra_id_len={len(_finra_id)} finra_sec_len={len(_finra_sec)}", flush=True)
 
-                if _is_us_ticker and _finra_id and _finra_sec:
+                # ── Historical short interest: stockanalysis.com (US) ────────
+                # FINRA API only exposes OTC data; exchange-listed (NASDAQ/NYSE)
+                # stocks like AAPL are not in it. stockanalysis.com aggregates
+                # FINRA/SEC bi-monthly short interest for all US equities and
+                # exposes it in their public Next.js page (no auth required).
+                # Non-US stocks: no equivalent free historical source.
+                if _is_us_ticker:
+                    import re as _re_sa
+                    _sa_url = (f"https://stockanalysis.com/stocks/"
+                               f"{_si_ticker.lower()}/short-interest/")
+                    print(f"[SI-DIAG] stockanalysis.com {_sa_url}", flush=True)
                     try:
-                        # ── Step 1: OAuth token via FINRA Identity Platform (FIP) ──
-                        # Correct endpoint per FINRA API docs:
-                        #   POST https://ews.fip.finra.org/fip/rest/ews/oauth2/access_token
-                        #        ?grant_type=client_credentials
-                        # Auth: Basic base64(clientId:clientSecret) in Authorization header
-                        # grant_type is a URL query param, NOT in the POST body.
-                        _fip_url = (
-                            "https://ews.fip.finra.org/fip/rest/ews/oauth2/access_token"
-                            "?grant_type=client_credentials"
+                        _sa_resp = _req.get(
+                            _sa_url,
+                            headers={
+                                "User-Agent": (
+                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                    "Chrome/124.0.0.0 Safari/537.36"
+                                ),
+                                "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
+                                "Accept-Language": "en-US,en;q=0.9",
+                            },
+                            timeout=25,
                         )
-                        _creds_b64 = _b64.b64encode(
-                            f"{_finra_id}:{_finra_sec}".encode()
-                        ).decode()
-                        print(f"[SI-DIAG] FIP token request → {_fip_url}", flush=True)
-                        _tok = _req.post(
-                            _fip_url,
-                            headers={"Authorization": f"Basic {_creds_b64}"},
-                            timeout=20,
-                        )
-                        print(f"[SI-DIAG] FIP token HTTP {_tok.status_code}: "
-                              f"{_tok.text[:200]}", flush=True)
+                        print(f"[SI-DIAG] stockanalysis HTTP {_sa_resp.status_code} "
+                              f"len={len(_sa_resp.text)}", flush=True)
 
-                        _oauth_ok = _tok.status_code == 200
-                        if not _oauth_ok:
-                            st.write(f"⚠️  FINRA token error HTTP {_tok.status_code}")
-                        if _oauth_ok:
-                            _access_token = _tok.json().get("access_token", "")
-                            print(f"[SI-DIAG] FIP token OK (len={len(_access_token)})", flush=True)
-                            st.write("🔑  FINRA OAuth token obtained")
-
-                            # ── Step 2: discover + fetch short interest data ─────
-                            _auth_hdr = {
-                                "Authorization": f"Bearer {_access_token}",
-                                "Accept":        "application/json",
-                            }
-
-                            # First: probe metadata to log available groups/datasets
-                            try:
-                                _meta = _req.get(
-                                    "https://api.finra.org/metadata",
-                                    headers=_auth_hdr, timeout=15,
+                        if _sa_resp.status_code == 200:
+                            # Extract Next.js server-side data from __NEXT_DATA__ tag
+                            _nd_m = _re_sa.search(
+                                r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
+                                _sa_resp.text, _re_sa.DOTALL,
+                            )
+                            if _nd_m:
+                                _nd = _json.loads(_nd_m.group(1))
+                                _pp = (_nd.get("props", {})
+                                          .get("pageProps", {}))
+                                print(f"[SI-DIAG] pageProps keys: "
+                                      f"{list(_pp.keys())[:8]}", flush=True)
+                                # Try known key locations for short interest data
+                                _sa_raw = (
+                                    _pp.get("shortInterestData")
+                                    or _pp.get("data", {}).get("shortInterest")
+                                    or _pp.get("shortInterest")
+                                    or _pp.get("tableData")
+                                    or []
                                 )
-                                print(f"[SI-DIAG] metadata HTTP {_meta.status_code}: "
-                                      f"{_meta.text[:400]}", flush=True)
-                            except Exception as _me:
-                                print(f"[SI-DIAG] metadata error: {_me}", flush=True)
-
-                            # Try candidate dataset paths — stop when AAPL data found.
-                            # OTCMarket/equityShortInterest confirmed HTTP 200 but is
-                            # OTC-only; AAPL (NASDAQ) needs consolidated or exchange group.
-                            # Symbol field confirmed as "issueSymbolIdentifier" in OTCMarket.
-                            _data_candidates = [
-                                # (group, dataset, sym_field, date_field)
-                                ("consolidated", "equityShortInterest",    "issueSymbolIdentifier", "settlementDate"),
-                                ("consolidated", "equitiesShortInterest",  "issueSymbolIdentifier", "settlementDate"),
-                                ("consolidated", "equityShortInterest",    "issueSymbol",           "settlementDate"),
-                                ("finra",        "equityShortInterest",    "issueSymbolIdentifier", "settlementDate"),
-                                # OTC last — AAPL is exchange-listed so won't be here
-                                ("OTCMarket",    "equityShortInterest",    "issueSymbolIdentifier", "settlementDate"),
-                            ]
-                            _fr = None
-                            _fr_sym_field  = "issueSymbolIdentifier"
-                            _fr_date_field = "settlementDate"
-                            for _grp, _ds, _sf, _df in _data_candidates:
-                                _test_url = f"https://api.finra.org/data/group/{_grp}/name/{_ds}"
-                                try:
-                                    # Probe: unfiltered limit=1 to check dataset exists
-                                    _probe = _req.get(
-                                        _test_url,
-                                        headers=_auth_hdr,
-                                        params={"limit": 1},
-                                        timeout=15,
-                                    )
-                                    print(f"[SI-DIAG] probe {_grp}/{_ds} HTTP {_probe.status_code}: "
-                                          f"{_probe.text[:120]}", flush=True)
-                                    if _probe.status_code != 200:
-                                        continue
-
-                                    # Dataset exists — now filter for this ticker
-                                    _fr = _req.get(
-                                        _test_url,
-                                        headers=_auth_hdr,
-                                        params={
-                                            "limit": 30,
-                                            "compareFilters": _json.dumps([{
-                                                "fieldName":   _sf,
-                                                "fieldValue":  _si_ticker,
-                                                "compareType": "EQUAL",
-                                            }]),
-                                            "sortFields": _json.dumps([f"-{_df}"]),
-                                        },
-                                        timeout=20,
-                                    )
-                                    _fr_sym_field  = _sf
-                                    _fr_date_field = _df
-                                    _fr_parsed = _fr.json() if _fr.status_code == 200 else []
-                                    _n_records = len(_fr_parsed) if isinstance(_fr_parsed, list) else 0
-                                    print(f"[SI-DIAG] filtered {_grp}/{_ds} HTTP {_fr.status_code} "
-                                          f"records={_n_records} first={_fr_parsed[0] if _fr_parsed else 'none'}",
-                                          flush=True)
-                                    if _fr.status_code == 200 and _n_records > 0:
-                                        st.write(f"📡  Dataset: `{_grp}/{_ds}` — "
-                                                 f"{_n_records} records for {_si_ticker}")
-                                        break   # found ticker data — stop
-                                    # Dataset exists but no records for ticker — try next
-                                    _fr = None
-                                except Exception as _de:
-                                    print(f"[SI-DIAG] {_grp}/{_ds} error: {_de}", flush=True)
-
-                            print(f"[SI-DIAG] final _fr: "
-                                  f"{_fr.status_code if _fr else 'None'}", flush=True)
-
-                            if _fr and _fr.status_code == 200:
-                                _fraw = _fr.json()
-                                _flen = len(_fraw) if isinstance(_fraw, (list, dict)) else "n/a"
-                                print(f"[SI-DIAG] FINRA response type={type(_fraw).__name__} "
-                                      f"len={_flen}", flush=True)
-                                st.write(f"📦  Response: {type(_fraw).__name__}, {_flen} records")
-
-                                if isinstance(_fraw, list) and _fraw:
-                                    print(f"[SI-DIAG] FINRA first record: {_fraw[0]}", flush=True)
-                                    st.write(f"🔍  First record: `{_fraw[0]}`")
-
+                                print(f"[SI-DIAG] sa_raw type={type(_sa_raw).__name__} "
+                                      f"len={len(_sa_raw) if isinstance(_sa_raw,(list,dict)) else 'n/a'}",
+                                      flush=True)
+                                if isinstance(_sa_raw, list) and _sa_raw:
+                                    print(f"[SI-DIAG] first item: {_sa_raw[0]}", flush=True)
                                     _float_m = company.shares_float
                                     if not _float_m or _float_m <= 0:
-                                        if (company.shares_short
-                                                and company.shares_short > 0
+                                        if (company.shares_short and company.shares_short > 0
                                                 and company.short_percent_of_float
                                                 and company.short_percent_of_float > 0):
                                             _float_m = (company.shares_short
                                                         / company.short_percent_of_float)
-                                            print(f"[SI-DIAG] Derived float={_float_m:.1f}M",
-                                                  flush=True)
-
-                                    for _rec in _fraw:
-                                        _d = (_rec.get(_fr_date_field)
-                                              or _rec.get("settlementDate")
-                                              or _rec.get("date")
-                                              or _rec.get("Date"))
-                                        _s = (_rec.get("shortInterest")
-                                              or _rec.get("totalShortInterest")
-                                              or _rec.get("short")
-                                              or _rec.get("Short"))
-                                        if not _d or _s is None:
+                                    for _rec in _sa_raw:
+                                        _d  = (_rec.get("date") or _rec.get("Date")
+                                               or _rec.get("settlementDate"))
+                                        _pf = (_rec.get("pctFloat")
+                                               or _rec.get("shortPercentFloat")
+                                               or _rec.get("percentFloat"))
+                                        _sm = (_rec.get("sharesShort")
+                                               or _rec.get("shortInterest"))
+                                        if not _d:
                                             continue
                                         try:
-                                            _sm = float(_s) / 1_000_000
-                                            _pf = (_sm / _float_m
-                                                   if _float_m and _float_m > 0
-                                                   else None)
+                                            # pctFloat from SA is typically a decimal (0.93)
+                                            # or a percentage (0.93%). Try both.
+                                            _pf_v = float(_pf) if _pf is not None else None
+                                            if _pf_v is not None and _pf_v > 1:
+                                                _pf_v = _pf_v / 100  # was already a %
+                                            _sm_v = float(_sm) if _sm is not None else None
+                                            # If no pctFloat, derive from shares/float
+                                            if _pf_v is None and _sm_v and _float_m and _float_m > 0:
+                                                _pf_v = _sm_v / _float_m
                                             _si_history.append({
-                                                "date":            str(_d)[:10],
-                                                "shares_short_m":  round(_sm, 3),
-                                                "short_pct_float": round(_pf, 5) if _pf else None,
+                                                "date":           str(_d)[:10],
+                                                "shares_short_m": round(_sm_v, 3) if _sm_v else None,
+                                                "short_pct_float": round(_pf_v, 5) if _pf_v else None,
                                             })
                                         except (ValueError, TypeError):
                                             continue
-
                                     if _si_history:
-                                        _si_history.sort(
-                                            key=lambda x: x["date"], reverse=True
-                                        )
-                                        print(f"[SI-DIAG] Parsed {len(_si_history)} FINRA records. "
+                                        _si_history.sort(key=lambda x: x["date"], reverse=True)
+                                        print(f"[SI-DIAG] Parsed {len(_si_history)} SA records. "
                                               f"Sample: {_si_history[0]}", flush=True)
-                                        st.write(f"✓  {len(_si_history)} records from FINRA")
+                                        st.write(f"✓  {len(_si_history)} records from stockanalysis.com")
                                     else:
-                                        print(f"[SI-DIAG] 0 records parsed", flush=True)
-                                        st.write("⚠️  0 records parsed — check field names in log")
+                                        print(f"[SI-DIAG] 0 records parsed from SA data", flush=True)
                                 else:
-                                    print(f"[SI-DIAG] Not a list: {str(_fraw)[:300]}", flush=True)
-                                    st.write(f"⚠️  Unexpected response format")
+                                    # No known key — dump all pageProps keys for debugging
+                                    print(f"[SI-DIAG] SA data not found. Full pageProps: "
+                                          f"{str(_pp)[:600]}", flush=True)
                             else:
-                                print(f"[SI-DIAG] FINRA data {_fr.status_code}: "
-                                      f"{_fr.text[:300]}", flush=True)
-                                st.write(f"⚠️  FINRA data HTTP {_fr.status_code}")
-
-                    except Exception as _fe:
-                        print(f"[SI-DIAG] FINRA exception: {type(_fe).__name__}: {_fe}",
-                              flush=True)
-                        st.write(f"⚠️  FINRA exception: {type(_fe).__name__}: {_fe}")
-
-                elif _is_us_ticker and not (_finra_id and _finra_sec):
-                    # Credentials not configured — show setup instructions in PDF note
-                    st.info(
-                        "📋  **12-month chart requires FINRA credentials** (free):\n"
-                        "1. Register at https://developer.finra.org/\n"
-                        "2. Create a *Technical Application* → copy Client ID & Secret\n"
-                        "3. Add `FINRA_CLIENT_ID` and `FINRA_CLIENT_SECRET` to Streamlit secrets\n\n"
-                        "Snapshot data (current short %, days to cover) already appears in the report.",
-                        icon="🔑",
-                    )
+                                print(f"[SI-DIAG] No __NEXT_DATA__ tag. "
+                                      f"HTML snippet: {_sa_resp.text[:400]}", flush=True)
+                        else:
+                            print(f"[SI-DIAG] SA non-200: {_sa_resp.text[:200]}", flush=True)
+                    except Exception as _sae:
+                        print(f"[SI-DIAG] SA exception: {type(_sae).__name__}: {_sae}", flush=True)
 
                 else:
-                    # Non-US ticker — FINRA is US-only
-                    st.write("ℹ️  Historical short interest chart is only available for "
-                             "US-listed equities (FINRA). Non-US tickers show snapshot only.")
+                    # Non-US: no free historical source available
+                    print(f"[SI-DIAG] Non-US ticker — no historical short data", flush=True)
 
                 # Inject history into company object for PDF renderer
                 company.short_interest_history = _si_history
