@@ -2602,114 +2602,90 @@ if generate_clicked and ticker_input:
                 print(f"[SI-DIAG] ticker={_si_ticker} is_us={_is_us_ticker} "
                       f"finra_id_len={len(_finra_id)} finra_sec_len={len(_finra_sec)}", flush=True)
 
-                # ── Historical short interest: stockanalysis.com (US) ────────
-                # FINRA API only exposes OTC data; exchange-listed (NASDAQ/NYSE)
-                # stocks like AAPL are not in it. stockanalysis.com aggregates
-                # FINRA/SEC bi-monthly short interest for all US equities and
-                # exposes it in their public Next.js page (no auth required).
-                # Non-US stocks: no equivalent free historical source.
+                # ── Historical short interest: NASDAQ public API (US) ─────────
+                # FINRA API only covers OTC; exchange-listed stocks (AAPL/NASDAQ)
+                # need a different source. NASDAQ's public website API returns
+                # bi-monthly short interest JSON — same data their site displays,
+                # no authentication required.
                 if _is_us_ticker:
-                    import re as _re_sa
-                    _sa_url = (f"https://stockanalysis.com/stocks/"
-                               f"{_si_ticker.lower()}/short-interest/")
-                    print(f"[SI-DIAG] stockanalysis.com {_sa_url}", flush=True)
+                    _nasdaq_url = (
+                        f"https://api.nasdaq.com/api/quote/{_si_ticker}"
+                        f"/short-interest?type=SHORT_INTEREST&limit=16"
+                    )
+                    print(f"[SI-DIAG] NASDAQ API {_nasdaq_url}", flush=True)
                     try:
-                        _sa_resp = _req.get(
-                            _sa_url,
+                        _nq_resp = _req.get(
+                            _nasdaq_url,
                             headers={
                                 "User-Agent": (
                                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                                     "Chrome/124.0.0.0 Safari/537.36"
                                 ),
-                                "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
+                                "Accept":          "application/json, text/plain, */*",
                                 "Accept-Language": "en-US,en;q=0.9",
+                                "Referer":         "https://www.nasdaq.com/",
+                                "Origin":          "https://www.nasdaq.com",
                             },
-                            timeout=25,
+                            timeout=20,
                         )
-                        print(f"[SI-DIAG] stockanalysis HTTP {_sa_resp.status_code} "
-                              f"len={len(_sa_resp.text)}", flush=True)
+                        print(f"[SI-DIAG] NASDAQ HTTP {_nq_resp.status_code}: "
+                              f"{_nq_resp.text[:300]}", flush=True)
 
-                        if _sa_resp.status_code == 200:
-                            # Extract Next.js server-side data from __NEXT_DATA__ tag
-                            _nd_m = _re_sa.search(
-                                r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
-                                _sa_resp.text, _re_sa.DOTALL,
+                        if _nq_resp.status_code == 200:
+                            _nq = _nq_resp.json()
+                            # NASDAQ API response: data.shortInterestTable.rows
+                            _rows = (
+                                (_nq.get("data") or {})
+                                   .get("shortInterestTable", {})
+                                   .get("rows", [])
+                                or []
                             )
-                            if _nd_m:
-                                _nd = _json.loads(_nd_m.group(1))
-                                _pp = (_nd.get("props", {})
-                                          .get("pageProps", {}))
-                                print(f"[SI-DIAG] pageProps keys: "
-                                      f"{list(_pp.keys())[:8]}", flush=True)
-                                # Try known key locations for short interest data
-                                _sa_raw = (
-                                    _pp.get("shortInterestData")
-                                    or _pp.get("data", {}).get("shortInterest")
-                                    or _pp.get("shortInterest")
-                                    or _pp.get("tableData")
-                                    or []
-                                )
-                                print(f"[SI-DIAG] sa_raw type={type(_sa_raw).__name__} "
-                                      f"len={len(_sa_raw) if isinstance(_sa_raw,(list,dict)) else 'n/a'}",
-                                      flush=True)
-                                if isinstance(_sa_raw, list) and _sa_raw:
-                                    print(f"[SI-DIAG] first item: {_sa_raw[0]}", flush=True)
-                                    _float_m = company.shares_float
-                                    if not _float_m or _float_m <= 0:
-                                        if (company.shares_short and company.shares_short > 0
-                                                and company.short_percent_of_float
-                                                and company.short_percent_of_float > 0):
-                                            _float_m = (company.shares_short
-                                                        / company.short_percent_of_float)
-                                    for _rec in _sa_raw:
-                                        _d  = (_rec.get("date") or _rec.get("Date")
-                                               or _rec.get("settlementDate"))
-                                        _pf = (_rec.get("pctFloat")
-                                               or _rec.get("shortPercentFloat")
-                                               or _rec.get("percentFloat"))
-                                        _sm = (_rec.get("sharesShort")
-                                               or _rec.get("shortInterest"))
-                                        if not _d:
-                                            continue
-                                        try:
-                                            # pctFloat from SA is typically a decimal (0.93)
-                                            # or a percentage (0.93%). Try both.
-                                            _pf_v = float(_pf) if _pf is not None else None
-                                            if _pf_v is not None and _pf_v > 1:
-                                                _pf_v = _pf_v / 100  # was already a %
-                                            _sm_v = float(_sm) if _sm is not None else None
-                                            # If no pctFloat, derive from shares/float
-                                            if _pf_v is None and _sm_v and _float_m and _float_m > 0:
-                                                _pf_v = _sm_v / _float_m
-                                            _si_history.append({
-                                                "date":           str(_d)[:10],
-                                                "shares_short_m": round(_sm_v, 3) if _sm_v else None,
-                                                "short_pct_float": round(_pf_v, 5) if _pf_v else None,
-                                            })
-                                        except (ValueError, TypeError):
-                                            continue
-                                    if _si_history:
-                                        _si_history.sort(key=lambda x: x["date"], reverse=True)
-                                        print(f"[SI-DIAG] Parsed {len(_si_history)} SA records. "
-                                              f"Sample: {_si_history[0]}", flush=True)
-                                        st.write(f"✓  {len(_si_history)} records from stockanalysis.com")
-                                    else:
-                                        print(f"[SI-DIAG] 0 records parsed from SA data", flush=True)
-                                else:
-                                    # No known key — dump all pageProps keys for debugging
-                                    print(f"[SI-DIAG] SA data not found. Full pageProps: "
-                                          f"{str(_pp)[:600]}", flush=True)
+                            print(f"[SI-DIAG] NASDAQ rows={len(_rows)} "
+                                  f"first={_rows[0] if _rows else 'none'}", flush=True)
+
+                            _float_m = company.shares_float
+                            if not _float_m or _float_m <= 0:
+                                if (company.shares_short and company.shares_short > 0
+                                        and company.short_percent_of_float
+                                        and company.short_percent_of_float > 0):
+                                    _float_m = (company.shares_short
+                                                / company.short_percent_of_float)
+
+                            for _row in _rows:
+                                _d = (_row.get("settlementDate")
+                                      or _row.get("date") or _row.get("Date"))
+                                # NASDAQ returns numbers with commas: "138,782,718"
+                                _raw_s = (_row.get("shortInterest")
+                                          or _row.get("sharesShort") or "")
+                                if not _d or not _raw_s:
+                                    continue
+                                try:
+                                    _sm = float(str(_raw_s).replace(",", "")) / 1_000_000
+                                    _pf = (_sm / _float_m
+                                           if _float_m and _float_m > 0 else None)
+                                    _si_history.append({
+                                        "date":            str(_d)[:10],
+                                        "shares_short_m":  round(_sm, 3),
+                                        "short_pct_float": round(_pf, 5) if _pf else None,
+                                    })
+                                except (ValueError, TypeError):
+                                    continue
+
+                            if _si_history:
+                                _si_history.sort(key=lambda x: x["date"], reverse=True)
+                                print(f"[SI-DIAG] Parsed {len(_si_history)} NASDAQ records. "
+                                      f"Sample: {_si_history[0]}", flush=True)
+                                st.write(f"✓  {len(_si_history)} records from NASDAQ")
                             else:
-                                print(f"[SI-DIAG] No __NEXT_DATA__ tag. "
-                                      f"HTML snippet: {_sa_resp.text[:400]}", flush=True)
+                                print(f"[SI-DIAG] 0 records parsed", flush=True)
                         else:
-                            print(f"[SI-DIAG] SA non-200: {_sa_resp.text[:200]}", flush=True)
-                    except Exception as _sae:
-                        print(f"[SI-DIAG] SA exception: {type(_sae).__name__}: {_sae}", flush=True)
+                            print(f"[SI-DIAG] NASDAQ non-200", flush=True)
+                    except Exception as _nqe:
+                        print(f"[SI-DIAG] NASDAQ exception: {type(_nqe).__name__}: {_nqe}",
+                              flush=True)
 
                 else:
-                    # Non-US: no free historical source available
                     print(f"[SI-DIAG] Non-US ticker — no historical short data", flush=True)
 
                 # Inject history into company object for PDF renderer
