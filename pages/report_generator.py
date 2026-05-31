@@ -1799,6 +1799,59 @@ if generate_clicked and ticker_input:
             if not company.name:
                 company.name = ticker_input
 
+            # ── Japan / TSE detection ─────────────────────────────────────────
+            # EODHD has no coverage for TSE-listed Japanese stocks. All
+            # "EODHD-only" report pipelines (Overview V2, Fisher, Gravity,
+            # Industry Analysis, ValueMeter) call fetch_company_data_eodhd_only()
+            # which would replace `company` with empty data and confuse the LLM.
+            # Flag Japanese tickers so each dispatch block can skip the EODHD
+            # re-fetch and stay with the DataManager / yfinance company object.
+            _is_japan = ticker_input.upper().endswith(".T")
+
+            if _is_japan:
+                # Minimal bundle used instead of EODHD bundle for all Japan reports.
+                _JAPAN_BUNDLE: dict = {
+                    "endpoints_used": 1,   # yfinance only
+                    "errors": ["EODHD does not cover TSE (Japan). Using yfinance data."],
+                    "fundamentals": {}, "news": [], "insider_trades": [],
+                    "sentiment": None, "eod": [], "events": [],
+                    "financials_annual": {}, "financials_quarterly": {},
+                }
+                # yfinance sometimes returns stale company names for new Japanese
+                # listings (e.g. 9166.T returned as "Godo Kaisha LINE" instead of
+                # "Genda Inc"). Try to correct from our local Japan seed list.
+                _jp_name_suspect = (
+                    not company.name
+                    or "godo kaisha" in (company.name or "").lower()
+                    or "godo" in (company.name or "").lower()
+                    or company.name == ticker_input
+                )
+                if _jp_name_suspect:
+                    try:
+                        from data_sources.japan_tickers import search_japan
+                        _code = ticker_input.upper().replace(".T", "")
+                        _jp_hits = search_japan(_code, max_results=1)
+                        if _jp_hits:
+                            # Label format: "9166.T    Genda Inc  (Consumer Cyclical)  · TSE"
+                            _jp_raw_name = _jp_hits[0][0]
+                            import re as _re_jp_name
+                            _jp_name_m = _re_jp_name.search(r'\.T\s+(.+?)\s+(?:\(|\·|$)', _jp_raw_name)
+                            if _jp_name_m:
+                                _jp_corrected = _jp_name_m.group(1).strip()
+                                if _jp_corrected and len(_jp_corrected) > 3:
+                                    company.name = _jp_corrected
+                                    st.write(f"🇯🇵  Company name corrected to: **{company.name}**")
+                    except Exception:
+                        pass
+                # Set country if yfinance didn't populate it
+                if not company.country:
+                    company.country = "Japan"
+                st.write(
+                    "🇯🇵  **Japanese stock (TSE)** — EODHD not available. "
+                    "Analysis uses yfinance data (price, financials, estimates). "
+                    "Report will be less detailed than for EODHD-covered markets."
+                )
+
             yrs   = company.year_range()
             compl = company.completeness_pct()
             st.write(f"✓  **{company.name}** · {yrs} · {compl}% complete · "
@@ -1860,9 +1913,13 @@ if generate_clicked and ticker_input:
                     SYSTEM_PROMPT as SYS,
                 )
                 _prog.progress(25, text="💎  Fetching EODHD-only data for V2…")
-                st.write("💎  Fetching EODHD bundle (fundamentals + /eod)…")
-                company, _v2_bundle = fetch_company_data_eodhd_only(ticker_input)
-                st.write(f"✓  EODHD endpoints used: {_v2_bundle.get('endpoints_used',0)}/9")
+                if _is_japan:
+                    _v2_bundle = _JAPAN_BUNDLE
+                    st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                else:
+                    st.write("💎  Fetching EODHD bundle (fundamentals + /eod)…")
+                    company, _v2_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    st.write(f"✓  EODHD endpoints used: {_v2_bundle.get('endpoints_used',0)}/9")
 
                 # Build the LLM prompt with EODHD context only — no news,
                 # no macro blocks (they would be sourced outside EODHD).
@@ -1941,9 +1998,13 @@ if generate_clicked and ticker_input:
                 # Step 1: EODHD-only company data (overrides the waterfall
                 # company built earlier in this run).
                 _prog.progress(25, text="🔬  Fetching EODHD-only Fisher data…")
-                st.write("🔬  Fetching EODHD bundle (fundamentals + /eod + news + sentiment + insider)…")
-                company, _fisher_bundle = fetch_company_data_eodhd_only(ticker_input)
-                st.write(f"✓  EODHD endpoints used: {_fisher_bundle.get('endpoints_used',0)}/9")
+                if _is_japan:
+                    _fisher_bundle = _JAPAN_BUNDLE
+                    st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                else:
+                    st.write("🔬  Fetching EODHD bundle (fundamentals + /eod + news + sentiment + insider)…")
+                    company, _fisher_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    st.write(f"✓  EODHD endpoints used: {_fisher_bundle.get('endpoints_used',0)}/9")
 
                 # Step 2: Peers — user-provided list, EODHD-only fetch
                 fisher_peers: dict = {}
@@ -2017,9 +2078,13 @@ if generate_clicked and ticker_input:
 
                 # Step 1: EODHD-only subject data
                 _prog.progress(20, text="🔬  Fetching EODHD-only Fisher data…")
-                st.write("🔬  Fetching EODHD bundle (fundamentals + news + insider)…")
-                company, _fpr_bundle = fetch_company_data_eodhd_only(ticker_input)
-                st.write(f"✓  EODHD endpoints used: {_fpr_bundle.get('endpoints_used',0)}/9")
+                if _is_japan:
+                    _fpr_bundle = _JAPAN_BUNDLE
+                    st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                else:
+                    st.write("🔬  Fetching EODHD bundle (fundamentals + news + insider)…")
+                    company, _fpr_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    st.write(f"✓  EODHD endpoints used: {_fpr_bundle.get('endpoints_used',0)}/9")
 
                 # Step 2: Peers — required for this framework. If the user
                 # didn't supply any, ask the LLM to suggest some so the
@@ -2189,11 +2254,15 @@ if generate_clicked and ticker_input:
                     SYSTEM_PROMPT as IA_SYS,
                 )
 
-                # Step 1: EODHD-only subject data
-                _prog.progress(20, text="🏛️  Fetching EODHD-only subject data…")
-                st.write("🏛️  Fetching EODHD bundle (10y financials + news + sentiment)…")
-                company, _ia_bundle = fetch_company_data_eodhd_only(ticker_input)
-                st.write(f"✓  EODHD endpoints used: {_ia_bundle.get('endpoints_used',0)}/9")
+                # Step 1: EODHD-only subject data (skipped for Japanese stocks)
+                _prog.progress(20, text="🏛️  Fetching subject data…")
+                if _is_japan:
+                    _ia_bundle = _JAPAN_BUNDLE
+                    st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                else:
+                    st.write("🏛️  Fetching EODHD bundle (10y financials + news + sentiment)…")
+                    company, _ia_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    st.write(f"✓  EODHD endpoints used: {_ia_bundle.get('endpoints_used',0)}/9")
 
                 # Step 2: Country macro
                 _prog.progress(40, text="🌍  Fetching country macro from EODHD…")
@@ -2509,11 +2578,15 @@ if generate_clicked and ticker_input:
                 from data_sources.eodhd_only_builder import fetch_company_data_eodhd_only
 
                 # ── Step 1: EODHD-only subject data ──────────────────────────
-                _prog.progress(20, text="💎  Fetching EODHD-only subject data…")
-                st.write("💎  Fetching EODHD bundle for subject company…")
-                company, _vm_bundle = fetch_company_data_eodhd_only(ticker_input)
-                st.write(f"✓  Subject: {company.name}  ·  "
-                         f"{_vm_bundle.get('endpoints_used', 0)}/9 EODHD endpoints")
+                _prog.progress(20, text="💎  Fetching subject data…")
+                if _is_japan:
+                    _vm_bundle = _JAPAN_BUNDLE
+                    st.write(f"🇯🇵  Using yfinance data for Japanese stock: {company.name}")
+                else:
+                    st.write("💎  Fetching EODHD bundle for subject company…")
+                    company, _vm_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    st.write(f"✓  Subject: {company.name}  ·  "
+                             f"{_vm_bundle.get('endpoints_used', 0)}/9 EODHD endpoints")
 
                 # ── Step 2: LLM Call 1 — identify peers ──────────────────────
                 _prog.progress(30, text="🔍  Identifying peer group…")
@@ -2833,9 +2906,13 @@ if generate_clicked and ticker_input:
 
                 # Step 1: EODHD-only company data
                 _prog.progress(25, text="⚖️  Fetching EODHD-only Gravity data…")
-                st.write("⚖️  Fetching EODHD bundle (fundamentals + /eod + news + sentiment + insider)…")
-                company, _gravity_bundle = fetch_company_data_eodhd_only(ticker_input)
-                st.write(f"✓  EODHD endpoints used: {_gravity_bundle.get('endpoints_used',0)}/9")
+                if _is_japan:
+                    _gravity_bundle = _JAPAN_BUNDLE
+                    st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                else:
+                    st.write("⚖️  Fetching EODHD bundle (fundamentals + /eod + news + sentiment + insider)…")
+                    company, _gravity_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    st.write(f"✓  EODHD endpoints used: {_gravity_bundle.get('endpoints_used',0)}/9")
 
                 # Step 2: Peers
                 gravity_peers: dict = {}
