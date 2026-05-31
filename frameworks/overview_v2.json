@@ -1,6 +1,6 @@
 {
   "id": "overview_v2",
-  "name": "Investment Memo V2 (EODHD Based)",
+  "name": "Investment Memo Bull/Bear",
   "icon": "💎",
   "description": "Investment memo identical in structure to the original Overview but with 100% of underlying data sourced exclusively from EODHD's All-In-One API. Every field is annotated with ✓ EODHD (verified) or — (not provided by EODHD). LLM-generated narrative (Snapshot, Bull, Bear, Recommendation) is grounded only in EODHD inputs.",
   "is_builtin": true,
