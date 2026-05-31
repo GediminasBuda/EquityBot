@@ -337,7 +337,9 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
     """
     Smart-search callback for st_searchbox:
       • If query looks NL → return one "🔮 Run as prompt" option first.
-      • Always also return ticker autocomplete suggestions from EODHD /search.
+      • EODHD /search autocomplete for most global exchanges.
+      • Japan/TSE supplement — EODHD doesn't cover TSE fundamentals so
+        we search our local Japan ticker cache instead.
 
     Each returned tuple is (display_label, value_to_return). The value
     becomes the searchbox's selection result.
@@ -354,8 +356,7 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
             (f"🔮  Run as prompt: \"{truncated}\"", f"NL::{q}")
         )
 
-    # Ticker autocomplete (also helpful even when query is NL — they may
-    # mention a real ticker that the EODHD search recognises).
+    # ── EODHD ticker autocomplete ─────────────────────────────────────────────
     seen: set[str] = set()
     for item in _rg_eodhd_search(q):
         if not isinstance(item, dict):
@@ -377,6 +378,24 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
         if meta:
             label += f"  ({meta})"
         suggestions.append((label, yf_ticker))
+
+    # ── Japan / TSE supplement ────────────────────────────────────────────────
+    # EODHD does not cover TSE fundamentals, so Japanese companies never appear
+    # in the EODHD search results. We maintain a local TSE ticker list (seeded
+    # with ~220 major companies, auto-expanded to ~3 800 from EODHD exchange-
+    # symbol-list on first request and cached for 7 days).
+    try:
+        from data_sources.japan_tickers import search_japan
+        _jp_slots = max(0, 12 - len(suggestions))   # fill remaining slots
+        if _jp_slots > 0:
+            for _jp_label, _jp_ticker in search_japan(
+                q, api_key=_RG_EODHD_KEY or "", max_results=_jp_slots
+            ):
+                if _jp_ticker not in seen:
+                    seen.add(_jp_ticker)
+                    suggestions.append((_jp_label, _jp_ticker))
+    except Exception:
+        pass   # never break the main search on Japan module errors
 
     return suggestions[:12]
 
