@@ -1936,9 +1936,9 @@ if generate_clicked and ticker_input:
                 _show_token_usage(llm.last_usage)
                 _prog.progress(65, text="✓  AI analysis complete")
 
-                # Peers — fetch each EODHD-only too
-                _prog.progress(68, text="🔍  Fetching EODHD peer data…")
-                st.write("🔍  Fetching EODHD-only peer data…")
+                # Peers — EODHD-only for non-Japan tickers; yfinance for .T peers
+                _prog.progress(68, text="🔍  Fetching peer data…")
+                st.write("🔍  Fetching peer data (EODHD or yfinance for TSE peers)…")
                 peers: dict[str, CompanyData] = {}
                 raw_peers = peer_list or [
                     p.get("ticker", "")
@@ -1947,19 +1947,24 @@ if generate_clicked and ticker_input:
                 raw_peers = [t.strip().upper() for t in raw_peers if t.strip()][:6]
                 for pt in raw_peers:
                     try:
-                        pd_, _ = fetch_company_data_eodhd_only(pt)
-                        # Only keep peers EODHD actually returned data for —
-                        # market_cap is the cheapest "real data" signal.
-                        # Drop hallucinated tickers that yield empty payloads.
+                        if pt.endswith(".T"):
+                            # Japanese peer → use DataManager (yfinance)
+                            pd_ = dm.get(pt, force_refresh=False)
+                            src_label = "yfinance (TSE)"
+                        else:
+                            pd_, _ = fetch_company_data_eodhd_only(pt)
+                            src_label = "EODHD"
+                        # Keep only if we got meaningful data
                         la_check = pd_.latest_annual()
                         has_rev = bool(la_check and la_check.revenue)
                         if pd_.name and (pd_.market_cap or has_rev):
                             peers[pt] = pd_
+                            st.write(f"   ✓ {pt}: {pd_.name} [{src_label}]")
                         else:
-                            st.write(f"   ⚠ Peer {pt} returned no usable EODHD data — skipped")
+                            st.write(f"   ⚠ Peer {pt} returned no usable data — skipped")
                     except Exception as e:
                         st.write(f"   ⚠ Peer {pt} fetch failed: {e}")
-                st.write(f"✓  {len(peers)} EODHD peers loaded: "
+                st.write(f"✓  {len(peers)} peers loaded: "
                          f"{', '.join(peers.keys()) or 'none'}")
                 _prog.progress(78, text=f"✓  {len(peers)} peers")
 

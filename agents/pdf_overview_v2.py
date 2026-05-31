@@ -648,63 +648,114 @@ class OverviewV2PDFGenerator:
     # ── V2 Page 4: Field Provenance Legend ────────────────────────────────────
     def _page4_provenance(self, company: CompanyData, styles: dict) -> list:
         """
-        Explicit table mapping every report field to its EODHD endpoint /
-        block — or marking it as "not provided by EODHD". Required by the
-        V2 framework's transparency promise.
+        Explicit table mapping every report field to its data source.
+        For Japanese (TSE) stocks, yfinance is used instead of EODHD.
         """
+        is_japan = (company.ticker or "").upper().endswith(".T")
+
         el = []
-        el.append(Paragraph("EODHD Data Provenance",
+        title = "Data Provenance — yfinance (TSE)" if is_japan else "EODHD Data Provenance"
+        el.append(Paragraph(title,
                             ParagraphStyle("v2hdr",
                                 fontName=BOLD_FONT, fontSize=12,
                                 textColor=NAVY, spaceAfter=4)))
-        el.append(Paragraph(
-            "Every populated field in this report is sourced exclusively from "
-            "the EODHD All-In-One API. The table below maps each field to its "
-            "EODHD endpoint and block, including which fields EODHD does not "
-            "expose (rendered as <i>— n/a</i> in the body).",
+
+        if is_japan:
+            desc = (
+                "This company is listed on the Tokyo Stock Exchange (TSE/JPX). "
+                "EODHD does not cover Japanese equities, so all fundamental data "
+                "in this report is sourced from <b>yfinance (Yahoo Finance)</b>. "
+                "Coverage is less complete than EODHD: historical depth is typically "
+                "3–5 years, some fields (ISIN, detailed officers, intraday price) "
+                "may be unavailable."
+            )
+        else:
+            desc = (
+                "Every populated field in this report is sourced exclusively from "
+                "the EODHD All-In-One API. The table below maps each field to its "
+                "EODHD endpoint and block, including which fields EODHD does not "
+                "expose (rendered as <i>— n/a</i> in the body)."
+            )
+        el.append(Paragraph(desc,
             ParagraphStyle("v2desc",
                 fontName=BASE_FONT, fontSize=8, textColor=MGRAY,
                 leading=11, spaceAfter=8)))
 
         from reportlab.platypus import Table, TableStyle
+
+        src_col_hdr = "yfinance Field" if is_japan else "EODHD Source"
         rows = [[
             Paragraph("<b>Field</b>", styles["table_header"]),
-            Paragraph("<b>EODHD Source</b>", styles["table_header"]),
+            Paragraph(f"<b>{src_col_hdr}</b>", styles["table_header"]),
             Paragraph("<b>Status</b>", styles["table_header"]),
         ]]
-        provenance = [
-            ("Company name / sector / industry",  "/fundamentals → General",                "✓ EODHD"),
-            ("Description, address, officers",    "/fundamentals → General",                "✓ EODHD"),
-            ("ISIN / Country / Fiscal Year End",  "/fundamentals → General",                "✓ EODHD"),
-            ("Current price (live)",              "/real-time → close",                     "✓ EODHD"),
-            ("Market cap, EV",                    "/fundamentals → Highlights, Valuation",  "✓ EODHD"),
-            ("Shares outstanding (per year)",     "/fundamentals → outstandingShares.annual","✓ EODHD"),
-            ("P/E, Forward P/E, PEG, P/B, P/S",   "/fundamentals → Highlights, Valuation",  "✓ EODHD"),
-            ("EV/EBITDA, EV/Sales",               "/fundamentals → Valuation",              "✓ EODHD"),
-            ("Margins (Gross/EBIT/EBITDA/Net)",   "/fundamentals → Highlights (TTM)",       "✓ EODHD"),
-            ("ROE, ROA",                          "/fundamentals → Highlights",             "✓ EODHD"),
-            ("Revenue / EBITDA / EBIT / NI (10y)","/fundamentals → Financials.Income_Statement.yearly","✓ EODHD"),
-            ("EPS Diluted (annual actuals)",      "/fundamentals → Earnings.Annual.epsActual","✓ EODHD"),
-            ("Total Assets / Debt / Equity (10y)","/fundamentals → Financials.Balance_Sheet.yearly","✓ EODHD"),
-            ("Net Debt",                          "/fundamentals → Balance_Sheet.netDebt",  "✓ EODHD"),
-            ("Cash Flow / CapEx / FCF (10y)",     "/fundamentals → Financials.Cash_Flow.yearly","✓ EODHD"),
-            ("Dividend Yield, Payout, Ex-Date",   "/fundamentals → SplitsDividends",        "✓ EODHD"),
-            ("Forward dividend rate",             "/fundamentals → SplitsDividends.ForwardAnnualDividendRate","✓ EODHD"),
-            ("52W high / low, 50/200 DMA, Beta",  "/fundamentals → Technicals",             "✓ EODHD"),
-            ("Float, % Insiders, % Institutions", "/fundamentals → SharesStats",            "✓ EODHD"),
-            ("Forward EPS / Revenue Estimates",   "/fundamentals → Earnings.Trend",         "✓ EODHD"),
-            ("5-Year Daily Price Chart",          "/eod (All-In-One)",                      "✓ EODHD"),
-            ("Historical Year-End Prices",        "/eod → last close of each year",         "✓ EODHD"),
-            ("Wall Street Target Price",          "/fundamentals → Highlights.WallStreetTargetPrice","✓ EODHD"),
-            ("Investment Snapshot (narrative)",   "LLM (Claude/GPT-4o) — prompt fed EODHD only","ⓘ LLM"),
-            ("Bull / Bear Case (narrative)",      "LLM — context limited to EODHD data",    "ⓘ LLM"),
-            ("Recommendation + Rationale",        "LLM — synthesis of EODHD signals",       "ⓘ LLM"),
-            ("Fun Facts",                         "LLM — drawn from EODHD profile/financials","ⓘ LLM"),
-            ("Suggested Peers",                   "LLM — names only, peer metrics from EODHD","ⓘ LLM names"),
-            ("Peer P/E, EV/EBITDA, ROE, etc.",    "/fundamentals (per peer)",               "✓ EODHD"),
-            ("News headlines",                    "Not used in this report",                "— n/a"),
-            ("Macro context",                     "Not used in this report",                "— n/a"),
-        ]
+
+        if is_japan:
+            # yfinance field mapping for Japanese stocks
+            chk = "✓ yfinance"
+            na  = "— n/a (TSE)"
+            provenance = [
+                ("Company name / sector / industry",  "Ticker.info → longName, sector",       chk),
+                ("Description",                       "Ticker.info → longBusinessSummary",     chk),
+                ("Current price (live)",              "Ticker.info → currentPrice",            chk),
+                ("Market cap",                        "Ticker.info → marketCap",               chk),
+                ("Shares outstanding",                "Ticker.info → sharesOutstanding",       chk),
+                ("P/E (trailing)",                    "Ticker.info → trailingPE",              chk),
+                ("Forward P/E",                       "Ticker.info → forwardPE",               chk),
+                ("Margins (Gross/EBIT/Net)",          "Ticker.info → grossMargins, operatingMargins, profitMargins", chk),
+                ("ROE, ROA",                          "Ticker.info → returnOnEquity, returnOnAssets", chk),
+                ("Revenue / Net Income (annual)",     "Ticker.financials (3–5 yr)",            chk),
+                ("Balance Sheet (annual)",            "Ticker.balance_sheet (3–5 yr)",         chk),
+                ("Cash Flow (annual)",                "Ticker.cashflow (3–5 yr)",              chk),
+                ("EPS (annual actuals)",              "Ticker.earnings",                       chk),
+                ("Dividend Yield / Rate",             "Ticker.info → dividendYield, dividendRate", chk),
+                ("52W high / low, Beta",              "Ticker.info → fiftyTwoWeekHigh/Low, beta", chk),
+                ("Forward Estimates",                 "Ticker.info → earningsGrowth, revenueGrowth", chk),
+                ("Price Chart (historical)",          "Ticker.history()",                      chk),
+                ("ISIN",                              "Not provided by yfinance",              na),
+                ("EV / EV multiples",                 "Derived from marketCap + debt − cash", chk),
+                ("Officers / Insiders",               "Limited via Ticker.info",               "⚠ partial"),
+                ("Investment Snapshot (narrative)",   "LLM — context from yfinance data",     "ⓘ LLM"),
+                ("Bull / Bear Case (narrative)",      "LLM — yfinance context",               "ⓘ LLM"),
+                ("Recommendation + Rationale",        "LLM — yfinance signals",               "ⓘ LLM"),
+                ("Suggested Peers",                   "LLM — names; peer metrics from yfinance","ⓘ LLM names"),
+                ("Peer comparison metrics",           "yfinance (per peer)",                  chk),
+                ("News headlines",                    "Not used in this report",              "— n/a"),
+            ]
+        else:
+            provenance = [
+                ("Company name / sector / industry",  "/fundamentals → General",                "✓ EODHD"),
+                ("Description, address, officers",    "/fundamentals → General",                "✓ EODHD"),
+                ("ISIN / Country / Fiscal Year End",  "/fundamentals → General",                "✓ EODHD"),
+                ("Current price (live)",              "/real-time → close",                     "✓ EODHD"),
+                ("Market cap, EV",                    "/fundamentals → Highlights, Valuation",  "✓ EODHD"),
+                ("Shares outstanding (per year)",     "/fundamentals → outstandingShares.annual","✓ EODHD"),
+                ("P/E, Forward P/E, PEG, P/B, P/S",   "/fundamentals → Highlights, Valuation",  "✓ EODHD"),
+                ("EV/EBITDA, EV/Sales",               "/fundamentals → Valuation",              "✓ EODHD"),
+                ("Margins (Gross/EBIT/EBITDA/Net)",   "/fundamentals → Highlights (TTM)",       "✓ EODHD"),
+                ("ROE, ROA",                          "/fundamentals → Highlights",             "✓ EODHD"),
+                ("Revenue / EBITDA / EBIT / NI (10y)","/fundamentals → Financials.Income_Statement.yearly","✓ EODHD"),
+                ("EPS Diluted (annual actuals)",      "/fundamentals → Earnings.Annual.epsActual","✓ EODHD"),
+                ("Total Assets / Debt / Equity (10y)","/fundamentals → Financials.Balance_Sheet.yearly","✓ EODHD"),
+                ("Net Debt",                          "/fundamentals → Balance_Sheet.netDebt",  "✓ EODHD"),
+                ("Cash Flow / CapEx / FCF (10y)",     "/fundamentals → Financials.Cash_Flow.yearly","✓ EODHD"),
+                ("Dividend Yield, Payout, Ex-Date",   "/fundamentals → SplitsDividends",        "✓ EODHD"),
+                ("Forward dividend rate",             "/fundamentals → SplitsDividends.ForwardAnnualDividendRate","✓ EODHD"),
+                ("52W high / low, 50/200 DMA, Beta",  "/fundamentals → Technicals",             "✓ EODHD"),
+                ("Float, % Insiders, % Institutions", "/fundamentals → SharesStats",            "✓ EODHD"),
+                ("Forward EPS / Revenue Estimates",   "/fundamentals → Earnings.Trend",         "✓ EODHD"),
+                ("5-Year Daily Price Chart",          "/eod (All-In-One)",                      "✓ EODHD"),
+                ("Historical Year-End Prices",        "/eod → last close of each year",         "✓ EODHD"),
+                ("Wall Street Target Price",          "/fundamentals → Highlights.WallStreetTargetPrice","✓ EODHD"),
+                ("Investment Snapshot (narrative)",   "LLM (Claude/GPT-4o) — prompt fed EODHD only","ⓘ LLM"),
+                ("Bull / Bear Case (narrative)",      "LLM — context limited to EODHD data",    "ⓘ LLM"),
+                ("Recommendation + Rationale",        "LLM — synthesis of EODHD signals",       "ⓘ LLM"),
+                ("Fun Facts",                         "LLM — drawn from EODHD profile/financials","ⓘ LLM"),
+                ("Suggested Peers",                   "LLM — names only, peer metrics from EODHD","ⓘ LLM names"),
+                ("Peer P/E, EV/EBITDA, ROE, etc.",    "/fundamentals (per peer)",               "✓ EODHD"),
+                ("News headlines",                    "Not used in this report",                "— n/a"),
+                ("Macro context",                     "Not used in this report",                "— n/a"),
+            ]
         for label, src, status in provenance:
             if status.startswith("✓"):
                 status_color = GREEN_HEX
