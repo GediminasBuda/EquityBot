@@ -636,14 +636,23 @@ def _ticker_search(query: str) -> list[tuple[str, str]]:
     Callback for st_searchbox. Returns a list of (display_label, yf_ticker)
     tuples. yf_ticker is the value stored in the portfolio on selection.
 
-    Empty / very short queries return [] — searchbox simply shows nothing.
+    Search layers:
+      1. EODHD /search — covers most global exchanges.
+      2. Japan / TSE (3 sub-layers):
+         a. Pattern match: 3-4 digit input → instant TSE suggestion.
+         b. Local Japan seed list (~220 major + EODHD exchange-symbol-list cache).
+         c. yfinance Search fallback for new / small Japanese stocks.
     """
-    if not query or len(query.strip()) < 1:
+    import re as _re_pf
+    q = (query or "").strip()
+    if not q:
         return []
-    rows = _search_eodhd_raw(query)
+
     out: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for item in rows:
+
+    # ── Layer 1: EODHD global search ─────────────────────────────────────────
+    for item in _search_eodhd_raw(q):
         if not isinstance(item, dict):
             continue
         code = item.get("Code", "")
@@ -657,14 +666,64 @@ def _ticker_search(query: str) -> list[tuple[str, str]]:
         if not yf_ticker or yf_ticker in seen:
             continue
         seen.add(yf_ticker)
-        # Build a compact, readable label
         meta_bits = [b for b in (exch, country, ttype) if b]
         meta = " · ".join(meta_bits)
         label = f"{yf_ticker:<14}  {name[:48]}"
         if meta:
             label += f"  ({meta})"
         out.append((label, yf_ticker))
-    return out
+
+    # ── Layer 2a: Japan pattern match (3-4 digit code → instant TSE) ─────────
+    _jp_direct = _re_pf.match(r'^(\d{3,4})(\.T)?$', q.strip().upper())
+    if _jp_direct:
+        _jp_code   = _jp_direct.group(1).zfill(4)
+        _jp_ticker = f"{_jp_code}.T"
+        if _jp_ticker not in seen:
+            seen.add(_jp_ticker)
+            out.insert(0, (
+                f"🇯🇵 {_jp_ticker}  · TSE (enter to add)",
+                _jp_ticker,
+            ))
+
+    # ── Layer 2b: Japan seed / cache search ──────────────────────────────────
+    try:
+        from data_sources.japan_tickers import search_japan
+        _jp_slots = max(0, 12 - len(out))
+        if _jp_slots > 0:
+            for _jp_label, _jp_ticker in search_japan(
+                q, api_key=EODHD_API_KEY or "", max_results=_jp_slots
+            ):
+                if _jp_ticker not in seen:
+                    seen.add(_jp_ticker)
+                    out.append((f"🇯🇵 {_jp_label}", _jp_ticker))
+    except Exception:
+        pass
+
+    # ── Layer 2c: yfinance search for unlisted / new Japanese stocks ──────────
+    if len(q) >= 3 and len(out) < 10:
+        try:
+            import yfinance as _yf_pf
+            _yf_res = _yf_pf.Search(q + " japan", max_results=6, news_count=0)
+            for _yf_item in (_yf_res.quotes or []):
+                _sym = (_yf_item.get("symbol") or "").strip().upper()
+                if not _sym.endswith(".T") or _sym in seen:
+                    continue
+                seen.add(_sym)
+                _yf_name = (
+                    _yf_item.get("shortname")
+                    or _yf_item.get("longname")
+                    or ""
+                )
+                out.append((
+                    f"🇯🇵 {_sym:<10}  {_yf_name[:50]}  · TSE",
+                    _sym,
+                ))
+                if len(out) >= 12:
+                    break
+        except Exception:
+            pass
+
+    return out[:12]
 
 
 # ── Page header (compact) ─────────────────────────────────────────────────────
