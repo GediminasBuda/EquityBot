@@ -270,12 +270,136 @@ def _to_float(v) -> Optional[float]:
         return None
 
 
+# ── yfinance helpers for Japan / TSE stocks ───────────────────────────────────
+# EODHD has no coverage for the Tokyo Stock Exchange. These helpers provide
+# the same data shapes that the EODHD-based functions return, so the rest of
+# the page works unchanged.
+
+def _jp_correct_name(yf_ticker: str, raw_name: str) -> str:
+    """Fix stale/wrong company name yfinance sometimes returns for new Japanese listings."""
+    suspicious = (
+        not raw_name
+        or raw_name == yf_ticker
+        or "godo kaisha" in raw_name.lower()
+    )
+    if not suspicious:
+        return raw_name
+    try:
+        import re as _rjp
+        from data_sources.japan_tickers import search_japan
+        code = yf_ticker.upper().replace(".T", "")
+        hits = search_japan(code, max_results=1)
+        if hits:
+            m = _rjp.search(r'\.T\s+(.+?)\s*(?:\(|\·|$)', hits[0][0])
+            if m:
+                corrected = m.group(1).strip()
+                if corrected and len(corrected) > 3:
+                    return corrected
+    except Exception:
+        pass
+    return raw_name or yf_ticker
+
+
+def _snapshot_yf(yf_ticker: str) -> dict:
+    """yfinance snapshot for a single Japanese (TSE) ticker."""
+    _empty = {
+        "eodhd_ticker": yf_ticker, "name": yf_ticker,
+        "currency": "JPY", "sector": "",
+        "price": None, "market_cap": None,
+        "pe": None, "roe": None, "ebit_margin": None, "ytd_pct": None,
+    }
+    try:
+        import yfinance as _yf_pf
+        t    = _yf_pf.Ticker(yf_ticker)
+        info = t.info or {}
+
+        price = (_to_float(info.get("currentPrice"))
+                 or _to_float(info.get("regularMarketPrice"))
+                 or _to_float(info.get("previousClose")))
+        name     = _jp_correct_name(yf_ticker,
+                       info.get("longName") or info.get("shortName") or "")
+        sector   = info.get("sector") or ""
+        currency = info.get("currency") or "JPY"
+        mkt_cap  = _to_float(info.get("marketCap"))
+        pe       = _to_float(info.get("trailingPE") or info.get("forwardPE"))
+        roe      = _to_float(info.get("returnOnEquity"))      # decimal
+        ebit_mg  = _to_float(info.get("operatingMargins"))    # decimal
+
+        ytd_pct: Optional[float] = None
+        if price:
+            try:
+                hist = t.history(period="ytd")
+                if not hist.empty:
+                    first = float(hist["Close"].iloc[0])
+                    if first > 0:
+                        ytd_pct = price / first - 1
+            except Exception:
+                pass
+
+        return {
+            "eodhd_ticker": yf_ticker,
+            "name": name, "currency": currency, "sector": sector,
+            "price": price, "market_cap": mkt_cap,
+            "pe": pe, "roe": roe, "ebit_margin": ebit_mg, "ytd_pct": ytd_pct,
+        }
+    except Exception:
+        return _empty
+
+
+def _history_yf(yf_ticker: str, period: str) -> Optional[pd.DataFrame]:
+    """yfinance price history for a Japanese (TSE) ticker."""
+    _YF_MAP = {
+        "1d": ("1d",  "5m"),
+        "1m": ("1mo", "1d"),
+        "6m": ("6mo", "1d"),
+        "YTD": ("ytd", "1d"),
+        "5y": ("5y",  "1wk"),
+        "All": ("max", "1mo"),
+    }
+    try:
+        import yfinance as _yf_pf
+        yf_p, yf_i = _YF_MAP.get(period, ("1y", "1d"))
+        df = _yf_pf.Ticker(yf_ticker).history(period=yf_p, interval=yf_i)
+        if df.empty:
+            return None
+        df = df[["Close"]].copy()
+        df.index = pd.to_datetime(df.index)
+        if period == "1d":
+            df.index.name = "Time"
+        else:
+            df.index = df.index.normalize()
+            df.index.name = "Date"
+        df = df.dropna(subset=["Close"])
+        return df if not df.empty else None
+    except Exception:
+        return None
+
+
+def _next_earnings_yf(yf_ticker: str) -> Optional[str]:
+    """Next earnings date for a Japanese (TSE) ticker via yfinance."""
+    try:
+        import yfinance as _yf_pf
+        cal = _yf_pf.Ticker(yf_ticker).calendar
+        if cal:
+            ed = cal.get("Earnings Date")
+            if ed:
+                ed = ed[0] if isinstance(ed, list) else ed
+                return str(ed)[:10]
+    except Exception:
+        pass
+    return None
+
+
 # ── Snapshot (cached) ─────────────────────────────────────────────────────────
 @st.cache_data(ttl=900, show_spinner=False)   # 15-minute cache
 def _fetch_snapshot(yf_ticker: str) -> dict:
     """
-    All snapshot metrics for one ticker from EODHD, including YTD%.
+    All snapshot metrics for one ticker from EODHD (or yfinance for Japan), including YTD%.
     """
+    # Japan / TSE: EODHD has no coverage → use yfinance
+    if yf_ticker.upper().endswith(".T"):
+        return _snapshot_yf(yf_ticker)
+
     eodhd_ticker = _convert_ticker(yf_ticker)
 
     # ── Real-time price ──────────────────────────────────────────────────────
@@ -382,7 +506,12 @@ def _fetch_history(yf_ticker: str, period: str) -> Optional[pd.DataFrame]:
     chart actually shows the day's price action — daily-OHLC would give
     only 1-2 points for that range. All other periods use the daily /eod
     endpoint.
+    Japanese (TSE) tickers use yfinance history.
     """
+    # Japan / TSE: use yfinance
+    if yf_ticker.upper().endswith(".T"):
+        return _history_yf(yf_ticker, period)
+
     eodhd_ticker = _convert_ticker(yf_ticker)
 
     # ── 1-day chart: intraday 5-minute bars ──────────────────────────────────
@@ -456,8 +585,12 @@ def _fetch_next_earnings(yf_ticker: str) -> Optional[str]:
     ticker, or None if EODHD doesn't have one scheduled in the next 180 days.
 
     Uses /calendar/earnings — works for most US + EU listings. Indices,
-    forex and ETFs return None.
+    forex and ETFs return None. Japanese (TSE) tickers use yfinance calendar.
     """
+    # Japan / TSE: use yfinance
+    if yf_ticker.upper().endswith(".T"):
+        return _next_earnings_yf(yf_ticker)
+
     eodhd_ticker = _convert_ticker(yf_ticker)
     today = datetime.utcnow().date()
     end   = today + timedelta(days=180)
