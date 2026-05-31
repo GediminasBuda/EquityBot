@@ -380,22 +380,78 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
         suggestions.append((label, yf_ticker))
 
     # ── Japan / TSE supplement ────────────────────────────────────────────────
-    # EODHD does not cover TSE fundamentals, so Japanese companies never appear
-    # in the EODHD search results. We maintain a local TSE ticker list (seeded
-    # with ~220 major companies, auto-expanded to ~3 800 from EODHD exchange-
-    # symbol-list on first request and cached for 7 days).
+    # Three-layer approach (EODHD doesn't cover TSE fundamentals):
+    #
+    # Layer 1 — Pattern match: if query is 4 digits (or 4digits.T), instantly
+    #            suggest it as a TSE ticker. Handles direct code entry like
+    #            "2914" → 2914.T  or  "9166.T" → 9166.T.
+    #
+    # Layer 2 — Static cache: local seed list (~220 major) + EODHD exchange-
+    #            symbol-list (~3 800) cached 7 days. Handles name-based search
+    #            for well-known companies.
+    #
+    # Layer 3 — yfinance search: dynamic fallback for companies not in cache
+    #            (newer IPOs, smaller mid-caps). Searches "{query} japan" and
+    #            filters for .T tickers.
+
+    import re as _re_jp
+
+    # Layer 1: direct TSE code pattern  (e.g. "2914" or "9166.T")
+    _jp_direct = _re_jp.match(r'^(\d{3,4})(\.T)?$', q.strip().upper())
+    if _jp_direct:
+        _jp_code   = _jp_direct.group(1).zfill(4)
+        _jp_ticker = f"{_jp_code}.T"
+        if _jp_ticker not in seen:
+            seen.add(_jp_ticker)
+            suggestions.insert(0, (
+                f"🇯🇵 {_jp_ticker}  · TSE (enter to analyse)",
+                _jp_ticker,
+            ))
+
+    # Layer 2: static/cached name + code search
     try:
         from data_sources.japan_tickers import search_japan
-        _jp_slots = max(0, 12 - len(suggestions))   # fill remaining slots
+        _jp_slots = max(0, 12 - len(suggestions))
         if _jp_slots > 0:
             for _jp_label, _jp_ticker in search_japan(
                 q, api_key=_RG_EODHD_KEY or "", max_results=_jp_slots
             ):
                 if _jp_ticker not in seen:
                     seen.add(_jp_ticker)
-                    suggestions.append((_jp_label, _jp_ticker))
+                    suggestions.append((f"🇯🇵 {_jp_label}", _jp_ticker))
     except Exception:
-        pass   # never break the main search on Japan module errors
+        pass
+
+    # Layer 3: yfinance search fallback for TSE tickers not in local cache
+    # (runs only if we still have empty slots and query is ≥3 chars)
+    if len(q) >= 3 and len(suggestions) < 10:
+        try:
+            import yfinance as _yf_jp
+            _yf_results = _yf_jp.Search(
+                q + " japan",
+                max_results=8,
+                news_count=0,
+            )
+            for _yf_item in (_yf_results.quotes or []):
+                _sym = (_yf_item.get("symbol") or "").strip().upper()
+                if not _sym.endswith(".T"):
+                    continue
+                if _sym in seen:
+                    continue
+                seen.add(_sym)
+                _yf_name = (
+                    _yf_item.get("shortname")
+                    or _yf_item.get("longname")
+                    or ""
+                )
+                suggestions.append((
+                    f"🇯🇵 {_sym:<10}  {_yf_name[:50]}  · TSE",
+                    _sym,
+                ))
+                if len(suggestions) >= 12:
+                    break
+        except Exception:
+            pass
 
     return suggestions[:12]
 

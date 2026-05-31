@@ -230,10 +230,59 @@ _SEED: List[List[str]] = [
     ["2201", "Morinaga & Co Ltd",                 "Consumer Defensive"],
     ["2212", "Yamazaki Baking Co Ltd",            "Consumer Defensive"],
     ["2801", "Kikkoman Corporation",              "Consumer Defensive"],
-    ["2871", "Nichirei Corporation",              "Consumer Defensive"],
+    # ── Tobacco ──────────────────────────────────────────────────────────────
+    ["2914", "Japan Tobacco Inc",                 "Consumer Defensive"],
     # ── Mining & Resources ───────────────────────────────────────────────────
     ["1605", "Inpex Corporation",                 "Energy"],
     ["3405", "Kuraray Co Ltd",                    "Basic Materials"],
+    # ── Entertainment / Gaming / Leisure ─────────────────────────────────────
+    ["9166", "Genda Inc",                         "Consumer Cyclical"],
+    ["9684", "Square Enix Holdings Co Ltd",       "Communication Services"],
+    ["7832", "Bandai Namco Holdings Inc",         "Consumer Cyclical"],
+    ["3715", "Dwango Co Ltd",                     "Communication Services"],
+    ["2462", "Menslink Corp",                     "Consumer Cyclical"],
+    ["9697", "Capcom Co Ltd",                     "Communication Services"],
+    ["7974", "Nintendo Co Ltd",                   "Communication Services"],
+    ["3632", "GREE Inc",                          "Communication Services"],
+    # ── Healthcare / Medical Equipment ──────────────────────────────────────
+    ["6869", "Sysmex Corporation",                "Healthcare"],
+    ["4307", "Nomura Research Institute Ltd",     "Technology"],
+    ["4568", "Daiichi Sankyo Company Ltd",        "Healthcare"],
+    ["2181", "Persol Holdings Co Ltd",            "Industrials"],
+    # ── Finance / Fintech ────────────────────────────────────────────────────
+    ["8031", "Mitsui & Co Ltd",                   "Industrials"],
+    ["8630", "Sompo Holdings Inc",                "Financial Services"],
+    ["8766", "Tokio Marine Holdings Inc",         "Financial Services"],
+    ["7182", "Japan Post Bank Co Ltd",            "Financial Services"],
+    # ── Additional Technology ─────────────────────────────────────────────────
+    ["6920", "Lasertec Corporation",              "Technology"],
+    ["6857", "Advantest Corporation",             "Technology"],
+    ["9104", "Mitsui OSK Lines Ltd",              "Industrials"],
+    ["6501", "Hitachi Ltd",                       "Industrials"],
+    ["4519", "Chugai Pharmaceutical Co Ltd",      "Healthcare"],
+    ["6645", "Omron Corporation",                 "Technology"],
+    ["6367", "Daikin Industries Ltd",             "Industrials"],
+    ["9432", "Nippon Telegraph and Telephone Corp","Communication Services"],
+    # ── Real Estate / Construction ───────────────────────────────────────────
+    ["3003", "Hulic Co Ltd",                      "Real Estate"],
+    ["8803", "Heiwa Real Estate Co Ltd",          "Real Estate"],
+    ["1878", "Daito Trust Construction Co Ltd",   "Real Estate"],
+    # ── Retail ───────────────────────────────────────────────────────────────
+    ["3382", "Seven & I Holdings Co Ltd",         "Consumer Defensive"],
+    ["2678", "Askul Corporation",                 "Consumer Cyclical"],
+    ["3038", "Kobe Bussan Co Ltd",                "Consumer Defensive"],
+    ["2659", "San-A Co Ltd",                      "Consumer Defensive"],
+    ["7453", "Ryohin Keikaku Co Ltd",             "Consumer Cyclical"],
+    ["9843", "Nitori Holdings Co Ltd",            "Consumer Cyclical"],
+    # ── Staffing / Services ──────────────────────────────────────────────────
+    ["2127", "Nihon M&A Center Holdings Inc",     "Industrials"],
+    ["6098", "Recruit Holdings Co Ltd",           "Industrials"],
+    ["2168", "Pasona Group Inc",                  "Industrials"],
+    # ── Additional Mid-caps ──────────────────────────────────────────────────
+    ["4765", "Morningstar Japan K.K.",            "Financial Services"],
+    ["6387", "Samco Inc",                         "Industrials"],
+    ["7741", "Hoya Corporation",                  "Technology"],
+    ["4578", "Otsuka Holdings Co Ltd",            "Healthcare"],
 ]
 
 
