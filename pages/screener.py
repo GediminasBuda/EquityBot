@@ -378,36 +378,32 @@ if results:
         st.markdown(
             f"<p style='color:#4D9FFF;font-family:monospace;font-size:13px;"
             f"margin-bottom:6px;'>"
-            f"✓ {n_sel} companies selected: "
+            f"✓ {n_sel} selected: "
             f"{', '.join(selected_list[:6])}"
             f"{'…' if n_sel > 6 else ''}"
             f"</p>",
             unsafe_allow_html=True,
         )
 
-        def _launch(framework_id: str) -> None:
-            label = intent.get("title") or st.session_state.scr_query or "Screener"
-            st.session_state.rg_bulk_run = {
-                "tickers":      selected_list,
-                "universe":     label,
-                "framework_id": framework_id,
-                "label":        label,
-            }
-            st.switch_page("pages/report_generator.py")
+    def _launch(framework_id: str) -> None:
+        label = intent.get("title") or st.session_state.scr_query or "Screener"
+        st.session_state.rg_bulk_run = {
+            "tickers":      selected_list,
+            "universe":     label,
+            "framework_id": framework_id,
+            "label":        label,
+        }
+        st.switch_page("pages/report_generator.py")
 
-        if st.button(
-            f"⚖ Run Gravity Taxers  ·  {n_sel} companies",
-            type="primary",
-            use_container_width=True,
-            key="scr_gravity_btn",
-        ):
-            _launch("gravity")
-
-    else:
-        st.markdown(
-            "<span style='color:#5a4a25;font-family:monospace;font-size:12px;'>"
-            "Select companies above to run a framework analysis.</span>",
-            unsafe_allow_html=True,
-        )
+    st.button(
+        f"⚖ Run Gravity Taxers  ·  {n_sel} selected" if n_sel
+        else "⚖ Run Gravity Taxers  ·  select companies above",
+        type="primary",
+        use_container_width=True,
+        key="scr_gravity_btn",
+        disabled=(n_sel == 0),
+        on_click=_launch,
+        args=("gravity",),
+    )
 
 

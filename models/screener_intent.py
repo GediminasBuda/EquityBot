@@ -233,6 +233,56 @@ User query:
 """
 
 
+# Hardcoded index-name → EODHD exchange code.
+# Checked BEFORE and AFTER LLM — LLM cannot override this.
+_INDEX_TO_EXCHANGE: list[tuple[list[str], str]] = [
+    (["dax", "dax40", "dax 40"],                          "XETRA"),
+    (["mdax", "sdax", "tecdax"],                          "XETRA"),
+    (["cac 40", "cac40", "cac"],                          "PA"),
+    (["ftse 100", "ftse100", "ftse 250", "ftse250",
+      "ftse"],                                            "LSE"),
+    (["aex"],                                             "AS"),
+    (["smi"],                                             "SW"),
+    (["ibex 35", "ibex35", "ibex"],                       "MC"),
+    (["ftse mib", "mib"],                                 "MI"),
+    (["omx helsinki", "omxh", "helsinki"],                "HE"),
+    (["omx stockholm", "stockholm"],                      "ST"),
+    (["omx oslo", "obx", "oslo"],                         "OL"),
+    (["omx copenhagen", "copenhagen"],                    "CO"),
+    (["atx", "vienna"],                                   "VI"),
+    (["wig20", "wig 20", "wig"],                          "WAR"),
+    (["bux", "budapest"],                                 "BUD"),
+    (["omx vilnius", "nasdaqvilnius", "nasdaq vilnius",
+      "vilnius"],                                         "VS"),
+    (["omx tallinn", "tallinn"],                          "TL"),
+    (["omx riga", "riga"],                                "RG"),
+    (["tsx", "tsx 60", "tsx60", "s&p/tsx"],               "TO"),
+    (["asx 200", "asx200", "asx"],                        "AU"),
+    (["kospi"],                                           "KO"),
+    (["hang seng", "hsi"],                                "HK"),
+    (["shanghai", "csi 300", "csi300"],                   "SHG"),
+]
+
+
+def _detect_index_exchange(query: str) -> str | None:
+    """Return forced EODHD exchange code if query mentions a known index, else None."""
+    q = query.lower()
+    for keywords, exchange in _INDEX_TO_EXCHANGE:
+        if any(kw in q for kw in keywords):
+            return exchange
+    return None
+
+
+def _enforce_exchange(intent: dict, exchange: str) -> dict:
+    """Remove any existing exchange filters and insert the correct one."""
+    intent["filters"] = [
+        f for f in intent.get("filters", [])
+        if not (isinstance(f, list) and len(f) >= 1 and f[0] == "exchange")
+    ]
+    intent["filters"].insert(0, ["exchange", "=", exchange])
+    return intent
+
+
 def parse_screener_intent(query: str, llm_client) -> dict:
     """
     Parse a natural-language screening query into EODHD Screener API params.
@@ -243,6 +293,8 @@ def parse_screener_intent(query: str, llm_client) -> dict:
 
     Returns dict with keys: filters, signals, sort, limit, title, notes
     """
+    forced_exchange = _detect_index_exchange(query)
+
     prompt = _INSTRUCTIONS + f'"{query}"'
 
     try:
@@ -254,7 +306,13 @@ def parse_screener_intent(query: str, llm_client) -> dict:
     if not isinstance(result, dict):
         return _fallback(query)
 
-    return _normalise(result, query)
+    intent = _normalise(result, query)
+
+    # Hardcoded override: if query mentions a known index, enforce exchange
+    if forced_exchange:
+        intent = _enforce_exchange(intent, forced_exchange)
+
+    return intent
 
 
 def _normalise(raw: dict, original_query: str) -> dict:
