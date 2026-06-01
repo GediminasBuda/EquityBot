@@ -293,8 +293,6 @@ def parse_screener_intent(query: str, llm_client) -> dict:
 
     Returns dict with keys: filters, signals, sort, limit, title, notes
     """
-    forced_exchange = _detect_index_exchange(query)
-
     prompt = _INSTRUCTIONS + f'"{query}"'
 
     try:
@@ -306,13 +304,7 @@ def parse_screener_intent(query: str, llm_client) -> dict:
     if not isinstance(result, dict):
         return _fallback(query)
 
-    intent = _normalise(result, query)
-
-    # Hardcoded override: if query mentions a known index, enforce exchange
-    if forced_exchange:
-        intent = _enforce_exchange(intent, forced_exchange)
-
-    return intent
+    return _normalise(result, query)
 
 
 def _normalise(raw: dict, original_query: str) -> dict:
@@ -326,14 +318,32 @@ def _normalise(raw: dict, original_query: str) -> dict:
     }
 
     # filters
+    # EODHD screener API only reliably supports numeric filters.
+    # String filters (exchange, sector, industry) are often ignored or
+    # cause empty results. Strip them from the API call; keep numeric only.
+    # Sector / industry are kept separately for post-fetch display notes.
+    _NUMERIC = {
+        "market_capitalization", "earnings_share", "dividend_yield",
+        "adjusted_close", "refund_1d_p", "refund_5d_p",
+        "avgvol_1d", "avgvol_200d",
+    }
     filters = raw.get("filters")
     if isinstance(filters, list):
-        clean = []
+        api_filters = []
+        skipped = []
         for f in filters:
-            if (isinstance(f, (list, tuple)) and len(f) == 3
+            if not (isinstance(f, (list, tuple)) and len(f) == 3
                     and isinstance(f[0], str)):
-                clean.append([str(f[0]), str(f[1]), f[2]])
-        out["filters"] = clean
+                continue
+            if f[0] in _NUMERIC:
+                api_filters.append([str(f[0]), str(f[1]), f[2]])
+            else:
+                skipped.append(f[0])
+        out["filters"] = api_filters
+        if skipped:
+            existing = out.get("notes") or ""
+            note = f"Note: {', '.join(set(skipped))} filter(s) not supported by screener API — results are global, sorted by your criteria."
+            out["notes"] = (existing + " " + note).strip()
 
     # signals
     signals = raw.get("signals")
