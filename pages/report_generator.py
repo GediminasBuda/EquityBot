@@ -1562,16 +1562,19 @@ if _bulk:
                     _bprog.progress(min(pct, 99), text=msg)
                     _bstep.write(msg)
 
+                import importlib
+                import models.universe_screener as _us_mod
+                importlib.reload(_us_mod)
                 from models.universe_screener import UniverseScreener
                 _safe_uni = _b_universe.replace("^", "").replace(".", "_") or "custom"
                 _safe_fw  = _b_framework.replace("_", "-")
                 _date     = datetime.now().strftime("%Y-%m-%d")
                 _pdf_path = str(
                     OUTPUTS_DIR /
-                    f"{_safe_uni}_{_safe_fw}_universe_{_date}.html"
+                    f"{_safe_uni}_{_safe_fw}_universe_{_date}.pdf"
                 )
                 _screener  = UniverseScreener()
-                _html_path = _screener.run(
+                _out_path = _screener.run(
                     index_ticker=_b_universe,
                     framework_id=_b_framework,
                     output_path=_pdf_path,
@@ -1579,27 +1582,22 @@ if _bulk:
                     progress_cb=_bulk_progress,
                 )
                 _bprog.progress(100, text="✅  Report ready!")
-                with open(_html_path, "r", encoding="utf-8") as _f:
-                    _html_content = _f.read()
 
                 _bulk_status.update(
                     label=f"✅  {_b_fw_short} Universe Screen complete "
                           f"({len(_b_tickers)} companies)",
                     state="complete", expanded=False,
                 )
-                # Capture LLM usage so the Result viewer can render the
-                # cost block. Universe screens use Claude under the hood
-                # (no OpenAI adversarial path) — so usage_openai stays None.
                 _b_usage = getattr(_screener, "last_usage", {}) or {}
                 _show_token_usage(_b_usage)
                 st.session_state.report_result = {
-                    "pdf_path":    _html_path,
+                    "pdf_path":    _out_path,
                     "company":     None,
                     "index_data":  None,
                     "analysis":    {},
                     "report_type": f"universe_{_b_framework}",
                     "rec":         "n/a",
-                    "extra":       {"html_content": _html_content},
+                    "extra":       {},
                     "adversarial": None,
                     "usage_claude": _b_usage,
                     "usage_openai": None,
@@ -1607,7 +1605,7 @@ if _bulk:
                 _bulk_label_chip = f"{_b_label} · {_b_fw_short} · {_date}"
                 st.session_state.recent_reports.append({
                     "label": _bulk_label_chip,
-                    "path":  _html_path,
+                    "path":  _out_path,
                     "ts":    datetime.now().timestamp(),
                 })
             except Exception as _e:
@@ -1748,14 +1746,17 @@ if generate_clicked and ticker_input:
                     _prog.progress(min(pct, 99), text=msg)
                     _step_text.write(msg)
 
+                import importlib
+                import models.universe_screener as _us2_mod
+                importlib.reload(_us2_mod)
                 from models.universe_screener import UniverseScreener
                 safe_idx = ticker_input.replace("^", "").replace(".", "_")
                 safe_fw  = report_type.replace("_", "-")
                 date     = datetime.now().strftime("%Y-%m-%d")
-                pdf_path = str(OUTPUTS_DIR / f"{safe_idx}_{safe_fw}_universe_{date}.html")
+                pdf_path = str(OUTPUTS_DIR / f"{safe_idx}_{safe_fw}_universe_{date}.pdf")
 
                 screener  = UniverseScreener()
-                html_path = screener.run(
+                out_path = screener.run(
                     index_ticker=ticker_input,
                     framework_id=report_type,
                     output_path=pdf_path,
@@ -1763,31 +1764,28 @@ if generate_clicked and ticker_input:
                     progress_cb=_universe_progress,
                 )
                 _prog.progress(100, text="✅  Report ready!")
-                with open(html_path, "r", encoding="utf-8") as _f:
-                    _html_content = _f.read()
 
                 status.update(
                     label=f"✅  {rt['short']} Universe Screen complete for {ticker_input}",
                     state="complete", expanded=False,
                 )
-                # Capture LLM usage for the cost block
                 _uni_usage = getattr(screener, "last_usage", {}) or {}
                 _show_token_usage(_uni_usage)
                 st.session_state.report_result = {
-                    "pdf_path":    html_path,
+                    "pdf_path":    out_path,
                     "company":     None,
                     "index_data":  None,
                     "analysis":    {},
                     "report_type": f"universe_{report_type}",
                     "rec":         "n/a",
-                    "extra":       {"html_content": _html_content},
+                    "extra":       {},
                     "adversarial": None,
                     "usage_claude": _uni_usage,
                     "usage_openai": None,
                 }
                 label = f"{ticker_input} · {rt['short']} Screen · {date}"
                 st.session_state.recent_reports.append({
-                    "label": label, "path": html_path,
+                    "label": label, "path": out_path,
                     "ts": datetime.now().timestamp(),
                 })
 

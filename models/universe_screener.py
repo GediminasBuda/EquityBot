@@ -144,28 +144,34 @@ class UniverseScreener:
         # ── Parse + render ─────────────────────────────────────────────────────
         analysis = _parse_json(raw)
 
-        # Determine output path
+        # Determine output path — always PDF now
         if output_path is None:
             from config import OUTPUTS_DIR
             safe_idx = index_ticker.replace("^", "").replace(".", "_")
             safe_fw  = re.sub(r"[^a-z0-9]+", "_", fw.name.lower()).strip("_")[:20]
             date     = datetime.now().strftime("%Y-%m-%d")
-            output_path = str(OUTPUTS_DIR / f"{safe_idx}_{safe_fw}_universe_{date}.html")
+            output_path = str(OUTPUTS_DIR / f"{safe_idx}_{safe_fw}_universe_{date}.pdf")
+        else:
+            # Caller may have passed an .html path — silently fix extension
+            output_path = str(output_path).removesuffix(".html") + ".pdf"
 
-        html = _render_universe_html(
+        os.makedirs(Path(output_path).parent, exist_ok=True)
+
+        import importlib
+        import agents.pdf_universe_screener as _pus_mod
+        importlib.reload(_pus_mod)
+        from agents.pdf_universe_screener import render_universe_pdf
+        render_universe_pdf(
             fw=fw,
             index_ticker=index_ticker,
             companies=companies,
             analysis=analysis,
             failed=failed,
+            output_path=output_path,
         )
 
-        os.makedirs(Path(output_path).parent, exist_ok=True)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html)
-
         _prog(100, "Report ready!")
-        logger.info(f"[UniverseScreener] Report saved → {output_path}")
+        logger.info(f"[UniverseScreener] PDF saved → {output_path}")
         return output_path
 
 
