@@ -194,6 +194,63 @@ with st.form("scr_form", border=False):
 if not ok:
     st.caption(f"⚠ LLM not configured: {_msg}")
 
+# Index name → Yahoo Finance index ticker (for ConstituentResolver)
+_INDEX_QUERY_MAP: list[tuple[list[str], str, str]] = [
+    # keywords,                           yf_index,    display_name
+    (["dax", "dax40", "dax 40"],         "^GDAXI",    "DAX 40 · XETRA"),
+    (["mdax"],                            "^MDAXI",    "MDAX · XETRA"),
+    (["cac 40", "cac40", "cac"],         "^FCHI",     "CAC 40 · Euronext Paris"),
+    (["ftse 100", "ftse100"],            "^FTSE",     "FTSE 100 · LSE"),
+    (["ftse 250", "ftse250"],            "^FTMC",     "FTSE 250 · LSE"),
+    (["aex"],                             "^AEX",      "AEX · Euronext Amsterdam"),
+    (["smi"],                             "^SSMI",     "SMI · SIX Swiss"),
+    (["ibex 35", "ibex35", "ibex"],      "^IBEX",     "IBEX 35 · BME Madrid"),
+    (["ftse mib", "mib"],                "^MIB",      "FTSE MIB · Borsa Italiana"),
+    (["omx helsinki", "omxh25"],         "^OMXH25",   "OMX Helsinki 25"),
+    (["omx stockholm", "omxs30"],        "^OMXS30",   "OMX Stockholm 30"),
+    (["omx copenhagen", "omxc25"],       "^OMXC25",   "OMX Copenhagen 25"),
+    (["obx", "omx oslo"],                "^OBX",      "OBX · Oslo Børs"),
+    (["atx"],                             "^ATX",      "ATX · Vienna"),
+    (["wig20", "wig 20"],                "^WIG20",    "WIG 20 · Warsaw"),
+    (["bux"],                             "^BUX",      "BUX · Budapest"),
+    (["s&p 500", "s&p500", "sp500"],     "^GSPC",     "S&P 500"),
+    (["nasdaq 100", "nasdaq100", "ndx"], "^NDX",      "Nasdaq 100"),
+    (["dow jones", "dow"],               "^DJI",      "Dow Jones"),
+    (["tsx", "s&p/tsx"],                 "^GSPTSE",   "S&P/TSX 60"),
+    (["asx 200", "asx200"],              "^AXJO",     "ASX 200"),
+    (["nikkei"],                          "^N225",     "Nikkei 225"),
+    (["hang seng"],                       "^HSI",      "Hang Seng"),
+    (["kospi"],                           "^KS11",     "KOSPI"),
+    (["stoxx 50", "stoxx50", "euro stoxx"], "^STOXX50E", "Euro Stoxx 50"),
+]
+
+
+def _detect_index_query(q: str) -> tuple[str, str] | None:
+    """Return (yf_index_ticker, display_name) if query mentions a known index."""
+    q_low = q.lower()
+    for keywords, yf_ticker, display in _INDEX_QUERY_MAP:
+        if any(kw in q_low for kw in keywords):
+            return yf_ticker, display
+    return None
+
+
+def _constituents_to_rows(tickers: list[str]) -> list[dict]:
+    """Convert a list of YF tickers into screener-row dicts (minimal fields)."""
+    rows = []
+    for t in tickers:
+        dot = t.rfind(".")
+        code     = t[:dot] if dot != -1 else t
+        exchange = t[dot+1:] if dot != -1 else "US"
+        rows.append({"code": code, "exchange": exchange,
+                     "name": "", "sector": "",
+                     "market_capitalization": None,
+                     "earnings_share": None,
+                     "dividend_yield": None,
+                     "adjusted_close": None,
+                     "_yf_ticker": t})
+    return rows
+
+
 # ── Run search ────────────────────────────────────────────────────────────────
 if search_clicked and query.strip():
     st.session_state.scr_query = query.strip()
@@ -203,40 +260,63 @@ if search_clicked and query.strip():
     with st.status("🔍 Interpreting query…", expanded=True) as _status:
         try:
             import importlib
-            import models.screener_intent as _si_mod
-            importlib.reload(_si_mod)
-            from models.screener_intent import parse_screener_intent
 
-            st.write("🤖 Parsing query with LLM…")
-            intent = parse_screener_intent(query.strip(), llm)
-            st.session_state.scr_intent = intent
+            # ── Path A: known stock index → ConstituentResolver (like Gravity Taxers)
+            _idx = _detect_index_query(query.strip())
+            if _idx:
+                _yf_idx, _idx_name = _idx
+                st.write(f"📋 Recognised index: **{_idx_name}** — fetching constituents…")
+                from constituent_resolver import ConstituentResolver
+                _resolver = ConstituentResolver()
+                _tickers  = _resolver.resolve(_yf_idx)
+                # Apply limit from query text
+                import re as _re_lim
+                _lim_match = _re_lim.search(r'\b(\d+)\b', query)
+                _limit = int(_lim_match.group(1)) if _lim_match else 40
+                _tickers = _tickers[:_limit]
+                rows = _constituents_to_rows(_tickers)
+                intent = {
+                    "title": f"Top {len(rows)} {_idx_name}",
+                    "notes": f"Constituents sourced from index data, not EODHD screener.",
+                    "filters": [], "signals": [], "sort": None, "limit": len(rows),
+                }
 
-            if intent.get("notes"):
-                st.caption(f"💡 {intent['notes']}")
+            # ── Path B: general NL query → LLM → EODHD screener API
+            else:
+                import models.screener_intent as _si_mod
+                importlib.reload(_si_mod)
+                from models.screener_intent import parse_screener_intent
 
-            st.write(
-                f"📡 Calling EODHD Screener API · "
-                f"{len(intent.get('filters', []))} filter(s) · "
-                f"limit {intent.get('limit', 20)}…"
-            )
-            import importlib
-            import data_sources.eodhd_screener_api as _sa_mod
-            importlib.reload(_sa_mod)
-            from data_sources.eodhd_screener_api import run_screener
+                st.write("🤖 Parsing query with LLM…")
+                intent = parse_screener_intent(query.strip(), llm)
 
-            rows = run_screener(
-                filters=intent.get("filters") or [],
-                signals=intent.get("signals") or [],
-                sort=intent.get("sort") or "market_capitalization.desc",
-                limit=intent.get("limit") or 20,
-            )
-            st.session_state.scr_results = rows
+                if intent.get("notes"):
+                    st.caption(f"💡 {intent['notes']}")
+
+                st.write(
+                    f"📡 EODHD Screener API · "
+                    f"{len(intent.get('filters', []))} filter(s) · "
+                    f"limit {intent.get('limit', 20)}…"
+                )
+                import data_sources.eodhd_screener_api as _sa_mod
+                importlib.reload(_sa_mod)
+                from data_sources.eodhd_screener_api import run_screener
+
+                rows = run_screener(
+                    filters=intent.get("filters") or [],
+                    signals=intent.get("signals") or [],
+                    sort=intent.get("sort") or "market_capitalization.desc",
+                    limit=intent.get("limit") or 20,
+                )
+
+            st.session_state.scr_intent   = intent
+            st.session_state.scr_results  = rows
 
             n = len(rows)
             if n:
                 st.write(f"✓ {n} companies found.")
                 _status.update(
-                    label=f"✅ {n} results for: {intent.get('title', query)}",
+                    label=f"✅ {n} results · {intent.get('title', query)}",
                     state="complete", expanded=False,
                 )
             else:
@@ -314,7 +394,8 @@ if results:
     for i, row in enumerate(results):
         code     = row.get("code") or ""
         exchange = row.get("exchange") or ""
-        yf_tick  = _to_yf(code, exchange)
+        # ConstituentResolver rows carry _yf_ticker directly; EODHD rows need conversion
+        yf_tick  = row.get("_yf_ticker") or _to_yf(code, exchange)
         name     = (row.get("name") or "")[:28]
         sector   = (row.get("sector") or "")[:16]
         mcap     = row.get("market_capitalization")
