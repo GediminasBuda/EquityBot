@@ -632,7 +632,11 @@ class OverviewV2PDFGenerator:
         # ── PAGE 3: Peer Table + Checklist ───────────────────────────────────
         story += self._page3(company, analysis, peers, checklist, styles)
 
-        # ── PAGE 4: V2-specific field provenance legend ──────────────────────
+        # ── PAGE 4: EODHD Direct Data (Identity + Trading + Technicals) ──────
+        story.append(PageBreak())
+        story += self._page4_eodhd_data(company, styles)
+
+        # ── PAGE 5: V2-specific field provenance legend ───────────────────────
         story.append(PageBreak())
         story += self._page4_provenance(company, styles)
 
@@ -644,6 +648,176 @@ class OverviewV2PDFGenerator:
 
         doc.build(story, onFirstPage=_page_header, onLaterPages=_page_header)
         logger.info(f"[PDF V2] Saved: {output_path}")
+
+    # ── V2 Page 4: EODHD Direct Data ─────────────────────────────────────────
+    def _page4_eodhd_data(self, company: CompanyData, styles: dict) -> list:
+        """
+        Identity & Listing, Trading Data, and Technical Levels pulled directly
+        from EODHD — displayed as-is without LLM processing.
+        """
+        rt  = getattr(company, "_rt_data_v2", {}) or {}
+        eod = getattr(company, "_eod_data_v2", []) or []
+
+        el = []
+
+        # ── helpers ───────────────────────────────────────────────────────────
+        def _v(val, fmt=None):
+            if val is None or val == "" or val == "NA":
+                return "—"
+            try:
+                f = float(val)
+                if fmt == "int":    return f"{f:,.0f}"
+                if fmt == "price":  return f"{f:,.2f}"
+                if fmt == "pct":    return f"{f:.2f}%"
+                if fmt == "pct_d":  return f"{f * 100:.2f}%"   # decimal → %
+                if fmt == "b":
+                    if abs(f) >= 1e9: return f"{f/1e9:,.2f}B"
+                    if abs(f) >= 1e6: return f"{f/1e6:,.1f}M"
+                    return f"{f:,.0f}"
+                return str(val)
+            except (ValueError, TypeError):
+                return str(val) if val else "—"
+
+        def _sec_hdr(title):
+            return Paragraph(
+                title,
+                ParagraphStyle("dh", fontName=BOLD_FONT, fontSize=9.5,
+                               textColor=NAVY, spaceBefore=10, spaceAfter=3,
+                               borderPad=0, leading=12),
+            )
+
+        def _rule():
+            return HRFlowable(width="100%", thickness=0.5,
+                              color=BORDER, spaceAfter=4)
+
+        # two-column KV table — label bold navy, value plain dark
+        def _kv2(pairs: list[tuple]) -> Table:
+            """pairs = [(label, value), ...] — rendered in 2 side-by-side columns."""
+            ls = ParagraphStyle("kl", fontName=BOLD_FONT, fontSize=8,
+                                textColor=NAVY, leading=10)
+            vs = ParagraphStyle("kv", fontName=BASE_FONT, fontSize=8,
+                                textColor=HexColor("#111111"), leading=10)
+            # Fill to even number
+            if len(pairs) % 2:
+                pairs = list(pairs) + [("", "")]
+            rows = []
+            for i in range(0, len(pairs), 2):
+                l1, v1 = pairs[i]
+                l2, v2 = pairs[i + 1]
+                rows.append([
+                    Paragraph(l1, ls), Paragraph(str(v1), vs),
+                    Paragraph(l2, ls), Paragraph(str(v2), vs),
+                ])
+            cw = CW / 4
+            t = Table(rows, colWidths=[cw * 0.85, cw * 1.15, cw * 0.85, cw * 1.15])
+            t.setStyle(TableStyle([
+                ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING",   (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
+                ("LINEBELOW",    (0, 0), (-1, -1), 0.3, HexColor("#DDDDDD")),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("ROWBACKGROUNDS",(0,0),(-1,-1), [HexColor("#FFFFFF"), HexColor("#F6F8FA")]),
+            ]))
+            return t
+
+        # ── Page title ────────────────────────────────────────────────────────
+        el.append(Paragraph(
+            "EODHD Market Data",
+            ParagraphStyle("pg4title", fontName=BOLD_FONT, fontSize=12,
+                           textColor=NAVY, spaceAfter=2, leading=15),
+        ))
+        el.append(Paragraph(
+            "Direct data from EODHD /fundamentals and /real-time endpoints — no LLM processing.",
+            ParagraphStyle("pg4sub", fontName=BASE_FONT, fontSize=7.5,
+                           textColor=MGRAY, spaceAfter=6, leading=10),
+        ))
+        el.append(HRFlowable(width="100%", thickness=1, color=NAVY, spaceAfter=8))
+
+        # ── SECTION 1: Identity & Listing ────────────────────────────────────
+        el.append(_sec_hdr("IDENTITY & LISTING"))
+        el.append(_rule())
+
+        cur = company.currency or company.currency_price or ""
+        identity_pairs = [
+            ("Company Name",    company.name or "—"),
+            ("Ticker",          company.ticker or "—"),
+            ("ISIN",            _v(company.isin)),
+            ("Exchange",        _v(company.exchange)),
+            ("Sector",          _v(company.sector)),
+            ("Industry",        _v(company.industry)),
+            ("Country",         _v(company.country)),
+            ("Currency",        cur or "—"),
+            ("IPO Date",        _v(company.ipo_date)),
+            ("Fiscal Year End", _v(company.fiscal_year_end)),
+            ("Employees",       _v(company.employees, "int")),
+            ("Website",         _v(company.website)),
+        ]
+        el.append(_kv2(identity_pairs))
+        el.append(Spacer(1, 6))
+
+        # ── SECTION 2: Trading Data ───────────────────────────────────────────
+        el.append(_sec_hdr("TRADING DATA"))
+        el.append(_rule())
+
+        # Compute avg volume from EOD last 30 trading days
+        avg_vol = None
+        if eod:
+            vols = [float(r["volume"]) for r in eod[-30:]
+                    if isinstance(r, dict) and r.get("volume") not in (None, "", 0)]
+            if vols:
+                avg_vol = sum(vols) / len(vols)
+
+        change_v   = rt.get("change")
+        change_p_v = rt.get("change_p")
+        if change_v is not None and change_p_v is not None:
+            try:
+                chg_sign = "+" if float(change_v) >= 0 else ""
+                change_str = f"{chg_sign}{float(change_v):,.2f} ({chg_sign}{float(change_p_v):.2f}%)"
+            except (ValueError, TypeError):
+                change_str = "—"
+        else:
+            change_str = "—"
+
+        mc  = company.market_cap
+        ev  = company.enterprise_value
+        trading_pairs = [
+            ("Last Price",      _v(rt.get("close") or rt.get("previousClose"), "price") + f" {cur}"),
+            ("Prev. Close",     _v(rt.get("previousClose"), "price") + f" {cur}"),
+            ("Open",            _v(rt.get("open"), "price") + f" {cur}"),
+            ("Change",          change_str),
+            ("Day High",        _v(rt.get("high"), "price") + f" {cur}"),
+            ("Day Low",         _v(rt.get("low"), "price") + f" {cur}"),
+            ("Volume",          _v(rt.get("volume"), "int")),
+            ("Avg Volume (30d)",_v(avg_vol, "int") if avg_vol else "—"),
+            ("Market Cap",      (_v(mc * 1e6, "b") + f" {cur}") if mc else "—"),
+            ("Enterprise Value",(_v(ev * 1e6, "b") + f" {cur}") if ev else "—"),
+            ("Shares Outstanding", (_v(company.shares_outstanding, "int") + "M") if company.shares_outstanding else "—"),
+            ("Shares Float",    (_v(company.shares_float, "int") + "M") if company.shares_float else "—"),
+        ]
+        el.append(_kv2(trading_pairs))
+        el.append(Spacer(1, 6))
+
+        # ── SECTION 3: Technical Levels ───────────────────────────────────────
+        el.append(_sec_hdr("TECHNICAL LEVELS"))
+        el.append(_rule())
+
+        sh = company.shares_short
+        sh_str = _v(sh * 1e6, "int") if sh else "—"   # stored in millions → full units
+
+        tech_pairs = [
+            ("52-Week High",    _v(company.week_52_high, "price") + f" {cur}"),
+            ("52-Week Low",     _v(company.week_52_low, "price") + f" {cur}"),
+            ("50-Day MA",       _v(company.ma_50, "price") + f" {cur}"),
+            ("200-Day MA",      _v(company.ma_200, "price") + f" {cur}"),
+            ("Beta",            _v(company.beta, "price")),
+            ("Short Ratio",     (_v(company.short_ratio, "price") + " days") if company.short_ratio else "—"),
+            ("Shares Short",    sh_str),
+            ("Short % Float",   _v(company.short_percent_of_float, "pct_d")),
+        ]
+        el.append(_kv2(tech_pairs))
+
+        return el
 
     # ── V2 Page 4: Field Provenance Legend ────────────────────────────────────
     def _page4_provenance(self, company: CompanyData, styles: dict) -> list:

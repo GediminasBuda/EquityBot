@@ -1979,9 +1979,10 @@ if generate_clicked and ticker_input:
                 import importlib, agents.pdf_overview_v2 as _v2mod
                 importlib.reload(_v2mod)
                 from agents.pdf_overview_v2 import OverviewV2PDFGenerator
-                # Wire the EODHD /eod data into the price chart by stuffing
-                # it onto company so pdf_overview_v2 can pick it up.
+                # Wire EODHD bundle data onto company so pdf_overview_v2 can
+                # pick it up without changing the render() signature.
                 setattr(company, "_eod_data_v2", _v2_bundle.get("eod") or [])
+                setattr(company, "_rt_data_v2",  _v2_bundle.get("realtime") or {})
                 safe = ticker_input.replace(".", "_").replace("-", "_")
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_overview_v2_{date}.pdf")
