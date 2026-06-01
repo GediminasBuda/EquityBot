@@ -580,7 +580,8 @@ REPORT_TYPES = _build_report_types()
 _BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "eodhd_full", "overview_v2", "index_overview",
                 "industry_analysis", "insider_transactions",
-                "valuemeter", "short_interest"}
+                "valuemeter", "short_interest",
+                "fund_fundamentals"}
 
 EXCHANGE_HINTS = {
     "Amsterdam (AEX)":   ".AS  e.g. WKL.AS, ASML.AS",
@@ -2869,6 +2870,67 @@ if generate_clicked and ticker_input:
                 analysis = {}
                 extra    = {}
 
+            elif report_type == "fund_fundamentals":
+                # ── Fund Fundamentals — ETF & Mutual Fund EODHD data dump ─────
+                _prog.progress(30, text="🏦  Fetching EODHD Fund data…")
+                st.write("🏦  Fetching EODHD Fund data…")
+                import importlib
+                import data_sources.fund_fetcher as _ff_mod
+                import agents.pdf_fund_fundamentals as _pff_mod
+                importlib.reload(_ff_mod)
+                importlib.reload(_pff_mod)
+                from data_sources.fund_fetcher import FundFetcher
+                from agents.pdf_fund_fundamentals import FundFundamentalsPDFGenerator
+
+                fund_bundle = FundFetcher().fetch(ticker_input)
+                fund_type   = fund_bundle.get("fund_type", "UNKNOWN")
+                _prog.progress(75, text=f"✓  {fund_bundle['endpoints_used']} endpoints OK — type: {fund_type}")
+                st.write(
+                    f"✓  {fund_bundle['endpoints_used']} endpoints OK · Fund type: {fund_type}"
+                    + (f" — errors: {', '.join(fund_bundle['errors'])}" if fund_bundle["errors"] else "")
+                )
+
+                _prog.progress(85, text="📄  Rendering Fund Fundamentals PDF…")
+                st.write("📄  Rendering Fund Fundamentals PDF…")
+                safe = ticker_input.replace(".", "_").replace("-", "_")
+                date = datetime.now().strftime("%Y-%m-%d")
+                pdf_path = str(OUTPUTS_DIR / f"{safe}_fund_fundamentals_{date}.pdf")
+                os.makedirs(OUTPUTS_DIR, exist_ok=True)
+                FundFundamentalsPDFGenerator().render(fund_bundle, pdf_path)
+
+                # Back-fill company scalars for preview bar
+                def _to_float(v):
+                    try:
+                        if v is None or v == "" or v == "NA": return None
+                        return float(v)
+                    except (ValueError, TypeError): return None
+
+                _ff_gen  = (fund_bundle.get("fundamentals") or {}).get("General")    or {}
+                _ff_rt   = fund_bundle.get("realtime") or {}
+                _ff_etf  = (fund_bundle.get("fundamentals") or {}).get("ETF_Data")   or {}
+                _ff_mf   = (fund_bundle.get("fundamentals") or {}).get("MutualFund_Data") or {}
+
+                if not company.current_price:
+                    company.current_price = (
+                        _to_float(_ff_rt.get("close"))
+                        or _to_float(_ff_rt.get("previousClose"))
+                    )
+                if not company.currency_price:
+                    company.currency_price = (
+                        _ff_gen.get("CurrencyCode")
+                        or _ff_rt.get("currency")
+                        or company.currency or ""
+                    )
+                if not company.name:
+                    company.name = _ff_gen.get("Name") or ticker_input
+                if not company.market_cap:
+                    tna = (_ff_etf.get("Total_Net_Assets") or _ff_mf.get("Total_Net_Assets")
+                           or _ff_mf.get("Net_Assets"))
+                    company.market_cap = _to_float(tna)
+
+                analysis = {}
+                extra    = {"fund_bundle": fund_bundle, "fund_type": fund_type}
+
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
                 from models.generic_runner import GenericRunner
@@ -2993,7 +3055,7 @@ if generate_clicked and ticker_input:
             if adv_result is not None:
                 _usage_claude = adv_result.claude_usage
                 _usage_openai = adv_result.openai_usage
-            elif report_type in ("eodhd_full", "insider_transactions", "short_interest"):
+            elif report_type in ("eodhd_full", "insider_transactions", "short_interest", "fund_fundamentals"):
                 _usage_claude = {}
                 _usage_openai = None
             else:
