@@ -172,23 +172,24 @@ with st.expander("🌍 Exchange codes reference", expanded=False):
 st.markdown("")
 
 # ── Query input ───────────────────────────────────────────────────────────────
-_col_q, _col_btn = st.columns([5, 1])
-with _col_q:
-    query = st.text_input(
-        "Query",
-        value=st.session_state.scr_query,
-        placeholder="e.g.  European defense companies, market cap > 2B   |   "
-                    "High dividend US banks   |   Didžiausios Lenkijos kompanijos",
-        label_visibility="collapsed",
-        key="scr_query_input",
-    )
-with _col_btn:
-    search_clicked = st.button(
-        "Search",
-        type="primary",
-        use_container_width=True,
-        disabled=not ok or not query.strip(),
-    )
+with st.form("scr_form", border=False):
+    _col_q, _col_btn = st.columns([5, 1])
+    with _col_q:
+        query = st.text_input(
+            "Query",
+            value=st.session_state.scr_query,
+            placeholder="e.g.  European defense companies, market cap > 2B   |   "
+                        "High dividend US banks   |   Didžiausios Lenkijos kompanijos",
+            label_visibility="collapsed",
+            key="scr_query_input",
+        )
+    with _col_btn:
+        search_clicked = st.form_submit_button(
+            "Search",
+            type="primary",
+            use_container_width=True,
+            disabled=not ok,
+        )
 
 if not ok:
     st.caption(f"⚠ LLM not configured: {_msg}")
