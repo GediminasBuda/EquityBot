@@ -459,13 +459,26 @@ def _etf_page3(bundle: dict, styles: dict) -> list:
 
     el.append(PageBreak())
 
-    # ── Top 10 Holdings ───────────────────────────────────────────────────────
-    holdings = etf.get("Top_10_Holdings") or {}
+    # ── All Holdings (full list from EODHD) ───────────────────────────────────
+    # Prefer the full Holdings dict; fall back to Top_10_Holdings
+    holdings_full = etf.get("Holdings") or {}
+    holdings_top  = etf.get("Top_10_Holdings") or {}
+    holdings = holdings_full if len(holdings_full) >= len(holdings_top) else holdings_top
     if holdings:
-        el.append(_sec("Top 10 Holdings", styles))
+        n_total = int(etf.get("Holdings_Count") or len(holdings))
+        n_shown = len(holdings)
+        title   = (f"All Holdings ({n_shown} shown"
+                   + (f" of {n_total} total)" if n_total > n_shown else ")"))
+        el.append(_sec(title, styles))
         h_rows = []
-        items = list(holdings.items())
-        for code, hdata in items[:10]:
+        # Sort by weight descending
+        def _weight(item):
+            _, hd = item
+            if isinstance(hd, dict):
+                try: return float(hd.get("Assets_%") or 0)
+                except: return 0.0
+            return 0.0
+        for code, hdata in sorted(holdings.items(), key=_weight, reverse=True):
             if isinstance(hdata, dict):
                 h_rows.append((
                     _s(hdata.get("Name") or code),
@@ -478,9 +491,14 @@ def _etf_page3(bundle: dict, styles: dict) -> list:
         el.append(_data_table(
             ["Name", "Sector", "Country", "Weight %"],
             h_rows,
-            col_widths=[70*mm, 45*mm, 30*mm, CW - 145*mm],
+            col_widths=[72*mm, 44*mm, 28*mm, CW - 144*mm],
             right_cols=[3],
         ))
+        if n_total > n_shown:
+            el.append(Paragraph(
+                f"Note: EODHD returns {n_shown} of {n_total} total holdings.",
+                styles["caption"],
+            ))
         el.append(Spacer(1, 6))
 
     # ── Valuation & Growth ────────────────────────────────────────────────────
@@ -784,21 +802,41 @@ def _fund_page3(bundle: dict, styles: dict) -> list:
         ))
         el.append(Spacer(1, 6))
 
-    # ── Top Holdings ──────────────────────────────────────────────────────────
-    holdings = mf.get("Top_Holdings") or mf.get("Holdings") or {}
-    if holdings:
-        el.append(_sec("Top Holdings", styles))
-        h_rows = []
-        items = list(holdings.items()) if isinstance(holdings, dict) else []
-        for _, hdata in items[:20]:
-            if isinstance(hdata, dict):
-                h_rows.append((
-                    _s(hdata.get("Name") or hdata.get("name")),
-                    _s(hdata.get("Country") or "—"),
-                    _s(hdata.get("Type") or "—"),
-                    f"{float(hdata.get('Assets_%') or hdata.get('weight', 0)):.2f}%"
-                    if (hdata.get("Assets_%") or hdata.get("weight")) else "—",
-                ))
+    # ── All Holdings (full list) ──────────────────────────────────────────────
+    holdings_raw = mf.get("Top_Holdings") or mf.get("Holdings") or {}
+    if holdings_raw:
+        # Handle both dict and list formats
+        if isinstance(holdings_raw, list):
+            h_rows = []
+            for h in holdings_raw:
+                if isinstance(h, dict):
+                    w = h.get("Weight") or h.get("Assets_%") or h.get("weight")
+                    try: w_str = f"{float(str(w).replace('%','')):.2f}%" if w else "—"
+                    except: w_str = _s(w)
+                    h_rows.append((_s(h.get("Name") or h.get("name")), "—", "—", w_str))
+            n_shown = len(h_rows)
+        else:
+            h_rows = []
+            def _mf_weight(item):
+                _, hd = item
+                if isinstance(hd, dict):
+                    try: return float(hd.get("Assets_%") or hd.get("weight") or 0)
+                    except: return 0.0
+                return 0.0
+            for _, hdata in sorted(holdings_raw.items(), key=_mf_weight, reverse=True):
+                if isinstance(hdata, dict):
+                    w = hdata.get("Assets_%") or hdata.get("weight")
+                    try: w_str = f"{float(w):.2f}%" if w is not None else "—"
+                    except: w_str = "—"
+                    h_rows.append((
+                        _s(hdata.get("Name") or hdata.get("name")),
+                        _s(hdata.get("Country") or "—"),
+                        _s(hdata.get("Type") or "—"),
+                        w_str,
+                    ))
+            n_shown = len(h_rows)
+
+        el.append(_sec(f"All Holdings ({n_shown} positions)", styles))
         if h_rows:
             el.append(_data_table(
                 ["Name", "Country", "Type", "Weight %"],
@@ -860,15 +898,63 @@ def _unknown_page1(bundle: dict, styles: dict) -> list:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# LLM FACTSHEET PAGE
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _factsheet_page(analysis: dict, bundle: dict, styles: dict) -> list:
+    """
+    Renders the LLM-generated factsheet narrative.
+    `analysis` is the dict returned by LLMClient.generate_json() from fund_analysis.py.
+    Skipped silently if analysis is empty.
+    """
+    if not analysis:
+        return []
+
+    el = [PageBreak()]
+    f   = bundle.get("fundamentals") or {}
+    gen = f.get("General") or {}
+    name = _s(gen.get("Name") or bundle.get("ticker"))
+
+    el.append(_sec("Fund Factsheet — AI Commentary", styles))
+    el.append(Paragraph(
+        f"AI-generated analysis based on EODHD data for {name}. "
+        "Not financial advice. Verify all figures against primary sources.",
+        styles["caption"],
+    ))
+    el.append(Spacer(1, 6))
+
+    sections = [
+        ("one_liner",        "Elevator Pitch"),
+        ("fund_strategy",    "Fund Strategy & Objective"),
+        ("holdings_analysis","Portfolio & Holdings Analysis"),
+        ("cost_risk_profile","Cost Structure & Risk Profile"),
+        ("performance_note", "Performance Highlights"),
+        ("suitability",      "Investor Suitability"),
+    ]
+
+    for key, title in sections:
+        text = analysis.get(key, "")
+        if not text or text.strip() in ("", "N/A", "—"):
+            continue
+        el.append(Paragraph(title, styles["sub_section"]))
+        el.append(Paragraph(text, styles["body"]))
+        el.append(Spacer(1, 5))
+
+    return el
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MAIN GENERATOR
 # ══════════════════════════════════════════════════════════════════════════════
 
 class FundFundamentalsPDFGenerator:
     """Renders a Fund Fundamentals report for either an ETF or a Mutual Fund."""
 
-    def render(self, bundle: dict, output_path: str) -> None:
-        styles = _build_styles()
+    def render(self, bundle: dict, output_path: str,
+               analysis: dict = None) -> None:
+        styles    = _build_styles()
         fund_type = bundle.get("fund_type", "UNKNOWN")
+        analysis  = analysis or {}
 
         doc = SimpleDocTemplate(
             output_path,
@@ -891,7 +977,10 @@ class FundFundamentalsPDFGenerator:
         else:
             story += _unknown_page1(bundle, styles)
 
-        # Footer note
+        # LLM factsheet page (appended after data pages if analysis present)
+        story += _factsheet_page(analysis, bundle, styles)
+
+        # Footer
         story.append(Spacer(1, 8))
         story.append(HRFlowable(width="100%", thickness=0.5, color=RULE))
         story.append(Paragraph(

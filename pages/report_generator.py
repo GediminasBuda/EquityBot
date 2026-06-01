@@ -2871,32 +2871,50 @@ if generate_clicked and ticker_input:
                 extra    = {}
 
             elif report_type == "fund_fundamentals":
-                # ── Fund Fundamentals — ETF & Mutual Fund EODHD data dump ─────
-                _prog.progress(30, text="🏦  Fetching EODHD Fund data…")
+                # ── Fund Fundamentals — ETF & Mutual Fund EODHD + LLM factsheet
+                _prog.progress(25, text="🏦  Fetching EODHD Fund data…")
                 st.write("🏦  Fetching EODHD Fund data…")
                 import importlib
                 import data_sources.fund_fetcher as _ff_mod
                 import agents.pdf_fund_fundamentals as _pff_mod
+                import models.fund_analysis as _fa_mod
                 importlib.reload(_ff_mod)
                 importlib.reload(_pff_mod)
+                importlib.reload(_fa_mod)
                 from data_sources.fund_fetcher import FundFetcher
                 from agents.pdf_fund_fundamentals import FundFundamentalsPDFGenerator
+                from models.fund_analysis import build_fund_prompt
 
                 fund_bundle = FundFetcher().fetch(ticker_input)
                 fund_type   = fund_bundle.get("fund_type", "UNKNOWN")
-                _prog.progress(75, text=f"✓  {fund_bundle['endpoints_used']} endpoints OK — type: {fund_type}")
+                _prog.progress(55, text=f"✓  {fund_bundle['endpoints_used']} endpoints OK — type: {fund_type}")
                 st.write(
                     f"✓  {fund_bundle['endpoints_used']} endpoints OK · Fund type: {fund_type}"
                     + (f" — errors: {', '.join(fund_bundle['errors'])}" if fund_bundle["errors"] else "")
                 )
 
-                _prog.progress(85, text="📄  Rendering Fund Fundamentals PDF…")
+                # ── LLM factsheet commentary ──────────────────────────────────
+                _prog.progress(60, text="🤖  Generating factsheet commentary…")
+                st.write("🤖  Generating factsheet commentary (LLM)…")
+                _fund_analysis = {}
+                try:
+                    cacheable_pfx, dynamic_p = build_fund_prompt(fund_bundle)
+                    _fund_analysis = llm.generate_json(
+                        dynamic_p,
+                        system_prompt=cacheable_pfx,
+                        max_tokens=1200,
+                    )
+                except Exception as _fa_err:
+                    st.warning(f"LLM factsheet skipped: {_fa_err}")
+
+                _prog.progress(82, text="📄  Rendering Fund Fundamentals PDF…")
                 st.write("📄  Rendering Fund Fundamentals PDF…")
                 safe = ticker_input.replace(".", "_").replace("-", "_")
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_fund_fundamentals_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
-                FundFundamentalsPDFGenerator().render(fund_bundle, pdf_path)
+                FundFundamentalsPDFGenerator().render(fund_bundle, pdf_path,
+                                                      analysis=_fund_analysis)
 
                 # Back-fill company scalars for preview bar
                 def _to_float(v):
@@ -2928,7 +2946,7 @@ if generate_clicked and ticker_input:
                            or _ff_mf.get("Net_Assets"))
                     company.market_cap = _to_float(tna)
 
-                analysis = {}
+                analysis = _fund_analysis
                 extra    = {"fund_bundle": fund_bundle, "fund_type": fund_type}
 
             elif report_type not in _BUILTIN_IDS:
@@ -3055,7 +3073,7 @@ if generate_clicked and ticker_input:
             if adv_result is not None:
                 _usage_claude = adv_result.claude_usage
                 _usage_openai = adv_result.openai_usage
-            elif report_type in ("eodhd_full", "insider_transactions", "short_interest", "fund_fundamentals"):
+            elif report_type in ("eodhd_full", "insider_transactions", "short_interest"):
                 _usage_claude = {}
                 _usage_openai = None
             else:
