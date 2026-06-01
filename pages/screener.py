@@ -265,19 +265,23 @@ if results:
     )
 
     # ── Select all / deselect all ─────────────────────────────────────────────
+    # Build the full yf_tick list once so Select/Deselect can also update
+    # the individual checkbox session_state keys (Streamlit keyed widgets
+    # ignore the `value=` param after first render — must set the key directly).
+    _all_yf = [_to_yf(r.get("code", ""), r.get("exchange", "")) for r in results]
+
     _sa_col, _da_col, _info_col = st.columns([1, 1, 4])
     with _sa_col:
         if st.button("☑ Select All", use_container_width=True):
-            tickers = {r.get("code", "") for r in results if r.get("code")}
-            # Append exchange suffix (EODHD → Yahoo Finance format)
-            yf_tickers = set()
-            for r in results:
-                yf_tickers.add(_to_yf(r.get("code", ""), r.get("exchange", "")))
-            st.session_state.scr_selected = yf_tickers
+            st.session_state.scr_selected = set(_all_yf)
+            for _i, _t in enumerate(_all_yf):
+                st.session_state[f"scr_chk_{_i}_{_t}"] = True
             st.rerun()
     with _da_col:
         if st.button("☐ Deselect All", use_container_width=True):
             st.session_state.scr_selected = set()
+            for _i, _t in enumerate(_all_yf):
+                st.session_state[f"scr_chk_{_i}_{_t}"] = False
             st.rerun()
     with _info_col:
         n_sel = len(st.session_state.scr_selected)
@@ -389,7 +393,34 @@ if results:
                                    "insider_transactions")]
         _fw_options = {fw.id: f"{fw.icon} {fw.name}" for fw in _fws}
 
-        _run_col, _fw_col = st.columns([2, 3])
+        def _launch(framework_id: str) -> None:
+            label = intent.get("title") or st.session_state.scr_query or "Screener"
+            st.session_state.rg_bulk_run = {
+                "tickers":      selected_list,
+                "universe":     label,
+                "framework_id": framework_id,
+                "label":        label,
+            }
+            st.switch_page("pages/report_generator.py")
+
+        # ── Quick-launch: Gravity Score ───────────────────────────────────────
+        _grav_col, _sep_col, _fw_col, _run_col = st.columns([2, 0.2, 2.5, 2])
+        with _grav_col:
+            if st.button(
+                f"⚖ Gravity Score  ·  {n_sel} co.",
+                type="primary",
+                use_container_width=True,
+                key="scr_gravity_btn",
+            ):
+                _launch("gravity")
+
+        with _sep_col:
+            st.markdown(
+                "<span style='color:#2a1f10;font-family:monospace;font-size:18px;"
+                "line-height:2.4;'>│</span>",
+                unsafe_allow_html=True,
+            )
+
         with _fw_col:
             _chosen_fw = st.selectbox(
                 "Framework",
@@ -399,22 +430,13 @@ if results:
                 key="scr_fw_picker",
             )
         with _run_col:
-            _run_clicked = st.button(
-                f"▶ Run {_fw_options.get(_chosen_fw, _chosen_fw)} on {n_sel} companies",
-                type="primary",
+            if st.button(
+                f"▶ Run  ·  {n_sel} co.",
+                type="secondary",
                 use_container_width=True,
-            )
-
-        if _run_clicked:
-            # Hand off to report_generator via rg_bulk_run session state
-            label = intent.get("title") or st.session_state.scr_query or "Screener"
-            st.session_state.rg_bulk_run = {
-                "tickers":      selected_list,
-                "universe":     label,
-                "framework_id": _chosen_fw,
-                "label":        label,
-            }
-            st.switch_page("pages/report_generator.py")
+                key="scr_run_btn",
+            ):
+                _launch(_chosen_fw)
 
     else:
         st.markdown(
