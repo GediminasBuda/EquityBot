@@ -234,20 +234,92 @@ def _detect_index_query(q: str) -> tuple[str, str] | None:
     return None
 
 
-def _constituents_to_rows(tickers: list[str]) -> list[dict]:
-    """Convert a list of YF tickers into screener-row dicts (minimal fields)."""
+# YF suffix → EODHD exchange-symbol-list code
+_YF_SUFFIX_TO_EXCH = {
+    "DE": "XETRA", "F": "F", "L": "LSE", "PA": "PA", "AS": "AS",
+    "BR": "BR", "MI": "MI", "MC": "MC", "HE": "HE", "ST": "ST",
+    "OL": "OL", "CO": "CO", "SW": "SW", "VI": "VI", "WA": "WAR",
+    "TO": "TO", "AX": "AU", "HK": "HK", "SS": "SHG", "SZ": "SHE",
+    "KS": "KO", "NS": "NSE", "SA": "SA", "MX": "MX", "JO": "JSE",
+    "IS": "IS", "TA": "TLV", "VS": "VS", "TL": "TL", "RG": "RG",
+}
+
+import requests as _scr_requests
+from config import EODHD_API_KEY as _SCR_EODHD_KEY, REQUEST_HEADERS as _SCR_HEADERS
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_exchange_names(exch_code: str) -> dict[str, str]:
+    """Fetch code→name map for an exchange from EODHD exchange-symbol-list."""
+    if not _SCR_EODHD_KEY or not exch_code:
+        return {}
+    try:
+        r = _scr_requests.get(
+            f"https://eodhistoricaldata.com/api/exchange-symbol-list/{exch_code}",
+            params={"api_token": _SCR_EODHD_KEY, "fmt": "json"},
+            headers=_SCR_HEADERS,
+            timeout=20,
+        )
+        if r.status_code != 200:
+            return {}
+        return {item["Code"]: item.get("Name", "") for item in r.json()
+                if isinstance(item, dict) and item.get("Code")}
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _fetch_bulk_prices(eodhd_tickers: tuple[str, ...]) -> dict[str, dict]:
+    """Bulk real-time price fetch from EODHD. Returns code→{price, change_p}."""
+    if not _SCR_EODHD_KEY or not eodhd_tickers:
+        return {}
+    try:
+        first = eodhd_tickers[0]
+        rest  = ",".join(eodhd_tickers[1:])
+        params = {"api_token": _SCR_EODHD_KEY, "fmt": "json"}
+        if rest:
+            params["s"] = rest
+        r = _scr_requests.get(
+            f"https://eodhistoricaldata.com/api/real-time/{first}",
+            params=params,
+            headers=_SCR_HEADERS,
+            timeout=20,
+        )
+        if r.status_code != 200:
+            return {}
+        data = r.json()
+        if isinstance(data, dict):
+            data = [data]
+        return {item["code"]: item for item in data if isinstance(item, dict)}
+    except Exception:
+        return {}
+
+
+def _constituents_to_rows(tickers: list[str], name_map: dict | None = None,
+                           price_map: dict | None = None) -> list[dict]:
+    """Convert a list of YF tickers into screener-row dicts."""
     rows = []
     for t in tickers:
-        dot = t.rfind(".")
+        dot      = t.rfind(".")
         code     = t[:dot] if dot != -1 else t
-        exchange = t[dot+1:] if dot != -1 else "US"
-        rows.append({"code": code, "exchange": exchange,
-                     "name": "", "sector": "",
-                     "market_capitalization": None,
-                     "earnings_share": None,
-                     "dividend_yield": None,
-                     "adjusted_close": None,
-                     "_yf_ticker": t})
+        yf_sfx   = t[dot+1:] if dot != -1 else "US"
+        exch     = _YF_SUFFIX_TO_EXCH.get(yf_sfx.upper(), yf_sfx)
+        name     = (name_map or {}).get(code, "")
+        pdata    = (price_map or {}).get(code) or {}
+        # EODHD real-time uses EODHD exchange suffix in the code key, e.g. "BMW.XETRA"
+        if not pdata:
+            pdata = (price_map or {}).get(f"{code}.{exch}") or {}
+        price    = pdata.get("close") or pdata.get("adjusted_close")
+        change_p = pdata.get("change_p")
+        rows.append({
+            "code": code, "exchange": yf_sfx,
+            "name": name, "sector": "",
+            "market_capitalization": None,
+            "earnings_share": None,
+            "dividend_yield": None,
+            "adjusted_close": price,
+            "change_p": change_p,
+            "_yf_ticker": t,
+        })
     return rows
 
 
@@ -269,15 +341,38 @@ if search_clicked and query.strip():
                 from constituent_resolver import ConstituentResolver
                 _resolver = ConstituentResolver()
                 _tickers  = _resolver.resolve(_yf_idx)
+
+                if not _tickers:
+                    st.warning(
+                        f"Could not fetch constituents for **{_idx_name}** "
+                        f"(Wikipedia source unavailable). "
+                        f"Try a broader query like 'largest German companies'."
+                    )
+                    _status.update(label="⚠ No constituents found", state="error", expanded=True)
+                    st.stop()
+
                 # Apply limit from query text
                 import re as _re_lim
                 _lim_match = _re_lim.search(r'\b(\d+)\b', query)
                 _limit = int(_lim_match.group(1)) if _lim_match else 40
                 _tickers = _tickers[:_limit]
-                rows = _constituents_to_rows(_tickers)
+
+                # Enrich: exchange names + bulk prices (2 API calls total)
+                _sfx = _tickers[0].rsplit(".", 1)[-1] if "." in _tickers[0] else "US"
+                _exch_code = _YF_SUFFIX_TO_EXCH.get(_sfx.upper(), _sfx)
+                st.write(f"📡 Fetching names & prices from EODHD ({_exch_code})…")
+                _name_map  = _fetch_exchange_names(_exch_code)
+                # Build EODHD-format tickers for bulk real-time
+                _eodhd_tix = tuple(
+                    f"{t.rsplit('.', 1)[0]}.{_exch_code}" if "." in t else f"{t}.US"
+                    for t in _tickers
+                )
+                _price_map = _fetch_bulk_prices(_eodhd_tix)
+
+                rows = _constituents_to_rows(_tickers, _name_map, _price_map)
                 intent = {
-                    "title": f"Top {len(rows)} {_idx_name}",
-                    "notes": f"Constituents sourced from index data, not EODHD screener.",
+                    "title": f"{_idx_name} · {len(rows)} companies",
+                    "notes": "",
                     "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
 
@@ -348,7 +443,7 @@ if results:
     # Build the full yf_tick list once so Select/Deselect can also update
     # the individual checkbox session_state keys (Streamlit keyed widgets
     # ignore the `value=` param after first render — must set the key directly).
-    _all_yf = [_to_yf(r.get("code", ""), r.get("exchange", "")) for r in results]
+    _all_yf = [r.get("_yf_ticker") or _to_yf(r.get("code", ""), r.get("exchange", "")) for r in results]
 
     _sa_col, _da_col, _info_col = st.columns([1, 1, 4])
     with _sa_col:
@@ -375,11 +470,11 @@ if results:
     st.markdown("")
 
     # ── Table header ──────────────────────────────────────────────────────────
-    _H = [0.25, 0.6, 1.8, 1.2, 1.1, 1.1, 1.0, 0.9, 0.5]
+    _H = [0.25, 0.7, 2.5, 1.1, 1.1, 1.1, 1.0, 0.8, 0.8]
     hdr = st.columns(_H)
     for col, label in zip(hdr, ["", "Ticker", "Name", "Sector",
-                                  "MCap", "EPS", "Div Yield",
-                                  "Price", "Exchange"]):
+                                  "MCap", "Div Yield",
+                                  "Price", "Chg%", "Exch"]):
         col.markdown(
             f"<span class='scr-header'>{label}</span>",
             unsafe_allow_html=True,
@@ -396,55 +491,44 @@ if results:
         exchange = row.get("exchange") or ""
         # ConstituentResolver rows carry _yf_ticker directly; EODHD rows need conversion
         yf_tick  = row.get("_yf_ticker") or _to_yf(code, exchange)
-        name     = (row.get("name") or "")[:28]
-        sector   = (row.get("sector") or "")[:16]
+        name     = (row.get("name") or "")[:32]
+        sector   = (row.get("sector") or "")[:14]
         mcap     = row.get("market_capitalization")
-        eps      = row.get("earnings_share")
         div_y    = row.get("dividend_yield")
         price    = row.get("adjusted_close")
+        chg_p    = row.get("change_p")
 
         is_sel = yf_tick in st.session_state.scr_selected
 
         cols = st.columns(_H)
-        # Checkbox
         if cols[0].checkbox("", value=is_sel, key=f"scr_chk_{i}_{yf_tick}",
                             label_visibility="collapsed"):
             st.session_state.scr_selected.add(yf_tick)
         else:
             st.session_state.scr_selected.discard(yf_tick)
 
-        cols[1].markdown(
-            f"<span class='scr-ticker'>{yf_tick}</span>",
-            unsafe_allow_html=True,
-        )
-        cols[2].markdown(
-            f"<span class='scr-name'>{name}</span>",
-            unsafe_allow_html=True,
-        )
-        cols[3].markdown(
-            f"<span class='scr-muted'>{sector}</span>",
-            unsafe_allow_html=True,
-        )
-        cols[4].markdown(
-            f"<span class='scr-val'>{_fmt_mcap(mcap)}</span>",
-            unsafe_allow_html=True,
-        )
-        cols[5].markdown(
-            f"<span class='scr-val'>{_fmt_num(eps)}</span>",
-            unsafe_allow_html=True,
-        )
-        cols[6].markdown(
-            f"<span class='scr-val'>{_fmt_pct(div_y)}</span>",
-            unsafe_allow_html=True,
-        )
-        cols[7].markdown(
-            f"<span class='scr-val'>{_fmt_num(price)}</span>",
-            unsafe_allow_html=True,
-        )
-        cols[8].markdown(
-            f"<span class='scr-muted'>{exchange}</span>",
-            unsafe_allow_html=True,
-        )
+        cols[1].markdown(f"<span class='scr-ticker'>{yf_tick}</span>", unsafe_allow_html=True)
+        cols[2].markdown(f"<span class='scr-name'>{name}</span>",      unsafe_allow_html=True)
+        cols[3].markdown(f"<span class='scr-muted'>{sector}</span>",   unsafe_allow_html=True)
+        cols[4].markdown(f"<span class='scr-val'>{_fmt_mcap(mcap)}</span>",  unsafe_allow_html=True)
+        cols[5].markdown(f"<span class='scr-val'>{_fmt_pct(div_y)}</span>",  unsafe_allow_html=True)
+        cols[6].markdown(f"<span class='scr-val'>{_fmt_num(price)}</span>",  unsafe_allow_html=True)
+
+        # Change% — colour coded green/red
+        if chg_p is not None:
+            try:
+                _c = float(chg_p)
+                _col = "#4D9FFF" if _c >= 0 else "#FF3030"
+                _sign = "+" if _c >= 0 else ""
+                cols[7].markdown(
+                    f"<span style='color:{_col};font-family:monospace;font-size:12px;'>"
+                    f"{_sign}{_c:.2f}%</span>", unsafe_allow_html=True)
+            except Exception:
+                cols[7].markdown("<span class='scr-muted'>—</span>", unsafe_allow_html=True)
+        else:
+            cols[7].markdown("<span class='scr-muted'>—</span>", unsafe_allow_html=True)
+
+        cols[8].markdown(f"<span class='scr-muted'>{exchange}</span>", unsafe_allow_html=True)
 
     st.markdown(
         "<hr style='margin:6px 0;border-color:#2a1f10;'>",
