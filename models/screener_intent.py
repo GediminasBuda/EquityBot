@@ -103,20 +103,45 @@ SECTOR NAMES (exact EODHD values):
   "Consumer Staples", "Energy", "Materials", "Industrials", "Utilities",
   "Real Estate", "Communication Services"
 
+STOCK INDEX → EXCHANGE MAPPING (critical — always apply):
+  DAX / DAX 40        → exchange = XETRA      (Germany)
+  MDAX / SDAX / TecDAX → exchange = XETRA     (Germany)
+  CAC 40              → exchange = PA          (France)
+  FTSE 100 / FTSE 250 → exchange = LSE         (UK)
+  AEX                 → exchange = AS          (Netherlands)
+  SMI                 → exchange = SW          (Switzerland)
+  IBEX 35             → exchange = MC          (Spain)
+  MIB / FTSE MIB      → exchange = MI          (Italy)
+  OMX Helsinki / OMXH → exchange = HE          (Finland)
+  OMX Stockholm       → exchange = ST          (Sweden)
+  OMX Oslo / OBX      → exchange = OL          (Norway)
+  OMX Copenhagen      → exchange = CO          (Denmark)
+  ATX                 → exchange = VI          (Austria)
+  WIG 20 / WIG        → exchange = WAR         (Poland)
+  BUX                 → exchange = BUD         (Hungary)
+  PX / Prague         → exchange = PR          (Czech Republic)
+  S&P 500 / Dow / Nasdaq 100 → exchange = NYSE or NASDAQ
+  TSX / TSX 60        → exchange = TO          (Canada)
+  ASX 200             → exchange = AU          (Australia)
+  Kospi               → exchange = KO          (South Korea)
+  Hang Seng           → exchange = HK          (Hong Kong)
+  Shanghai / CSI      → exchange = SHG         (China)
+  OMX Vilnius / NasdaqVilnius → exchange = VS  (Lithuania)
+  OMX Tallinn         → exchange = TL          (Estonia)
+  OMX Riga            → exchange = RG          (Latvia)
+
 RULES:
-1. For "European" → include exchanges: XETRA, LSE, PA, AS, MI, MC, HE, ST, OL, CO, SW
-   Use multiple filters with "=" for each exchange, OR use one "match" on exchange.
-   Best approach: omit exchange filter and add sector/industry instead, unless user
-   specifically wants a single country.
-2. For country-specific (e.g. "German", "Polish"): use the primary exchange code.
-3. Market cap: "large cap" > 10B, "mid cap" 2B–10B, "small cap" 200M–2B, "micro" < 200M
-4. "high dividend" → dividend_yield >= 0.03
-5. "profitable" / "positive earnings" → earnings_share > 0
-6. For "top N" or "largest" → sort by market_capitalization.desc
-7. For "cheapest" / "value" → sort by earnings_share.desc (no PE in screener)
-8. limit: default 20; if user says "top 10" → 10; "top 50" → 50; max 100
-9. If a filter cannot be expressed with available fields → omit it and note it
-10. Return null for "sort" if not implied by the query
+1. ALWAYS apply the index→exchange mapping above first. "DAX 40 companies" = exchange XETRA.
+2. For "European" with no specific country/index → omit exchange filter, use sector/industry.
+3. For country-specific (e.g. "German", "Polish"): use the primary exchange code.
+4. Market cap: "large cap" > 10B, "mid cap" 2B–10B, "small cap" 200M–2B, "micro" < 200M
+5. "high dividend" → dividend_yield >= 0.03
+6. "profitable" / "positive earnings" → earnings_share > 0
+7. For "top N" or "largest" → sort by market_capitalization.desc
+8. For "cheapest" / "value" → sort by earnings_share.desc (no PE in screener)
+9. limit: default 20; if user says "top 10" → 10; "top 50" → 50; max 100
+10. If a filter cannot be expressed with available fields → omit it and note it
+11. Return null for "sort" if not implied by the query
 
 EXAMPLES:
 
@@ -181,6 +206,26 @@ Output: {
   "sort": "market_capitalization.desc",
   "limit": 20,
   "title": "Didžiausios Lenkijos kompanijos · GPW",
+  "notes": ""
+}
+
+Input: "top 20 DAX 40 companies"
+Output: {
+  "filters": [["exchange","=","XETRA"]],
+  "signals": [],
+  "sort": "market_capitalization.desc",
+  "limit": 20,
+  "title": "Top 20 DAX 40 Companies · XETRA",
+  "notes": "DAX 40 = German XETRA exchange; sorted by market cap descending"
+}
+
+Input: "largest CAC 40 stocks"
+Output: {
+  "filters": [["exchange","=","PA"]],
+  "signals": [],
+  "sort": "market_capitalization.desc",
+  "limit": 20,
+  "title": "Largest CAC 40 Stocks · Euronext Paris",
   "notes": ""
 }
 

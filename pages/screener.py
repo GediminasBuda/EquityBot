@@ -385,14 +385,6 @@ if results:
             unsafe_allow_html=True,
         )
 
-        from framework_manager import FrameworkManager
-        _fm   = FrameworkManager()
-        _fws  = [fw for fw in _fm.list() if fw.is_builtin
-                 and fw.id not in ("index_overview", "fund_fundamentals",
-                                   "eodhd_full", "short_interest",
-                                   "insider_transactions")]
-        _fw_options = {fw.id: f"{fw.icon} {fw.name}" for fw in _fws}
-
         def _launch(framework_id: str) -> None:
             label = intent.get("title") or st.session_state.scr_query or "Screener"
             st.session_state.rg_bulk_run = {
@@ -403,40 +395,13 @@ if results:
             }
             st.switch_page("pages/report_generator.py")
 
-        # ── Quick-launch: Gravity Score ───────────────────────────────────────
-        _grav_col, _sep_col, _fw_col, _run_col = st.columns([2, 0.2, 2.5, 2])
-        with _grav_col:
-            if st.button(
-                f"⚖ Gravity Score  ·  {n_sel} co.",
-                type="primary",
-                use_container_width=True,
-                key="scr_gravity_btn",
-            ):
-                _launch("gravity")
-
-        with _sep_col:
-            st.markdown(
-                "<span style='color:#2a1f10;font-family:monospace;font-size:18px;"
-                "line-height:2.4;'>│</span>",
-                unsafe_allow_html=True,
-            )
-
-        with _fw_col:
-            _chosen_fw = st.selectbox(
-                "Framework",
-                options=list(_fw_options.keys()),
-                format_func=lambda k: _fw_options[k],
-                label_visibility="collapsed",
-                key="scr_fw_picker",
-            )
-        with _run_col:
-            if st.button(
-                f"▶ Run  ·  {n_sel} co.",
-                type="secondary",
-                use_container_width=True,
-                key="scr_run_btn",
-            ):
-                _launch(_chosen_fw)
+        if st.button(
+            f"⚖ Run Gravity Taxers  ·  {n_sel} companies",
+            type="primary",
+            use_container_width=True,
+            key="scr_gravity_btn",
+        ):
+            _launch("gravity")
 
     else:
         st.markdown(
