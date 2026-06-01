@@ -1204,6 +1204,41 @@ with col_left:
                     )
                 st.session_state.rg_screener_rows = rows
                 st.session_state.rg_active_ticker = ""   # no single ticker yet
+
+            elif action == "screen" and intent.get("thematic_query"):
+                # ── Thematic universe — no index, LLM generates ticker list ──
+                _tq    = intent["thematic_query"]
+                _limit = intent.get("limit") or 10
+                with st.spinner(
+                    f"🤖  Resolving thematic universe: **{_tq}** "
+                    f"(asking LLM for {_limit} tickers)…"
+                ):
+                    try:
+                        import importlib
+                        import models.thematic_resolver as _tr_mod
+                        importlib.reload(_tr_mod)
+                        from models.thematic_resolver import resolve_thematic
+                        rows = resolve_thematic(_tq, _limit, llm)
+                    except Exception as _e:
+                        rows = []
+                        st.error(f"Thematic resolver failed: {_e}")
+                if rows:
+                    st.success(
+                        f"✓  Found **{len(rows)}** companies for: *{_tq}*  ·  "
+                        f"Select a framework and click **Run [Framework] on all {len(rows)}**"
+                    )
+                    # Pre-select framework if LLM detected one
+                    _fid = intent.get("framework_id")
+                    if _fid and _fid in REPORT_TYPES:
+                        st.session_state["report_type"] = _fid
+                else:
+                    st.warning(
+                        f"⚠ Could not resolve companies for: **{_tq}**. "
+                        "Try rephrasing or use a specific index ticker (e.g. ^STOXX50E)."
+                    )
+                st.session_state.rg_screener_rows = rows
+                st.session_state.rg_active_ticker = ""
+
             elif action in ("report", "compare") and intent.get("tickers"):
                 # Pre-select the first ticker; if framework provided, set it too
                 st.session_state.rg_active_ticker = intent["tickers"][0]
@@ -1230,13 +1265,19 @@ with col_left:
     if st.session_state.get("rg_screener_rows"):
         _intent_for_render = st.session_state.rg_intent or {}
         _rows_for_render = st.session_state.rg_screener_rows
-        _universe = _intent_for_render.get("universe") or "—"
-        _sort_by  = _intent_for_render.get("sort_by") or "market_cap"
-        _sort_dir = _intent_for_render.get("sort_dir") or "desc"
-        st.markdown(
-            f"##### 🔍 {_universe} · top {len(_rows_for_render)} by "
-            f"**{_sort_by}** ({_sort_dir})"
-        )
+        _universe  = _intent_for_render.get("universe") or ""
+        _thematic  = _intent_for_render.get("thematic_query") or ""
+        _sort_by   = _intent_for_render.get("sort_by") or "market_cap"
+        _sort_dir  = _intent_for_render.get("sort_dir") or "desc"
+        if _thematic:
+            st.markdown(
+                f"##### 🤖 {_thematic} · {len(_rows_for_render)} companies (LLM-resolved)"
+            )
+        else:
+            st.markdown(
+                f"##### 🔍 {_universe} · top {len(_rows_for_render)} by "
+                f"**{_sort_by}** ({_sort_dir})"
+            )
         if _intent_for_render.get("notes"):
             st.caption(f"💡 {_intent_for_render['notes']}")
 

@@ -11,15 +11,16 @@ Supports Lithuanian + English + mixed phrasing.
 Intent schema:
   {
     "action":       "report" | "screen" | "compare",
-    "tickers":      ["AAPL", "MSFT"] | null,    # Yahoo-Finance format
-    "universe":     "^GSPC" | "^NDX" | "^GDAXI" | null,
-    "sort_by":      "market_cap" | "pe_ratio" | "roe" | "ebit_margin"
-                    | "revenue" | "price" | "div_yield" | "fcf_yield" | null,
-    "sort_dir":     "asc" | "desc" | null,
-    "limit":        10 | null,
-    "framework_id": "fisher" | "gravity" | "overview_v2"
-                    | "eodhd_full" | null,
-    "notes":        ""    # free-text the LLM uses to flag ambiguity
+    "tickers":        ["AAPL", "MSFT"] | null,    # Yahoo-Finance format
+    "universe":       "^GSPC" | "^NDX" | "^GDAXI" | null,
+    "thematic_query": "Top 10 European defense companies" | null,
+    "sort_by":        "market_cap" | "pe_ratio" | "roe" | "ebit_margin"
+                      | "revenue" | "price" | "div_yield" | "fcf_yield" | null,
+    "sort_dir":       "asc" | "desc" | null,
+    "limit":          10 | null,
+    "framework_id":   "fisher" | "gravity" | "overview_v2"
+                      | "eodhd_full" | null,
+    "notes":          ""    # free-text the LLM uses to flag ambiguity
   }
 """
 from __future__ import annotations
@@ -49,6 +50,7 @@ VALID_FRAMEWORKS = {
 def _empty_intent() -> dict:
     return {
         "action": None, "tickers": None, "universe": None,
+        "thematic_query": None,
         "sort_by": None, "sort_dir": None, "limit": None,
         "framework_id": None, "notes": "",
     }
@@ -68,25 +70,36 @@ Convert the user's natural-language query into a JSON intent object with
 EXACTLY these keys (use null when not specified):
 
 {
-  "action":       "report" | "screen" | "compare",
-  "tickers":      ["AAPL", "MSFT", …] | null,
-  "universe":     "^GSPC" | "^NDX" | "^DJI" | "^GDAXI" | "^FTSE" |
-                  "^FCHI" | "^IBEX" | "^OMX" | "^N225" | "^HSI" |
-                  "^KS11" | "^STOXX50E" | … | null,
-  "sort_by":      "market_cap" | "pe_ratio" | "roe" | "ebit_margin" |
-                  "revenue" | "price" | "div_yield" | "fcf_yield" |
-                  "net_margin" | "ev_ebit" | null,
-  "sort_dir":     "asc" | "desc" | null,
-  "limit":        positive integer | null,
-  "framework_id": "fisher" | "gravity" | "overview_v2" |
-                  "eodhd_full" | null,
-  "notes":        "1 short sentence flagging ambiguity, or empty string"
+  "action":         "report" | "screen" | "compare",
+  "tickers":        ["AAPL", "MSFT", …] | null,
+  "universe":       "^GSPC" | "^NDX" | "^DJI" | "^GDAXI" | "^FTSE" |
+                    "^FCHI" | "^IBEX" | "^OMX" | "^N225" | "^HSI" |
+                    "^KS11" | "^STOXX50E" | … | null,
+  "thematic_query": "<verbatim description when no matching index exists>" | null,
+  "sort_by":        "market_cap" | "pe_ratio" | "roe" | "ebit_margin" |
+                    "revenue" | "price" | "div_yield" | "fcf_yield" |
+                    "net_margin" | "ev_ebit" | null,
+  "sort_dir":       "asc" | "desc" | null,
+  "limit":          positive integer | null,
+  "framework_id":   "fisher" | "gravity" | "overview_v2" |
+                    "eodhd_full" | null,
+  "notes":          "1 short sentence flagging ambiguity, or empty string"
 }
 
 ACTIONS
 - "screen"   : user wants a filtered/sorted list of companies (top N, first N, …)
 - "report"   : user wants a single research report for one or more named tickers
 - "compare"  : user lists 2+ specific tickers and asks to compare them
+
+THEMATIC UNIVERSE (critical rule)
+If the user describes a thematic/sector/geographic group of companies WITHOUT
+naming a known index, set action="screen", universe=null, and put the original
+description verbatim into thematic_query. Examples:
+  "Top 10 European defense companies"  → thematic_query="Top 10 European defense companies", universe=null
+  "Largest Japanese automakers"        → thematic_query="Largest Japanese automakers", universe=null
+  "Top 5 US semiconductor companies"   → thematic_query="Top 5 US semiconductor companies", universe=null
+  "Best value banks in Poland"         → thematic_query="Best value banks in Poland", universe=null
+  "WIG 20 top companies" → this IS an index → universe="^WIG20", thematic_query=null
 
 TICKER NORMALISATION
 - Always Yahoo Finance format: AAPL, RHM.DE, BA.L, 7203.T, ^GSPC.
@@ -224,7 +237,19 @@ Input: "cheapest 8 DAX names"
 Output: {"action":"screen","universe":"^GDAXI","sort_by":"pe_ratio","sort_dir":"asc","limit":8,"tickers":null,"framework_id":null,"notes":"interpreted 'cheapest' as lowest P/E"}
 
 Input: "blah blah random stuff"
-Output: {"action":null,"tickers":null,"universe":null,"sort_by":null,"sort_dir":null,"limit":null,"framework_id":null,"notes":"could not interpret query"}
+Output: {"action":null,"tickers":null,"universe":null,"thematic_query":null,"sort_by":null,"sort_dir":null,"limit":null,"framework_id":null,"notes":"could not interpret query"}
+
+Input: "Top 10 European defense companies"
+Output: {"action":"screen","universe":null,"thematic_query":"Top 10 European defense companies","sort_by":null,"sort_dir":null,"limit":10,"tickers":null,"framework_id":null,"notes":""}
+
+Input: "Run Gravity on top 15 Japanese automakers"
+Output: {"action":"screen","universe":null,"thematic_query":"top 15 Japanese automakers","sort_by":null,"sort_dir":null,"limit":15,"tickers":null,"framework_id":"gravity","notes":""}
+
+Input: "Top 20 companies in WIG index"
+Output: {"action":"screen","universe":"^WIG","sort_by":"market_cap","sort_dir":"desc","limit":20,"tickers":null,"thematic_query":null,"framework_id":null,"notes":""}
+
+Input: "didžiausios Lenkijos bankai"
+Output: {"action":"screen","universe":null,"thematic_query":"didžiausios Lenkijos bankai","sort_by":null,"sort_dir":null,"limit":10,"tickers":null,"framework_id":null,"notes":""}
 
 User query:
 """
@@ -280,6 +305,10 @@ def _validate(intent: dict) -> dict:
     if isinstance(notes, str):
         out["notes"] = notes.strip()[:240]
 
+    tq = intent.get("thematic_query")
+    if isinstance(tq, str) and tq.strip():
+        out["thematic_query"] = tq.strip()[:300]
+
     # Sensible defaults: if it's a screen and sort_by is set but direction
     # isn't, default to desc (except for P/E / EV multiples → asc).
     if out["action"] == "screen" and out["sort_by"] and not out["sort_dir"]:
@@ -287,6 +316,10 @@ def _validate(intent: dict) -> dict:
             out["sort_dir"] = "asc"
         else:
             out["sort_dir"] = "desc"
+
+    # Thematic default limit
+    if out["action"] == "screen" and out.get("thematic_query") and not out["limit"]:
+        out["limit"] = 10
 
     # If it's a screen and limit isn't set, default to 10
     if out["action"] == "screen" and out["limit"] is None:
