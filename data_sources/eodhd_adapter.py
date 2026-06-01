@@ -94,6 +94,11 @@ _YF_TO_EODHD = {
     ".JO": ".JSE",     # South Africa — Johannesburg Stock Exchange
     ".CA": ".CA",      # Egypt — Egyptian Exchange
 
+    # ── Baltic (NASDAQ Baltic) ───────────────────────────────────────────────
+    ".VS": ".VS",      # Lithuania — NASDAQ Vilnius
+    ".TL": ".TL",      # Estonia   — NASDAQ Tallinn
+    ".RG": ".RG",      # Latvia    — NASDAQ Riga
+
     # NOT COVERED by EODHD — these will 404 and fall back to yfinance/AV:
     # ".T"  → Japan (TSE) — not in EODHD exchange list
     # ".NS" → India NSE   — not in EODHD exchange list
