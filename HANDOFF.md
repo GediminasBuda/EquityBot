@@ -1,6 +1,6 @@
 # HANDOFF — Session Continuation Document
 
-**Last updated:** 2026-06-01  
+**Last updated:** 2026-06-01 (session 2)  
 **Author:** Claude session, written for the next one.
 
 If you're a Claude agent that just opened this repo on a fresh machine, **read this file end-to-end before touching anything**. Then read `CLAUDE.md` for broader project documentation.
@@ -184,38 +184,55 @@ Anonymous HTTP GET returns **only 5 rows** per ticker. Don't try to make the scr
 
 ---
 
-## 11 · Recent work (this session — 2026-06-01)
+## 11 · Screener page — architecture & known limits
 
-### Committed to `Final-design-V3`
-
-| Commit | What |
-|---|---|
-| `b490d19` | **Fund Fundamentals** — new EODHD-only model for ETFs and Mutual Funds. No LLM. |
-| `b9714ee` | Fund Fundamentals — full holdings list + LLM factsheet commentary added. |
-| `183ffb5` | **Investment Memo Bull/Bear** — added Page 4: EODHD Market Data sheet. |
-| `cbb68dd` | **Thematic universe resolver** — resolves thematic/conceptual descriptions to constituent tickers using Gravity framework (or any framework). |
-| `f5faa78` | **Universe Screen** — switched output from HTML to PDF. |
-
-### Uncommitted work (working tree — ready to commit)
-
-**NL Stock Screener page** — three new files, all clean:
-
+### Files
 | File | Purpose |
 |---|---|
-| `pages/screener.py` | Streamlit page: text box → screener results table with checkboxes → run any framework on selected tickers |
-| `models/screener_intent.py` | LLM-powered NL → EODHD Screener API filter parser. Supports Lithuanian + English + mixed queries. Returns structured JSON (filters, signals, sort, limit). |
-| `data_sources/eodhd_screener_api.py` | Thin wrapper around `GET /api/screener`. Costs 5 EODHD credits/call. Handles filter building, validation, and pagination. |
-| `data_sources/__init__.py` | Modified (likely export added for new module) |
-| `test_gist_token.py` | One-off test script — safe to delete after confirming Gist token works |
+| `pages/screener.py` | Main Streamlit page. Bloomberg CSS, form input, results table, Gravity Taxers launch button. |
+| `models/screener_intent.py` | LLM NL→filter parser. Returns JSON: filters (numeric only), signals, sort, limit, title, notes. |
+| `data_sources/eodhd_screener_api.py` | Thin wrapper around `GET /api/screener`. EXCHANGE_CODES dict used in UI hint expander. |
 
-**Status:** All three screener files are syntactically clean. The page is wired into the app but not yet committed. Commit when ready with message e.g. `Screener: NL → EODHD screener page`.
+### Two search paths (critical — read before touching)
 
-### How the Screener works
-1. User types a free-text query in Lithuanian or English (e.g. "Didžiausios Lenkijos kompanijos" or "European defense, market cap > 2B")
-2. `screener_intent.py` sends it to the LLM → gets back JSON with EODHD filter triples, signals, sort, limit, and a human-readable title
-3. `eodhd_screener_api.py` calls `GET /api/screener` with those params → list of matching tickers
-4. `screener.py` renders a Bloomberg-styled results table with checkboxes
-5. User selects companies → picks a framework → runs the report pipeline on each
+**Path A — Known index query** (detected by `_detect_index_query()` in `screener.py`):
+- Triggered by: "DAX 40", "CAC 40", "FTSE 100", "OMX Helsinki", "S&P 500", "WIG 20", etc.
+- Uses `ConstituentResolver` → Wikipedia scrape → real tickers with correct exchange suffixes
+- Then enriches with 2 EODHD calls: `_fetch_exchange_names()` (symbol list → names) + `_fetch_bulk_prices()` (real-time prices + change%)
+- Table shows: Ticker, Name, Price, Chg% (green/red), Exchange
+- If ConstituentResolver returns empty (Wikipedia scrape failed) → clear error message, no "No results" spinner
+
+**Path B — General NL query** (everything else):
+- LLM parses query → `screener_intent.py` returns filters
+- **CRITICAL:** String filters (exchange, sector, industry) are STRIPPED before the API call — EODHD screener API ignores them and returns empty. Only numeric filters work: `dividend_yield`, `market_capitalization`, `earnings_share`, `adjusted_close`, `refund_1d_p`, `refund_5d_p`, `avgvol_1d`, `avgvol_200d`.
+- Results are global (no country/sector filtering). A note is shown in UI.
+
+### What works / what doesn't
+```
+✅ "top 20 DAX 40 companies"          → Path A, real DAX tickers + names + prices
+✅ "CAC 40 largest stocks"             → Path A
+✅ "OMX Helsinki 25"                   → Path A
+✅ "dividend yield above 4%"           → Path B, numeric filter works
+✅ "large cap profitable companies"    → Path B, market_cap + earnings_share filters
+❌ "German banks div yield > 4%"       → Path B, exchange+sector stripped, only div filter kept (global results)
+❌ "WIG 20 Poland"                     → Path A attempted, but ConstituentResolver may fail to scrape WIG20 Wikipedia
+```
+
+### UI behaviour
+- **Select All / Deselect All**: explicitly sets all `scr_chk_*` session_state keys — required because Streamlit keyed widgets ignore `value=` after first render.
+- **Run Gravity Taxers button**: always visible below results table; disabled when 0 selected. Hands off to `report_generator.py` via `st.session_state.rg_bulk_run`.
+- **Search**: wrapped in `st.form` so Enter key and button click both trigger search.
+
+### Baltic stocks (added this session)
+Report Generator search now detects Baltic ticker patterns (APG1L, APG1L.VS etc.) and suggests all three Baltic exchanges (🇱🇹 VS, 🇪🇪 TL, 🇱🇻 RG). Added `.VS`, `.TL`, `.RG` to `_YF_TO_EODHD` in `eodhd_adapter.py`. Data pipeline passes Baltic tickers as-is to EODHD (yfinance silently fails, EODHD handles them correctly).
+
+---
+
+## 12 · How to greet the user when you start
+
+Don't summarise this whole document. Just confirm you've read it, name current state in one line, ask what to do.
+
+The user speaks Lithuanian + English mixed. Match their language. Terse, technical, no-fluff.
 
 ---
 
