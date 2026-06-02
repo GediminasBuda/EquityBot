@@ -466,7 +466,21 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
                             _b_ticker,
                         ))
 
-    # Layer 2: static/cached name + code search
+    # Layer 2a: Baltic name + code search (seed list + EODHD exchange-symbol-list)
+    try:
+        from data_sources.baltic_tickers import search_baltic
+        _bl_slots = max(0, 12 - len(suggestions))
+        if _bl_slots > 0:
+            for _bl_label, _bl_ticker in search_baltic(
+                q, api_key=_RG_EODHD_KEY or "", max_results=_bl_slots
+            ):
+                if _bl_ticker not in seen:
+                    seen.add(_bl_ticker)
+                    suggestions.append((_bl_label, _bl_ticker))
+    except Exception:
+        pass
+
+    # Layer 2b: static/cached name + code search (Japan)
     try:
         from data_sources.japan_tickers import search_japan
         _jp_slots = max(0, 12 - len(suggestions))
