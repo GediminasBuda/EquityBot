@@ -293,7 +293,7 @@ def build_swot_prompt(
         f"Company: {company.name or company.ticker}  |  Ticker: {company.ticker}",
         f"Sector: {company.sector or 'n/a'}  |  Industry: {company.industry or 'n/a'}",
         f"Country: {company.country or 'n/a'}  |  Currency: {company.currency or 'n/a'}",
-        f"Market cap: {company.market_cap_usd or 'n/a'}  |  Price: {company.current_price or 'n/a'}",
+        f"Market cap: {company.market_cap or 'n/a'}  |  Price: {company.current_price or 'n/a'}",
         "",
         "=== COMPETITIVE ADVANTAGE (from main analysis) ===",
         f"Size: {analysis.get('competitive_advantage_size','')}  |  "
