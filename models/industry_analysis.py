@@ -167,39 +167,6 @@ Field: key_uncertainties
   Type: array of 3-5 strings. The biggest uncertainties / data gaps in
   this analysis.
 
-Field: swot
-  Type: object. A buyside investment analyst SWOT analysis of the SUBJECT
-  COMPANY (not the industry as a whole). Build this section from:
-    1) insights already developed in the Porter 5 Forces and Competitive
-       Advantage sections above, and
-    2) any additional financial / market evidence available.
-  Use specific statistics and financial data to support every claim.
-  The object has exactly 5 keys:
-
-  "summary"
-    String. < 150 words. Succinct synthesis of your SWOT conclusions —
-    what is the overall investment read on the company's position?
-
-  "strengths"
-    String. ≤ 200 words. Key competitive and financial strengths of the
-    company. Support with data (margins, market share, ROE, ROIC, moat
-    indicators, balance sheet strength, etc.).
-
-  "weaknesses"
-    String. ≤ 200 words. Key internal weaknesses. Support with data
-    (declining margins, high leverage, customer concentration, execution
-    gaps, etc.).
-
-  "opportunities"
-    String. ≤ 200 words. External opportunities the company can exploit.
-    Support with market size data, industry growth rates, geographic
-    expansion potential, new product vectors, etc.
-
-  "threats"
-    String. ≤ 200 words. External threats. Support with data (competitive
-    intensity, regulatory risk, commodity/input exposure, disruption
-    vectors, macro headwinds, etc.).
-
 === SUBJECT COMPANY DATA FOLLOWS ==="""
 
 
@@ -257,6 +224,95 @@ def _build_industry_prompt(
         company, bundle, country_macro_block,
     )
     return cacheable + "\n\n" + dynamic
+
+
+# ── Separate SWOT prompt (called after main analysis) ────────────────────────
+
+_SWOT_SYSTEM = """You are "Your Humble EquityBot" — a buyside investment analyst.
+Write a rigorous SWOT analysis of the subject company. Support every claim with
+specific financial data, market share figures, or cited sources. Be concise but
+substantive. Return ONE valid JSON object with no markdown fences."""
+
+_SWOT_SCHEMA = """\
+Based on the Porter 5 Forces industry analysis and Competitive Advantage
+assessment already completed, produce a buyside SWOT analysis of the SUBJECT
+COMPANY (not the industry as a whole).
+
+Return a single valid JSON object with exactly these 5 keys:
+
+"summary"
+  String. ≤ 150 words. Overall investment read: what does the SWOT imply
+  about the company's risk/reward as an equity investment?
+
+"strengths"
+  String. ≤ 200 words. Key internal competitive and financial strengths.
+  Support with data: margins, market share, ROE/ROIC, moat indicators,
+  balance-sheet strength, cash generation. Cite sources inline.
+
+"weaknesses"
+  String. ≤ 200 words. Key internal weaknesses. Support with data:
+  declining margins, high leverage, customer/geographic concentration,
+  execution gaps, regulatory exposure. Cite sources inline.
+
+"opportunities"
+  String. ≤ 200 words. External opportunities the company can exploit.
+  Support with market size data, industry growth rates, geographic
+  expansion potential, new product vectors, M&A optionality.
+
+"threats"
+  String. ≤ 200 words. External threats. Support with data: competitive
+  intensity metrics, regulatory risk specifics, commodity/input exposure,
+  disruption vectors (technology, business model), macro headwinds.
+
+No markdown fences. No prose outside the JSON object.
+"""
+
+
+def build_swot_prompt(
+    company: CompanyData,
+    analysis: dict,
+) -> tuple[str, str]:
+    """
+    Return (system_prompt, user_prompt) for the dedicated SWOT call.
+    Passes the already-generated competitive_advantage_detail and
+    key_uncertainties as context so the SWOT is grounded in the analysis.
+    """
+    ca_detail  = analysis.get("competitive_advantage_detail", "")
+    ca_summary = analysis.get("competitive_advantage_summary", "")
+    key_unc    = analysis.get("key_uncertainties", [])
+
+    forces_summary = []
+    for f in analysis.get("forces", []):
+        forces_summary.append(
+            f"{f.get('name','')}: {f.get('current_assessment','')} — "
+            f"{f.get('state_2026','')[:300]}"
+        )
+
+    context = "\n\n".join([
+        f"=== SUBJECT COMPANY ===",
+        f"Company: {company.name or company.ticker}  |  Ticker: {company.ticker}",
+        f"Sector: {company.sector or 'n/a'}  |  Industry: {company.industry or 'n/a'}",
+        f"Country: {company.country or 'n/a'}  |  Currency: {company.currency or 'n/a'}",
+        f"Market cap: {company.market_cap_usd or 'n/a'}  |  Price: {company.current_price or 'n/a'}",
+        "",
+        "=== COMPETITIVE ADVANTAGE (from main analysis) ===",
+        f"Size: {analysis.get('competitive_advantage_size','')}  |  "
+        f"Evolution: {analysis.get('competitive_advantage_evolution','')}",
+        ca_summary,
+        "",
+        "=== COMPETITIVE ADVANTAGE DETAIL ===",
+        ca_detail[:2000],
+        "",
+        "=== 5 FORCES SUMMARY ===",
+        "\n".join(forces_summary),
+        "",
+        "=== KEY UNCERTAINTIES ===",
+        "\n".join(f"• {u}" for u in key_unc),
+        "",
+        _SWOT_SCHEMA,
+    ])
+
+    return _SWOT_SYSTEM, context
 
 
 # ── Output validator ─────────────────────────────────────────────────────────
