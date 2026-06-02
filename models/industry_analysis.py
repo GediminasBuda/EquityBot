@@ -167,6 +167,39 @@ Field: key_uncertainties
   Type: array of 3-5 strings. The biggest uncertainties / data gaps in
   this analysis.
 
+Field: swot
+  Type: object. A buyside investment analyst SWOT analysis of the SUBJECT
+  COMPANY (not the industry as a whole). Build this section from:
+    1) insights already developed in the Porter 5 Forces and Competitive
+       Advantage sections above, and
+    2) any additional financial / market evidence available.
+  Use specific statistics and financial data to support every claim.
+  The object has exactly 5 keys:
+
+  "summary"
+    String. < 150 words. Succinct synthesis of your SWOT conclusions —
+    what is the overall investment read on the company's position?
+
+  "strengths"
+    String. ≤ 200 words. Key competitive and financial strengths of the
+    company. Support with data (margins, market share, ROE, ROIC, moat
+    indicators, balance sheet strength, etc.).
+
+  "weaknesses"
+    String. ≤ 200 words. Key internal weaknesses. Support with data
+    (declining margins, high leverage, customer concentration, execution
+    gaps, etc.).
+
+  "opportunities"
+    String. ≤ 200 words. External opportunities the company can exploit.
+    Support with market size data, industry growth rates, geographic
+    expansion potential, new product vectors, etc.
+
+  "threats"
+    String. ≤ 200 words. External threats. Support with data (competitive
+    intensity, regulatory risk, commodity/input exposure, disruption
+    vectors, macro headwinds, etc.).
+
 === SUBJECT COMPANY DATA FOLLOWS ==="""
 
 
@@ -337,6 +370,18 @@ def _validate_analysis(a: dict) -> dict:
     if not isinstance(unc, list):
         unc = []
     a["key_uncertainties"] = [str(u).strip() for u in unc if u][:8]
+
+    # SWOT
+    swot = a.get("swot") or {}
+    if not isinstance(swot, dict):
+        swot = {}
+    a["swot"] = {
+        "summary":       (swot.get("summary")       or "").strip(),
+        "strengths":     (swot.get("strengths")     or "").strip(),
+        "weaknesses":    (swot.get("weaknesses")    or "").strip(),
+        "opportunities": (swot.get("opportunities") or "").strip(),
+        "threats":       (swot.get("threats")       or "").strip(),
+    }
 
     return a
 

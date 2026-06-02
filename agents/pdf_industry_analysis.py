@@ -121,6 +121,20 @@ def _extend_styles(styles: dict) -> dict:
         "ia_banner_value", fontName="Helvetica-Bold", fontSize=15,
         textColor=white, alignment=TA_LEFT, leading=17,
     )
+    styles["ia_swot_header"] = ParagraphStyle(
+        "ia_swot_header", fontName="Helvetica-Bold", fontSize=10,
+        textColor=white, alignment=TA_CENTER, leading=13,
+    )
+    styles["ia_swot_body"] = ParagraphStyle(
+        "ia_swot_body", fontName="Helvetica", fontSize=8.5,
+        textColor=HexColor("#111"), alignment=TA_JUSTIFY,
+        leading=12, spaceAfter=2,
+    )
+    styles["ia_swot_summary"] = ParagraphStyle(
+        "ia_swot_summary", fontName="Helvetica", fontSize=9.5,
+        textColor=HexColor("#222"), alignment=TA_JUSTIFY,
+        leading=13, spaceAfter=4,
+    )
     return styles
 
 
@@ -278,6 +292,80 @@ def _advantage_banner(size: str, evolution: str, styles: dict) -> Table:
     return t
 
 
+# ── SWOT colours ─────────────────────────────────────────────────────────────
+_SWOT_S_COLOR = HexColor("#1A5E2A")   # dark green  — Strengths
+_SWOT_W_COLOR = HexColor("#922B21")   # dark red    — Weaknesses
+_SWOT_O_COLOR = HexColor("#1A4A7A")   # dark blue   — Opportunities
+_SWOT_T_COLOR = HexColor("#7D6608")   # dark amber  — Threats
+_SWOT_S_BG    = HexColor("#EAF7EE")
+_SWOT_W_BG    = HexColor("#FDECEA")
+_SWOT_O_BG    = HexColor("#EAF1FB")
+_SWOT_T_BG    = HexColor("#FEF9E7")
+
+
+def _swot_page(swot: dict, company_name: str, styles: dict) -> list:
+    """Render the SWOT analysis page."""
+    out = []
+
+    # Page title
+    out += _section(f"SWOT Analysis — {company_name}", styles)
+
+    # Summary box
+    summary = swot.get("summary", "")
+    if summary:
+        out.append(Paragraph("<b>Summary</b>", styles["ia_sub_title"]))
+        out += _split_paragraphs(summary, styles, "ia_swot_summary")
+        out.append(Spacer(1, 10))
+
+    # Build 2×2 SWOT table
+    def _quadrant(header: str, text: str, hdr_color, bg_color) -> Table:
+        hdr_para  = Paragraph(header, styles["ia_swot_header"])
+        body_para = Paragraph(
+            text.replace("\n", "<br/>") if text else "—",
+            styles["ia_swot_body"],
+        )
+        t = Table(
+            [[hdr_para], [body_para]],
+            colWidths=[CW / 2 - 3],
+        )
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (0, 0), hdr_color),
+            ("BACKGROUND",    (0, 1), (0, 1), bg_color),
+            ("TEXTCOLOR",     (0, 0), (0, 0), white),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 7),
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ]))
+        return t
+
+    sw_tbl = _quadrant("S   STRENGTHS",     swot.get("strengths", ""),
+                        _SWOT_S_COLOR, _SWOT_S_BG)
+    wk_tbl = _quadrant("W   WEAKNESSES",    swot.get("weaknesses", ""),
+                        _SWOT_W_COLOR, _SWOT_W_BG)
+    op_tbl = _quadrant("O   OPPORTUNITIES", swot.get("opportunities", ""),
+                        _SWOT_O_COLOR, _SWOT_O_BG)
+    th_tbl = _quadrant("T   THREATS",       swot.get("threats", ""),
+                        _SWOT_T_COLOR, _SWOT_T_BG)
+
+    grid = Table(
+        [[sw_tbl, wk_tbl],
+         [op_tbl, th_tbl]],
+        colWidths=[CW / 2, CW / 2],
+        spaceBefore=4,
+    )
+    grid.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 3),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    out.append(grid)
+    return out
+
+
 # ── Main generator ───────────────────────────────────────────────────────────
 
 class IndustryAnalysisPDFGenerator:
@@ -368,6 +456,13 @@ class IndustryAnalysisPDFGenerator:
             story.append(Paragraph("Sources cited:", st["ia_sub_title"]))
             for s in ca_sources:
                 story.append(Paragraph(f"•  {s}", st["ia_source"]))
+
+        # ── SWOT page ────────────────────────────────────────────────────────
+        swot = analysis.get("swot") or {}
+        if any(swot.get(k) for k in ("strengths", "weaknesses",
+                                      "opportunities", "threats")):
+            story.append(PageBreak())
+            story += _swot_page(swot, company.name or company.ticker, st)
 
         # ── FINAL PAGE: Uncertainties + footer ──────────────────────────────
         unc = analysis.get("key_uncertainties") or []
