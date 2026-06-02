@@ -1919,6 +1919,7 @@ if generate_clicked and ticker_input:
             # Flag Japanese tickers so each dispatch block can skip the EODHD
             # re-fetch and stay with the DataManager / yfinance company object.
             _is_japan = ticker_input.upper().endswith(".T")
+            _is_baltic = ticker_input.upper().endswith((".VS", ".TL", ".RG"))
 
             if _is_japan:
                 # Minimal bundle used instead of EODHD bundle for all Japan reports.
@@ -1929,6 +1930,17 @@ if generate_clicked and ticker_input:
                     "sentiment": None, "eod": [], "events": [],
                     "financials_annual": {}, "financials_quarterly": {},
                 }
+
+            # Baltic bundle — used as fallback when EODHD-only fetchers are called.
+            # EODHD does list VS/TL/RG but many smaller Baltic stocks are missing.
+            # The company object is already populated by dm.get() (yfinance waterfall).
+            _BALTIC_BUNDLE: dict = {
+                "endpoints_used": 1,   # yfinance only
+                "errors": ["EODHD may not cover this Baltic stock fully. Using yfinance data."],
+                "fundamentals": {}, "news": [], "insider_trades": [],
+                "sentiment": None, "eod": [], "events": [],
+                "financials_annual": {}, "financials_quarterly": {},
+            }
                 # yfinance sometimes returns stale company names for new Japanese
                 # listings (e.g. 9166.T returned as "Godo Kaisha LINE" instead of
                 # "Genda Inc"). Try to correct from our local Japan seed list.
@@ -2028,6 +2040,9 @@ if generate_clicked and ticker_input:
                 if _is_japan:
                     _v2_bundle = _JAPAN_BUNDLE
                     st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                elif _is_baltic:
+                    _v2_bundle = _BALTIC_BUNDLE
+                    st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
                 else:
                     st.write("💎  Fetching EODHD bundle (fundamentals + /eod)…")
                     company, _v2_bundle = fetch_company_data_eodhd_only(ticker_input)
@@ -2119,6 +2134,9 @@ if generate_clicked and ticker_input:
                 if _is_japan:
                     _fisher_bundle = _JAPAN_BUNDLE
                     st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                elif _is_baltic:
+                    _fisher_bundle = _BALTIC_BUNDLE
+                    st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
                 else:
                     st.write("🔬  Fetching EODHD bundle (fundamentals + /eod + news + sentiment + insider)…")
                     company, _fisher_bundle = fetch_company_data_eodhd_only(ticker_input)
@@ -2199,6 +2217,9 @@ if generate_clicked and ticker_input:
                 if _is_japan:
                     _fpr_bundle = _JAPAN_BUNDLE
                     st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                elif _is_baltic:
+                    _fpr_bundle = _BALTIC_BUNDLE
+                    st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
                 else:
                     st.write("🔬  Fetching EODHD bundle (fundamentals + news + insider)…")
                     company, _fpr_bundle = fetch_company_data_eodhd_only(ticker_input)
@@ -2377,6 +2398,9 @@ if generate_clicked and ticker_input:
                 if _is_japan:
                     _ia_bundle = _JAPAN_BUNDLE
                     st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                elif _is_baltic:
+                    _ia_bundle = _BALTIC_BUNDLE
+                    st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
                 else:
                     st.write("🏛️  Fetching EODHD bundle (10y financials + news + sentiment)…")
                     company, _ia_bundle = fetch_company_data_eodhd_only(ticker_input)
@@ -2733,6 +2757,9 @@ if generate_clicked and ticker_input:
                 if _is_japan:
                     _vm_bundle = _JAPAN_BUNDLE
                     st.write(f"🇯🇵  Using yfinance data for Japanese stock: {company.name}")
+                elif _is_baltic:
+                    _vm_bundle = _BALTIC_BUNDLE
+                    st.write(f"🇧🇦  Using yfinance data for Baltic stock: {company.name}")
                 else:
                     st.write("💎  Fetching EODHD bundle for subject company…")
                     company, _vm_bundle = fetch_company_data_eodhd_only(ticker_input)
@@ -3139,6 +3166,9 @@ if generate_clicked and ticker_input:
                 if _is_japan:
                     _gravity_bundle = _JAPAN_BUNDLE
                     st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                elif _is_baltic:
+                    _gravity_bundle = _BALTIC_BUNDLE
+                    st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
                 else:
                     st.write("⚖️  Fetching EODHD bundle (fundamentals + /eod + news + sentiment + insider)…")
                     company, _gravity_bundle = fetch_company_data_eodhd_only(ticker_input)
