@@ -1,6 +1,6 @@
 # HANDOFF — Session Continuation Document
 
-**Last updated:** 2026-06-02  
+**Last updated:** 2026-06-02 (session 4)  
 **Author:** Claude session, written for the next one.
 
 If you're a Claude agent that just opened this repo on a fresh machine, **read this file end-to-end before touching anything**. Then read `CLAUDE.md` for broader project documentation.
@@ -160,6 +160,27 @@ Yahoo throttles Streamlit Cloud IPs aggressively. yfinance errors in logs are **
 ### EODHD coverage gotchas
 * `/insider-transactions` works (HTTP 200) but returns **0 rows for EU exchanges**.
 * For US tickers EODHD sometimes prefers bare symbol (`AAPL`) over `AAPL.US` — `insider_data._fetch_eodhd_insider` retries both.
+
+### Session 4 changes (2026-06-02)
+
+#### Industry Analysis — SWOT page
+* SWOT is now generated in a **dedicated second LLM call** (`max_tokens=2500`) after the main Porter JSON call. The main call (`max_tokens=9500`) was hitting token limits before reaching the SWOT field.
+* `build_swot_prompt()` in `models/industry_analysis.py` — builds SWOT prompt using competitive_advantage_detail + 5-forces summary as context.
+* Step 4 in `report_generator.py` industry_analysis dispatch: separate `llm.generate_json()` with `logger.info/exception` for Cloud diagnostics.
+* **Never use `importlib.reload()`** on Streamlit Cloud — causes `OSError: inotify instance limit reached` (EMFILE), silently aborts code after the reload.
+* Bug fixed: `company.market_cap_usd` → `company.market_cap` (AttributeError in `build_swot_prompt`).
+* **Deployment lesson:** all `st.write()` calls go to browser UI only — not visible in manage-app server logs. Use `logger.info()` for any Cloud diagnostics.
+
+#### Baltic stock support
+* `data_sources/baltic_tickers.py` — seed list of ~50 companies (VS/TL/RG) + EODHD exchange-symbol-list fetch (7-day cache). Search by name or ticker code.
+* Integrated as Layer 2a in `suggest_tickers()` autocomplete.
+* Baltic direct-entry pattern now only triggers for all-uppercase queries (no spaces) — prevents phantom Baltic ticker suggestions for name queries like "genda".
+* Accepts `:VSE`/`:VLN` → `.VS`, `:TAL` → `.TL`, `:RIG` → `.RG` format aliases.
+* `_is_baltic = ticker_input.upper().endswith((".VS", ".TL", ".RG"))` — same pattern as `_is_japan`.
+* `_BALTIC_BUNDLE` defined **after** the `if _is_japan:` block (same outer scope). CRITICAL: never put it inside the Japan if-block.
+* All 6 EODHD-bundle dispatches have `elif _is_baltic: bundle = _BALTIC_BUNDLE`: overview_v2, fisher, fisher_peers, industry_analysis, valuemeter, gravity.
+
+---
 
 ### insidertrades.info hard limit
 Anonymous HTTP GET returns **only 5 rows** per ticker. Don't try to make the scraper smarter — data isn't there for anonymous requests.
