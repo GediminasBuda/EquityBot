@@ -2332,12 +2332,6 @@ if generate_clicked and ticker_input:
                     fetch_company_data_eodhd_only,
                 )
                 from data_sources.eodhd_macro import fetch_country_macro_block
-                import importlib as _ia_importlib
-                import models.industry_analysis as _ia_model_mod
-                try:
-                    _ia_importlib.reload(_ia_model_mod)
-                except Exception as _reload_err:
-                    st.warning(f"⚠  Module reload failed: {_reload_err}")
                 from models.industry_analysis import (
                     _industry_prompt_parts, _validate_analysis,
                     SYSTEM_PROMPT as IA_SYS,
@@ -2450,8 +2444,6 @@ if generate_clicked and ticker_input:
 
                 _prog.progress(90, text="📄  Rendering Industry Analysis PDF…")
                 st.write("📄  Rendering Industry Analysis PDF…")
-                import importlib, agents.pdf_industry_analysis as _iamod
-                importlib.reload(_iamod)
                 from agents.pdf_industry_analysis import IndustryAnalysisPDFGenerator
                 safe = ticker_input.replace(".", "_").replace("-", "_")
                 date = datetime.now().strftime("%Y-%m-%d")
