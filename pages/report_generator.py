@@ -411,39 +411,60 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
     # ── Baltic direct-entry ───────────────────────────────────────────────────
     # EODHD /search/ doesn't index NASDAQ Baltic (VS/TL/RG) stocks in its
     # autocomplete API. Detect Baltic ticker patterns and suggest them directly.
+    #
+    # Rules:
+    #  • Only trigger when the query looks like a TICKER (no lowercase, no
+    #    spaces). A name search like "genda" or "apranga" must NOT generate
+    #    phantom Baltic tickers.
+    #  • Accept both EODHD format (APG1L.VS) and VSE/Yahoo format
+    #    (APG1L:VSE, APG1L:TL, APG1L:RG).
     _BALTIC = {
         "VS": ("🇱🇹", "NASDAQ Vilnius"),
         "TL": ("🇪🇪", "NASDAQ Tallinn"),
         "RG": ("🇱🇻", "NASDAQ Riga"),
     }
+    # Map alternative exchange suffixes → canonical EODHD suffix
+    _BALTIC_ALIASES = {
+        "VSE": "VS", "VLN": "VS",
+        "TAL": "TL",
+        "RIG": "RG",
+    }
     import re as _re_baltic
-    # Pattern: 3-6 uppercase letters, optionally followed by .VS / .TL / .RG
-    _baltic_match = _re_baltic.match(
-        r'^([A-Z0-9]{2,6})(\.(?:VS|TL|RG))?$', q.strip().upper()
-    )
-    if _baltic_match:
-        _b_code = _baltic_match.group(1)
-        _b_exch = (_baltic_match.group(2) or "").lstrip(".")
-        # If exchange explicitly given, suggest just that exchange
-        if _b_exch and _b_exch in _BALTIC:
-            _b_flag, _b_name = _BALTIC[_b_exch]
-            _b_ticker = f"{_b_code}.{_b_exch}"
-            if _b_ticker not in seen:
-                seen.add(_b_ticker)
-                suggestions.insert(0, (
-                    f"{_b_flag} {_b_ticker}  · {_b_name} (enter to analyse)",
-                    _b_ticker,
-                ))
-        else:
-            # No exchange suffix — suggest all three Baltic exchanges
-            for _b_sfx, (_b_flag, _b_name) in _BALTIC.items():
-                _b_ticker = f"{_b_code}.{_b_sfx}"
-                if _b_ticker not in seen and len(suggestions) < 12:
+    _q_raw = q.strip()
+    # Normalise :EXCHANGE → .EXCHANGE so the regex below handles both
+    _q_norm = _re_baltic.sub(r':([A-Z]+)$', r'.\1', _q_raw.upper())
+    # Only proceed if the ORIGINAL query has no lowercase and no spaces
+    # (i.e. user is typing a ticker code, not a company name)
+    _is_ticker_query = bool(_q_raw == _q_raw.upper() and " " not in _q_raw)
+    if _is_ticker_query:
+        _baltic_match = _re_baltic.match(
+            r'^([A-Z0-9]{2,6})(\.(?:VS|TL|RG|VSE|VLN|TAL|RIG))?$', _q_norm
+        )
+        if _baltic_match:
+            _b_code = _baltic_match.group(1)
+            _b_raw_sfx = (_baltic_match.group(2) or "").lstrip(".")
+            # Resolve alias (VSE→VS, TAL→TL, etc.)
+            _b_exch = _BALTIC_ALIASES.get(_b_raw_sfx, _b_raw_sfx)
+            if _b_exch and _b_exch in _BALTIC:
+                # Exchange explicitly given — suggest just that exchange
+                _b_flag, _b_name = _BALTIC[_b_exch]
+                _b_ticker = f"{_b_code}.{_b_exch}"
+                if _b_ticker not in seen:
                     seen.add(_b_ticker)
-                    suggestions.append((
+                    suggestions.insert(0, (
                         f"{_b_flag} {_b_ticker}  · {_b_name} (enter to analyse)",
                         _b_ticker,
                     ))
+            else:
+                # No exchange suffix — suggest all three Baltic exchanges
+                for _b_sfx, (_b_flag, _b_name) in _BALTIC.items():
+                    _b_ticker = f"{_b_code}.{_b_sfx}"
+                    if _b_ticker not in seen and len(suggestions) < 12:
+                        seen.add(_b_ticker)
+                        suggestions.append((
+                            f"{_b_flag} {_b_ticker}  · {_b_name} (enter to analyse)",
+                            _b_ticker,
+                        ))
 
     # Layer 2: static/cached name + code search
     try:
