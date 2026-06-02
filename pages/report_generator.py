@@ -2416,14 +2416,18 @@ if generate_clicked and ticker_input:
 
                 # Step 4: Dedicated SWOT call (separate from main analysis to
                 # avoid token-limit truncation of the large Porter JSON).
+                logger.info("[SWOT] Starting dedicated SWOT call for %s", ticker_input)
                 _prog.progress(75, text="📊  Generating SWOT analysis…")
                 st.write("📊  Generating SWOT analysis (separate call, ~15-30 s)…")
                 try:
                     from models.industry_analysis import build_swot_prompt as _build_swot
+                    logger.info("[SWOT] build_swot_prompt imported OK")
                     _swot_sys, _swot_user = _build_swot(company, analysis)
+                    logger.info("[SWOT] Prompt built, calling LLM (max_tokens=2500)…")
                     _swot_raw = llm.generate_json(
                         _swot_user, _swot_sys, max_tokens=2500,
                     )
+                    logger.info("[SWOT] LLM returned keys: %s", list(_swot_raw.keys()) if isinstance(_swot_raw, dict) else type(_swot_raw))
                     _show_token_usage(llm.last_usage)
                     _swot_valid = {
                         "summary":       (_swot_raw.get("summary")       or "").strip(),
@@ -2434,11 +2438,14 @@ if generate_clicked and ticker_input:
                     }
                     if any(_swot_valid.values()):
                         analysis["swot"] = _swot_valid
+                        logger.info("[SWOT] SWOT populated successfully.")
                         st.write("✓  SWOT analysis generated successfully.")
                     else:
+                        logger.warning("[SWOT] All SWOT fields empty.")
                         st.warning("⚠  SWOT call returned empty fields — SWOT page will be omitted.")
                 except Exception as _swot_err:
                     import traceback
+                    logger.exception("[SWOT] Exception during SWOT generation")
                     st.warning(f"⚠  SWOT generation failed — continuing without SWOT.")
                     st.code(traceback.format_exc(), language="python")
 
