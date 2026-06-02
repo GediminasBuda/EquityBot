@@ -1930,17 +1930,6 @@ if generate_clicked and ticker_input:
                     "sentiment": None, "eod": [], "events": [],
                     "financials_annual": {}, "financials_quarterly": {},
                 }
-
-            # Baltic bundle — used as fallback when EODHD-only fetchers are called.
-            # EODHD does list VS/TL/RG but many smaller Baltic stocks are missing.
-            # The company object is already populated by dm.get() (yfinance waterfall).
-            _BALTIC_BUNDLE: dict = {
-                "endpoints_used": 1,   # yfinance only
-                "errors": ["EODHD may not cover this Baltic stock fully. Using yfinance data."],
-                "fundamentals": {}, "news": [], "insider_trades": [],
-                "sentiment": None, "eod": [], "events": [],
-                "financials_annual": {}, "financials_quarterly": {},
-            }
                 # yfinance sometimes returns stale company names for new Japanese
                 # listings (e.g. 9166.T returned as "Godo Kaisha LINE" instead of
                 # "Genda Inc"). Try to correct from our local Japan seed list.
@@ -1975,6 +1964,17 @@ if generate_clicked and ticker_input:
                     "Analysis uses yfinance data (price, financials, estimates). "
                     "Report will be less detailed than for EODHD-covered markets."
                 )
+
+            # Baltic bundle — used as fallback when EODHD-only fetchers are called.
+            # EODHD lists VS/TL/RG but many smaller Baltic stocks are not indexed.
+            # company is already populated by dm.get() (yfinance waterfall above).
+            _BALTIC_BUNDLE: dict = {
+                "endpoints_used": 1,
+                "errors": ["EODHD may not cover this Baltic stock. Using yfinance data."],
+                "fundamentals": {}, "news": [], "insider_trades": [],
+                "sentiment": None, "eod": [], "events": [],
+                "financials_annual": {}, "financials_quarterly": {},
+            }
 
             yrs   = company.year_range()
             compl = company.completeness_pct()
