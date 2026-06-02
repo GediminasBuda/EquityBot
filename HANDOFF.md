@@ -1,6 +1,6 @@
 # HANDOFF — Session Continuation Document
 
-**Last updated:** 2026-06-01 (session 2)  
+**Last updated:** 2026-06-02  
 **Author:** Claude session, written for the next one.
 
 If you're a Claude agent that just opened this repo on a fresh machine, **read this file end-to-end before touching anything**. Then read `CLAUDE.md` for broader project documentation.
@@ -228,15 +228,32 @@ Report Generator search now detects Baltic ticker patterns (APG1L, APG1L.VS etc.
 
 ---
 
-## 12 · How to greet the user when you start
+## 12 · Industry Analysis — SWOT addition (2026-06-02)
 
-Don't summarise this whole document. Just confirm you've read it, name current state in one line, ask what to do.
+### What was added
+New **SWOT page** in the Industry Analysis PDF, after Competitive Advantage detail, before Key Uncertainties.
 
-The user speaks Lithuanian + English mixed. Match their language. Terse, technical, no-fluff.
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `models/industry_analysis.py` | New `swot` object in `_CACHEABLE` JSON schema + `_validate_analysis()` defaults |
+| `agents/pdf_industry_analysis.py` | `_swot_page()` + 4 new styles + inserted into `render()` |
+| `pages/report_generator.py` | `max_tokens` 8000 → 9500 (both normal + adversarial paths) |
+
+**SWOT format (buyside analyst style):**
+- `summary` — < 150 words, overall investment read
+- `strengths` / `weaknesses` / `opportunities` / `threats` — each ≤ 200 words, data-backed
+
+**LLM instructions:** build on Porter/CompAdv insights already generated + additional sources. Every claim requires a stat or financial data point.
+
+**PDF layout:** summary text → 2×2 grid: 🟢 S (dark green) · 🔴 W (dark red) · 🔵 O (dark blue) · 🟡 T (dark amber).
+
+**Graceful degradation:** if all swot fields empty (old cached analysis), page is silently skipped.
 
 ---
 
-## 12 · How to greet the user when you start
+## 13 · How to greet the user when you start
 
 Don't summarise this whole document. Just confirm you've read it, name current state in one line, ask what to do.
 
