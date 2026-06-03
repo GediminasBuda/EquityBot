@@ -195,192 +195,201 @@ if not ok:
     st.caption(f"⚠ LLM not configured: {_msg}")
 
 # ── Path C: Exchange-level screening ─────────────────────────────────────────
-# Maps canonical EODHD exchange-symbol-list code → display name.
-# Used when user types the raw code (BUD, XBUD, WAR, etc.) or
-# a natural-language exchange name ("budapest exchange").
-_EXCHANGE_CODE_DISPLAY: dict[str, str] = {
-    "BUD":    "Budapest Stock Exchange",
-    "WAR":    "Warsaw Stock Exchange (GPW)",
-    "PR":     "Prague Stock Exchange",
-    "BUC":    "Bucharest Stock Exchange",
-    "VI":     "Vienna Stock Exchange",
-    "OL":     "Oslo Børs",
-    "HE":     "Nasdaq Helsinki",
-    "ST":     "Nasdaq Stockholm",
-    "CO":     "Nasdaq Copenhagen",
-    "BR":     "Euronext Brussels",
-    "MI":     "Borsa Italiana",
-    "MC":     "BME Madrid",
-    "AS":     "Euronext Amsterdam",
-    "PA":     "Euronext Paris",
-    "SW":     "SIX Swiss Exchange",
-    "XETRA":  "Xetra (Germany)",
-    "LSE":    "London Stock Exchange",
-    "TO":     "TSX Toronto",
-    "AU":     "ASX Australia",
-    "TSE":    "Tokyo Stock Exchange",
-    "KO":     "KOSPI Korea",
-    "HK":     "HKEX Hong Kong",
-    "SHG":    "Shanghai Stock Exchange",
-    "SHE":    "Shenzhen Stock Exchange",
-    "NSE":    "NSE India",
-    "BSE":    "BSE India",
-    "SA":     "B3 São Paulo",
-    "MX":     "BMV Mexico",
-    "JSE":    "JSE Johannesburg",
-    "IS":     "Borsa Istanbul",
-    "TLV":    "TASE Tel Aviv",
-    "NYSE":   "New York Stock Exchange",
-    "NASDAQ": "Nasdaq",
+
+# 2-letter codes that are also common English words — skip in auto-detection.
+# These exchanges are still reachable via NL phrases or explicit aliases below.
+_EXCH_CODE_STOPWORDS: set[str] = {
+    "TO", "AS", "CO", "IN", "BY", "OR", "ON", "US", "AN", "NO",
+    "IT", "IS", "BE", "DO", "AT", "GO", "UP", "IF", "SO", "MY",
+    "HE", "ST", "PA", "PR", "BR",
 }
 
-# Maps any known code/alias (uppercase) → canonical EODHD list code
-_EXCH_CODE_ALIASES: dict[str, str] = {
-    # Budapest
-    "BUD": "BUD", "XBUD": "BUD",
+# Unambiguous human aliases → canonical EODHD code (for codes in the stopword list).
+# These are checked BEFORE stopword filtering so they always work.
+_EXCH_MANUAL_ALIASES: dict[str, str] = {
+    # Athens
+    "ATHEX": "AT", "XATH": "AT",
+    # Borsa Istanbul
+    "BIST": "IS", "XIST": "IS",
     # Warsaw
-    "WAR": "WAR", "XWAR": "WAR", "GPW": "WAR",
+    "GPW": "WAR", "XWAR": "WAR",
+    # Tel Aviv
+    "TASE": "TLV", "XTAE": "TLV",
     # Prague
-    "PR": "PR", "XPR": "PR", "PSE": "PR",
-    # Bucharest
-    "BUC": "BUC", "XBUC": "BUC", "BVB": "BUC",
-    # Vienna
-    "VI": "VI", "XVI": "VI",
-    # Oslo
-    "OL": "OL", "XOSL": "OL",
-    # Helsinki
-    "HE": "HE", "XHEL": "HE",
+    "PSE": "PR", "XPR": "PR",
     # Stockholm
-    "ST": "ST", "XSTO": "ST",
+    "XSTO": "ST",
+    # Helsinki
+    "XHEL": "HE",
     # Copenhagen
-    "CO": "CO", "XCSE": "CO",
+    "XCSE": "CO",
+    # Vienna
+    "XVI": "VI",
     # Brussels
-    "BR": "BR", "XBRU": "BR",
-    # Milan
-    "MI": "MI", "XMIL": "MI",
-    # Madrid
-    "MC": "MC", "XMAD": "MC", "BME": "MC",
-    # Amsterdam
-    "AS": "AS", "XAMS": "AS",
+    "XBRU": "BR",
     # Paris
-    "PA": "PA", "XPAR": "PA",
-    # Switzerland
-    "SW": "SW", "XSWX": "SW", "SIX": "SW",
-    # Germany
-    "XETRA": "XETRA",
+    "XPAR": "PA",
+    # Toronto
+    "TSX": "TO", "XTSE": "TO",
+    # ASX
+    "XASX": "AU", "ASX": "AU",
     # London
-    "LSE": "LSE", "XLON": "LSE",
-    # Canada
-    "TO": "TO", "XTSE": "TO", "TSX": "TO",
-    # Australia
-    "AU": "AU", "XASX": "AU", "ASX": "AU",
-    # Japan
-    "TSE": "TSE", "XTKS": "TSE",
-    # Korea
-    "KO": "KO", "XKOS": "KO", "KOSPI": "KO",
+    "XLON": "LSE",
     # Hong Kong
-    "HK": "HK", "XHKG": "HK", "HKEX": "HK",
-    # China
-    "SHG": "SHG", "SSE": "SHG",
-    "SHE": "SHE", "SZSE": "SHE",
-    # India
-    "NSE": "NSE", "BSE": "BSE",
+    "XHKG": "HK", "HKEX": "HK",
+    # KOSPI
+    "KOSPI": "KO", "XKOS": "KO",
+    # Tokyo
+    "XTKS": "TSE",
+    # Shanghai
+    "SSE": "SHG",
+    # Shenzhen
+    "SZSE": "SHE",
     # Brazil
-    "SA": "SA", "BVMF": "SA",
+    "BVMF": "SA",
     # Mexico
-    "MX": "MX", "BMV": "MX",
-    # South Africa
-    "JSE": "JSE",
-    # Turkey
-    "IS": "IS", "BIST": "IS",
-    # Israel
-    "TLV": "TLV", "XTAE": "TLV", "TASE": "TLV",
-    # US
-    "NYSE": "NYSE", "NASDAQ": "NASDAQ", "AMEX": "AMEX",
+    "BMV": "MX",
+    # Bucharest
+    "BVB": "BUC", "XBUC": "BUC",
+    # Switzerland
+    "SIX": "SW", "XSWX": "SW",
+    # Milan
+    "XMIL": "MI",
+    # Madrid
+    "BME": "MC", "XMAD": "MC",
+    # Amsterdam
+    "XAMS": "AS",
+    # Oslo
+    "XOSL": "OL",
+    # NSE India
+    "XNSE": "NSE",
 }
 
-# Natural-language phrases → EODHD canonical code.
-# Only exchanges NOT already covered by Path A index keywords.
-_EXCHANGE_NL_MAP: list[tuple[list[str], str]] = [
-    (["budapest", "hungarian stocks", "bse budapest"],           "BUD"),
-    (["bucharest", "romanian stocks", "bvb"],                    "BUC"),
-    (["prague", "czech stocks", "pse prague"],                   "PR"),
-    (["zagreb", "croatian stocks"],                              "ZSE"),
-    (["vilnius", "lithuanian stocks", "nasdaq vilnius"],         "VS"),
-    (["tallinn", "estonian stocks", "nasdaq tallinn"],           "TL"),
-    (["riga", "latvian stocks", "nasdaq riga"],                  "RG"),
-    (["belgrade", "serbian stocks"],                             "BELEX"),
-    (["ljubljana", "slovenian stocks"],                          "LJSE"),
-    (["sofia", "bulgarian stocks"],                              "BSE"),
-    (["athens", "greek stocks", "athex"],                        "AT"),
-    (["lisbon", "portuguese stocks"],                            "LS"),
-    (["dublin", "irish stocks"],                                 "IR"),
-    (["luxembourg stocks"],                                      "LU"),
-    (["cairo", "egyptian stocks", "egx"],                        "CA"),
-    (["casablanca", "moroccan stocks"],                          "CS"),
-    (["lagos", "nigerian stocks"],                               "XNSA"),
-    (["nairobi", "kenyan stocks"],                               "KQ"),
-    (["karachi", "pakistani stocks"],                            "KAR"),
-    (["colombo", "sri lanka stocks"],                            "CSE"),
-    (["dhaka", "bangladeshi stocks"],                            "DSE"),
-    (["ho chi minh", "vietnamese stocks", "hose"],               "HOSE"),
-    (["bangkok", "thai stocks", "set"],                          "SET"),
-    (["kuala lumpur", "malaysian stocks", "bursa"],              "KLSE"),
-    (["singapore stocks", "sgx"],                                "SES"),
-    (["manila", "philippine stocks", "pse"],                     "PSE"),
-    (["new zealand stocks", "nzx"],                              "NZ"),
-    (["toronto", "tsx exchange", "canada exchange"],             "TO"),
-    (["oslo", "norwegian stocks"],                               "OL"),
-    (["helsinki", "finnish stocks"],                             "HE"),
-    (["stockholm", "swedish stocks"],                            "ST"),
-    (["copenhagen", "danish stocks"],                            "CO"),
-    (["vienna", "austrian stocks"],                              "VI"),
-    (["zurich", "swiss stocks", "six exchange"],                 "SW"),
-    (["milan", "italian stocks", "borsa italiana"],              "MI"),
-    (["madrid", "spanish stocks", "bolsa madrid"],               "MC"),
-    (["amsterdam", "dutch stocks", "euronext amsterdam"],        "AS"),
-    (["brussels", "belgian stocks", "euronext brussels"],        "BR"),
-    (["paris exchange", "euronext paris"],                       "PA"),
-    (["frankfurt exchange", "german exchange", "xetra exchange"],"XETRA"),
-    (["london exchange", "lse exchange", "british stocks"],      "LSE"),
-    (["istanbul", "turkish stocks", "borsa istanbul"],           "IS"),
-    (["tel aviv", "israeli stocks"],                             "TLV"),
-    (["johannesburg", "south african stocks"],                   "JSE"),
-    (["jakarta", "indonesian stocks"],                           "HK"),
-    (["shanghai exchange"],                                      "SHG"),
-    (["shenzhen exchange"],                                      "SHE"),
-    (["hong kong exchange"],                                     "HK"),
-    (["tokyo exchange", "japanese stocks"],                      "TSE"),
-    (["seoul", "korean stocks", "kospi exchange"],               "KO"),
-    (["mumbai", "indian stocks", "nse india", "bse india"],      "NSE"),
-    (["riyadh", "saudi stocks", "tadawul"],                      "XSAU"),
-    (["kuwait stocks", "boursa kuwait"],                         "XKUW"),
-    (["abu dhabi stocks", "adx"],                                "XADS"),
-    (["dubai stocks", "dfm"],                                    "DFM"),
-    (["doha", "qatar stocks"],                                   "DSMD"),
-    (["muscat", "omani stocks"],                                 "MSM"),
-    (["amman", "jordanian stocks"],                              "XAMM"),
-    (["beirut", "lebanese stocks"],                              "XBEY"),
+# NL phrases → EODHD code, for exchanges whose codes are in the stopword list.
+_EXCH_NL_PHRASES: list[tuple[list[str], str]] = [
+    (["athens", "greek stocks", "athex", "greek exchange"],            "AT"),
+    (["istanbul", "turkish stocks", "borsa istanbul", "bist"],        "IS"),
+    (["oslo", "norwegian stocks"],                                     "OL"),
+    (["helsinki", "finnish stocks"],                                   "HE"),
+    (["stockholm", "swedish stocks"],                                  "ST"),
+    (["copenhagen", "danish stocks"],                                  "CO"),
+    (["vienna", "austrian stocks"],                                    "VI"),
+    (["brussels", "belgian stocks", "euronext brussels"],              "BR"),
+    (["paris exchange", "euronext paris", "french exchange"],          "PA"),
+    (["prague", "czech stocks"],                                       "PR"),
+    (["amsterdam", "dutch stocks", "euronext amsterdam"],              "AS"),
+    (["london exchange", "lse exchange", "british stocks"],            "LSE"),
+    (["toronto", "tsx exchange", "canada exchange"],                   "TO"),
+    (["tel aviv", "israeli stocks", "tase"],                           "TLV"),
+    (["bucharest", "romanian stocks"],                                 "BUC"),
+    (["budapest", "hungarian stocks"],                                 "BUD"),
+    (["warsaw", "polish stocks", "gpw"],                               "WAR"),
+    (["zagreb", "croatian stocks"],                                    "ZSE"),
+    (["vilnius", "lithuanian stocks"],                                 "VS"),
+    (["tallinn", "estonian stocks"],                                   "TL"),
+    (["riga", "latvian stocks"],                                       "RG"),
+    (["belgrade", "serbian stocks"],                                   "BELEX"),
+    (["ljubljana", "slovenian stocks"],                                "LJSE"),
+    (["sofia", "bulgarian stocks"],                                    "SOFIX"),
+    (["lisbon", "portuguese stocks"],                                  "LS"),
+    (["dublin", "irish stocks"],                                       "IR"),
+    (["cairo", "egyptian stocks", "egx"],                              "CA"),
+    (["casablanca", "moroccan stocks"],                                "CS"),
+    (["lagos", "nigerian stocks"],                                     "XNSA"),
+    (["nairobi", "kenyan stocks"],                                     "KQ"),
+    (["karachi", "pakistani stocks"],                                  "KAR"),
+    (["colombo", "sri lanka"],                                         "CSE"),
+    (["dhaka", "bangladeshi stocks"],                                  "DSE"),
+    (["ho chi minh", "vietnamese stocks"],                             "HOSE"),
+    (["bangkok", "thai stocks"],                                       "SET"),
+    (["kuala lumpur", "malaysian stocks", "bursa"],                    "KLSE"),
+    (["singapore stocks", "sgx"],                                      "SES"),
+    (["manila", "philippine stocks"],                                  "PSE"),
+    (["new zealand stocks", "nzx"],                                    "NZ"),
+    (["johannesburg", "south african stocks"],                         "JSE"),
+    (["jakarta", "indonesian stocks"],                                 "JKSE"),
+    (["shanghai exchange"],                                            "SHG"),
+    (["shenzhen exchange"],                                            "SHE"),
+    (["hong kong exchange"],                                           "HK"),
+    (["tokyo exchange", "japanese stocks"],                            "TSE"),
+    (["seoul", "korean stocks", "kospi exchange"],                     "KO"),
+    (["mumbai", "indian stocks"],                                      "NSE"),
+    (["riyadh", "saudi stocks", "tadawul"],                            "XSAU"),
+    (["dubai stocks", "dfm"],                                          "DFM"),
+    (["doha", "qatar stocks"],                                         "DSMD"),
+    (["abu dhabi stocks", "adx"],                                      "XADS"),
+    (["kuwait stocks"],                                                "XKUW"),
+    (["muscat", "omani stocks"],                                       "MSM"),
+    (["amman", "jordanian stocks"],                                    "XAMM"),
 ]
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _fetch_all_eodhd_exchanges() -> dict[str, str]:
+    """
+    Fetch all exchanges from EODHD /api/exchanges-list.
+    Returns {CODE: "Name · Country"} dict. Cached 24h.
+    """
+    if not _SCR_EODHD_KEY:
+        return {}
+    try:
+        r = _scr_requests.get(
+            "https://eodhistoricaldata.com/api/exchanges-list",
+            params={"api_token": _SCR_EODHD_KEY, "fmt": "json"},
+            headers=_SCR_HEADERS,
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return {}
+        data = r.json()
+        if not isinstance(data, list):
+            return {}
+        result: dict[str, str] = {}
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            code = (item.get("Code") or "").strip().upper()
+            name = item.get("Name") or ""
+            country = item.get("Country") or ""
+            if code:
+                result[code] = f"{name} · {country}" if country else name
+        return result
+    except Exception:
+        return {}
 
 
 def _detect_exchange_query(q: str) -> tuple[str, str] | None:
     """
     Return (eodhd_exchange_list_code, display_name) for Path C.
-    Checks (1) exact/word exchange code match, then (2) NL phrase match.
-    Only fires if Path A (index query) didn't already match.
+    Priority: (1) manual alias, (2) live EODHD code (skip stopwords), (3) NL phrase.
     """
-    # 1. Direct code: query contains an uppercase EODHD exchange code word
-    for word in q.strip().upper().split():
-        if word in _EXCH_CODE_ALIASES:
-            canonical = _EXCH_CODE_ALIASES[word]
-            return canonical, _EXCHANGE_CODE_DISPLAY.get(canonical, canonical)
+    all_exchanges = _fetch_all_eodhd_exchanges()
 
-    # 2. Natural-language phrases
+    words = q.strip().upper().split()
+
+    # 1. Manual aliases — unambiguous even for stopword codes
+    for word in words:
+        if word.isdigit():
+            continue
+        if word in _EXCH_MANUAL_ALIASES:
+            code = _EXCH_MANUAL_ALIASES[word]
+            display = all_exchanges.get(code, code)
+            return code, display
+
+    # 2. Live EODHD code lookup (skip stopwords + numbers)
+    if all_exchanges:
+        for word in words:
+            if word in _EXCH_CODE_STOPWORDS or word.isdigit():
+                continue
+            if word in all_exchanges:
+                return word, all_exchanges[word]
+
+    # 3. NL phrases (for stopword-code exchanges like AT, IS, ST…)
     q_low = q.lower()
-    for keywords, code in _EXCHANGE_NL_MAP:
+    for keywords, code in _EXCH_NL_PHRASES:
         if any(kw in q_low for kw in keywords):
-            return code, _EXCHANGE_CODE_DISPLAY.get(code, code)
+            display = all_exchanges.get(code, code)
+            return code, display
 
     return None
 
