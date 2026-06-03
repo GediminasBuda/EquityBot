@@ -264,6 +264,17 @@ _INDEX_QUERY_MAP: list[tuple[list[str], str, str]] = [
     (["hang seng"],                       "^HSI",      "Hang Seng"),
     (["kospi"],                           "^KS11",     "KOSPI"),
     (["stoxx 50", "stoxx50", "euro stoxx"], "^STOXX50E", "Euro Stoxx 50"),
+    # Emerging markets
+    (["ibovespa", "ibov", "bovespa", "brazil", "b3", "são paulo", "sao paulo", "san paulo"], "^BVSP", "IBOVESPA · B3 São Paulo"),
+    (["ipc mexico", "bmv", "mexico exchange"],  "^MXX",  "IPC · BMV Mexico"),
+    (["istanbul", "bist", "turkey exchange"],    "^XU100", "BIST 100 · Istanbul"),
+    (["sensex", "bse india"],                   "^BSESN", "BSE Sensex · India"),
+    (["nifty", "nse india"],                    "^NSEI",  "Nifty 50 · NSE India"),
+    (["tasi", "tadawul", "saudi"],              "^TASI.SR", "TASI · Saudi Arabia"),
+    (["tel aviv", "ta-35", "ta35", "israel exchange"], "^TA35.TA", "TA-35 · Tel Aviv"),
+    (["johannesburg", "jse", "south africa exchange"], "^J203.JO", "JSE Top 40 · South Africa"),
+    (["jakarta", "idx", "indonesia exchange"],  "^JKSE",  "IDX Composite · Indonesia"),
+    (["warsaw", "wig20", "wig 20", "gpw"],      "^WIG20",  "WIG 20 · Warsaw"),
 ]
 
 
@@ -429,52 +440,6 @@ if search_clicked and query.strip():
                 intent = {
                     "title": f"{_idx_name} · {len(rows)} companies",
                     "notes": "",
-                    "filters": [], "signals": [], "sort": None, "limit": len(rows),
-                }
-
-            # ── Path A2: whole-exchange query → bulk_last_day (sorted by volume)
-            elif _detect_exchange_query(query.strip()):
-                _exch_code2, _exch_name2 = _detect_exchange_query(query.strip())
-                import re as _re_lim2
-                _lim2 = int(_re_lim2.search(r'\b(\d+)\b', query).group(1)) if _re_lim2.search(r'\b(\d+)\b', query) else 20
-                _lim2 = min(_lim2, 100)
-                st.write(f"📡 Fetching **{_exch_name2}** last-day EOD data from EODHD…")
-                try:
-                    _bulk_r = _scr_requests.get(
-                        f"https://eodhistoricaldata.com/api/eod/bulk_last_day/{_exch_code2}",
-                        params={"api_token": _SCR_EODHD_KEY, "fmt": "json", "type": "eod"},
-                        headers=_SCR_HEADERS,
-                        timeout=30,
-                    )
-                    _bulk_data = _bulk_r.json() if _bulk_r.status_code == 200 else []
-                except Exception:
-                    _bulk_data = []
-
-                if not isinstance(_bulk_data, list) or not _bulk_data:
-                    st.warning(f"No data returned for **{_exch_name2}** (code: `{_exch_code2}`). EODHD may not support this exchange in bulk EOD.")
-                    _status.update(label="⚠ No data", state="error", expanded=True)
-                    st.stop()
-
-                # Sort by volume descending (best liquidity proxy without market cap)
-                _bulk_data.sort(key=lambda x: x.get("volume") or 0, reverse=True)
-                rows = []
-                for _bd in _bulk_data[:_lim2]:
-                    _c2 = _bd.get("code", "")
-                    rows.append({
-                        "code": _c2,
-                        "exchange": _exch_code2,
-                        "name": _bd.get("name", "") or _c2,
-                        "sector": "",
-                        "market_capitalization": None,
-                        "earnings_share": None,
-                        "dividend_yield": None,
-                        "adjusted_close": _bd.get("adjusted_close") or _bd.get("close"),
-                        "change_p": _bd.get("change_p"),
-                        "_yf_ticker": _to_yf(_c2, _exch_code2),
-                    })
-                intent = {
-                    "title": f"{_exch_name2} · top {len(rows)} by volume",
-                    "notes": "Sorted by last-day volume. Sector/MCap/DivYield not available for whole-exchange queries.",
                     "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
 
