@@ -291,22 +291,36 @@ from config import EODHD_API_KEY as _SCR_EODHD_KEY, REQUEST_HEADERS as _SCR_HEAD
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _fetch_exchange_names(exch_code: str) -> dict[str, str]:
-    """Fetch code→name map for an exchange from EODHD exchange-symbol-list."""
+    """Fetch code→name map from EODHD exchange-symbol-list. Tries fallback codes."""
     if not _SCR_EODHD_KEY or not exch_code:
         return {}
-    try:
-        r = _scr_requests.get(
-            f"https://eodhistoricaldata.com/api/exchange-symbol-list/{exch_code}",
-            params={"api_token": _SCR_EODHD_KEY, "fmt": "json"},
-            headers=_SCR_HEADERS,
-            timeout=20,
-        )
-        if r.status_code != 200:
-            return {}
-        return {item["Code"]: item.get("Name", "") for item in r.json()
-                if isinstance(item, dict) and item.get("Code")}
-    except Exception:
-        return {}
+    # Some EODHD exchange-symbol-list codes differ from screener/real-time codes
+    _FALLBACKS: dict[str, list[str]] = {
+        "IS":  ["IS", "BIST", "IST"],
+        "JSE": ["JSE", "JO"],
+        "SA":  ["SA", "BOVESPA"],
+        "WAR": ["WAR", "WA"],
+        "MX":  ["MX", "BMV"],
+    }
+    candidates = _FALLBACKS.get(exch_code.upper(), [exch_code])
+    for code in candidates:
+        try:
+            r = _scr_requests.get(
+                f"https://eodhistoricaldata.com/api/exchange-symbol-list/{code}",
+                params={"api_token": _SCR_EODHD_KEY, "fmt": "json"},
+                headers=_SCR_HEADERS,
+                timeout=20,
+            )
+            if r.status_code != 200:
+                continue
+            data = r.json()
+            if not isinstance(data, list) or not data:
+                continue
+            return {item["Code"]: item.get("Name", "") for item in data
+                    if isinstance(item, dict) and item.get("Code")}
+        except Exception:
+            continue
+    return {}
 
 
 @st.cache_data(ttl=300, show_spinner=False)
