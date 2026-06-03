@@ -198,7 +198,7 @@ if not ok:
 # Exchange-level queries: keywords → (EODHD exchange code, display name)
 # Used by Path A2 to run the screener directly for a whole exchange.
 _EXCHANGE_QUERY_MAP: list[tuple[list[str], str, str]] = [
-    (["brazil", "bovespa", "b3", "são paulo", "sao paulo", "sa exchange"], "SA", "B3 · São Paulo"),
+    (["brazil", "bovespa", "b3", "são paulo", "sao paulo", "san paulo", "sa exchange", "b3 exchange"], "SA", "B3 · São Paulo"),
     (["mexico", "bmv", "bolsa mexicana"],                                  "MX", "BMV · Mexico"),
     (["south africa", "johannesburg", "jse"],                              "JSE", "JSE · Johannesburg"),
     (["turkey", "istanbul", "bist"],                                       "IS", "Borsa Istanbul"),
@@ -432,41 +432,49 @@ if search_clicked and query.strip():
                     "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
 
-            # ── Path A2: whole-exchange query → exchange-symbol-list + bulk prices
+            # ── Path A2: whole-exchange query → bulk_last_day (sorted by volume)
             elif _detect_exchange_query(query.strip()):
                 _exch_code2, _exch_name2 = _detect_exchange_query(query.strip())
                 import re as _re_lim2
                 _lim2 = int(_re_lim2.search(r'\b(\d+)\b', query).group(1)) if _re_lim2.search(r'\b(\d+)\b', query) else 20
                 _lim2 = min(_lim2, 100)
-                st.write(f"📡 Fetching **{_exch_name2}** symbol list from EODHD…")
-                _name_map2 = _fetch_exchange_names(_exch_code2)
-                if not _name_map2:
-                    st.warning(f"Could not fetch symbol list for **{_exch_name2}**. Exchange code: `{_exch_code2}`.")
+                st.write(f"📡 Fetching **{_exch_name2}** last-day EOD data from EODHD…")
+                try:
+                    _bulk_r = _scr_requests.get(
+                        f"https://eodhistoricaldata.com/api/eod/bulk_last_day/{_exch_code2}",
+                        params={"api_token": _SCR_EODHD_KEY, "fmt": "json", "type": "eod"},
+                        headers=_SCR_HEADERS,
+                        timeout=30,
+                    )
+                    _bulk_data = _bulk_r.json() if _bulk_r.status_code == 200 else []
+                except Exception:
+                    _bulk_data = []
+
+                if not isinstance(_bulk_data, list) or not _bulk_data:
+                    st.warning(f"No data returned for **{_exch_name2}** (code: `{_exch_code2}`). EODHD may not support this exchange in bulk EOD.")
                     _status.update(label="⚠ No data", state="error", expanded=True)
                     st.stop()
-                # Take first N codes (EODHD returns them roughly by market cap)
-                _codes2 = list(_name_map2.keys())[:_lim2]
-                _eodhd_tix2 = tuple(f"{c}.{_exch_code2}" for c in _codes2)
-                st.write(f"📡 Fetching prices for {len(_codes2)} tickers…")
-                _price_map2 = _fetch_bulk_prices(_eodhd_tix2)
+
+                # Sort by volume descending (best liquidity proxy without market cap)
+                _bulk_data.sort(key=lambda x: x.get("volume") or 0, reverse=True)
                 rows = []
-                for _c2 in _codes2:
-                    _pd2 = _price_map2.get(f"{_c2}.{_exch_code2}") or _price_map2.get(_c2) or {}
+                for _bd in _bulk_data[:_lim2]:
+                    _c2 = _bd.get("code", "")
                     rows.append({
                         "code": _c2,
                         "exchange": _exch_code2,
-                        "name": _name_map2.get(_c2, ""),
+                        "name": _bd.get("name", "") or _c2,
                         "sector": "",
                         "market_capitalization": None,
                         "earnings_share": None,
                         "dividend_yield": None,
-                        "adjusted_close": _pd2.get("close") or _pd2.get("adjusted_close"),
-                        "change_p": _pd2.get("change_p"),
+                        "adjusted_close": _bd.get("adjusted_close") or _bd.get("close"),
+                        "change_p": _bd.get("change_p"),
                         "_yf_ticker": _to_yf(_c2, _exch_code2),
                     })
                 intent = {
-                    "title": f"{_exch_name2} · {len(rows)} companies",
-                    "notes": "Sector/MCap/DivYield not available for whole-exchange queries.",
+                    "title": f"{_exch_name2} · top {len(rows)} by volume",
+                    "notes": "Sorted by last-day volume. Sector/MCap/DivYield not available for whole-exchange queries.",
                     "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
 
