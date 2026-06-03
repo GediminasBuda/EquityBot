@@ -357,10 +357,10 @@ if search_clicked and query.strip():
                 _limit = int(_lim_match.group(1)) if _lim_match else 40
                 _tickers = _tickers[:_limit]
 
-                # Enrich: exchange names + bulk prices (2 API calls total)
+                # Enrich: exchange names + bulk prices + screener fundamentals
                 _sfx = _tickers[0].rsplit(".", 1)[-1] if "." in _tickers[0] else "US"
                 _exch_code = _YF_SUFFIX_TO_EXCH.get(_sfx.upper(), _sfx)
-                st.write(f"📡 Fetching names & prices from EODHD ({_exch_code})…")
+                st.write(f"📡 Fetching names, prices & fundamentals from EODHD ({_exch_code})…")
                 _name_map  = _fetch_exchange_names(_exch_code)
                 # Build EODHD-format tickers for bulk real-time
                 _eodhd_tix = tuple(
@@ -369,7 +369,34 @@ if search_clicked and query.strip():
                 )
                 _price_map = _fetch_bulk_prices(_eodhd_tix)
 
+                # Screener call to get sector / market_cap / dividend_yield for
+                # the whole exchange in one request, then filter to constituents.
+                _fund_map: dict[str, dict] = {}
+                try:
+                    from data_sources.eodhd_screener_api import run_screener as _run_scr
+                    _scr_rows = _run_scr(
+                        filters=[["exchange", "=", _exch_code]],
+                        sort="market_capitalization.desc",
+                        limit=100,
+                    )
+                    _constituent_codes = {t.rsplit(".", 1)[0].upper() for t in _tickers}
+                    for _sr in _scr_rows:
+                        _c = (_sr.get("code") or "").upper()
+                        if _c in _constituent_codes:
+                            _fund_map[_c] = _sr
+                except Exception:
+                    pass  # fundamentals stay empty if screener call fails
+
                 rows = _constituents_to_rows(_tickers, _name_map, _price_map)
+                # Merge fundamentals into rows
+                for _row in rows:
+                    _fd = _fund_map.get(_row["code"].upper()) or {}
+                    if _fd.get("sector"):
+                        _row["sector"] = _fd["sector"]
+                    if _fd.get("market_capitalization") is not None:
+                        _row["market_capitalization"] = _fd["market_capitalization"]
+                    if _fd.get("dividend_yield") is not None:
+                        _row["dividend_yield"] = _fd["dividend_yield"]
                 intent = {
                     "title": f"{_idx_name} · {len(rows)} companies",
                     "notes": "",
