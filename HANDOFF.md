@@ -1,6 +1,6 @@
 # HANDOFF — Session Continuation Document
 
-**Last updated:** 2026-06-02 (session 4)  
+**Last updated:** 2026-06-03 (session 5)  
 **Author:** Claude session, written for the next one.
 
 If you're a Claude agent that just opened this repo on a fresh machine, **read this file end-to-end before touching anything**. Then read `CLAUDE.md` for broader project documentation.
@@ -201,7 +201,8 @@ Anonymous HTTP GET returns **only 5 rows** per ticker. Don't try to make the scr
 
 * **EU insider data:** EODHD returns 0 rows for EU exchanges. insidertrades.info capped at 5 anonymous rows. No decision yet on how to improve EU coverage (TradingView scraper / per-country regulators / leave as-is).
 * **Adversarial mode:** Only implemented for Overview and Gravity. Fisher does not have adversarial support.
-* **Screener page (uncommitted):** See section 11 below — NL screener is built but not yet committed.
+* **Screener emerging markets:** ConstituentResolver depends on Wikipedia. If Wikipedia page format changes or is unavailable, Path A fails with a clear error. No fallback for exchanges without a Wikipedia constituent list.
+* **Screener Path B (NL):** Still global only — no exchange/sector filtering. MCap values from EODHD screener are in local currency, not USD — global sort by market_cap is unreliable.
 
 ---
 
@@ -219,8 +220,8 @@ Anonymous HTTP GET returns **only 5 rows** per ticker. Don't try to make the scr
 **Path A — Known index query** (detected by `_detect_index_query()` in `screener.py`):
 - Triggered by: "DAX 40", "CAC 40", "FTSE 100", "OMX Helsinki", "S&P 500", "WIG 20", etc.
 - Uses `ConstituentResolver` → Wikipedia scrape → real tickers with correct exchange suffixes
-- Then enriches with 2 EODHD calls: `_fetch_exchange_names()` (symbol list → names) + `_fetch_bulk_prices()` (real-time prices + change%)
-- Table shows: Ticker, Name, Price, Chg% (green/red), Exchange
+- Enriches with: `_fetch_exchange_names()` (names) + `_fetch_bulk_prices()` (prices) + `_fetch_fundamentals_batch()` (sector/mcap/div yield, 24h cache)
+- Table shows: Ticker, Name, Sector, MCap, Div Yield, Price, Chg%, Exchange
 - If ConstituentResolver returns empty (Wikipedia scrape failed) → clear error message, no "No results" spinner
 
 **Path B — General NL query** (everything else):
@@ -232,7 +233,10 @@ Anonymous HTTP GET returns **only 5 rows** per ticker. Don't try to make the scr
 ```
 ✅ "top 20 DAX 40 companies"          → Path A, real DAX tickers + names + prices
 ✅ "CAC 40 largest stocks"             → Path A
-✅ "OMX Helsinki 25"                   → Path A
+✅ "OMX Helsinki 25"                   → Path A, with sector/MCap/DivYield
+✅ "top 20 brazil" / "ibovespa"        → Path A (IBOVESPA ^BVSP)
+✅ "istanbul" / "bist"                 → Path A (BIST 100 ^XU100)
+✅ "sensex" / "nifty"                  → Path A (BSE/NSE India)
 ✅ "dividend yield above 4%"           → Path B, numeric filter works
 ✅ "large cap profitable companies"    → Path B, market_cap + earnings_share filters
 ❌ "German banks div yield > 4%"       → Path B, exchange+sector stripped, only div filter kept (global results)
@@ -249,7 +253,62 @@ Report Generator search now detects Baltic ticker patterns (APG1L, APG1L.VS etc.
 
 ---
 
-## 12 · Industry Analysis — SWOT addition (2026-06-02)
+## 12 · Session 5 changes (2026-06-03)
+
+### Ticker search fixes (Report Generator + My Portfolio)
+
+**Baltic phantom ticker bug fixed:**
+- `_smart_search()` in `report_generator.py`: the "no suffix" Baltic branch now requires `any(c.isalpha() for c in _b_code)`. Purely numeric codes like `6752` no longer generate phantom `.VS/.TL/.RG` suggestions.
+- Same fix applied to `_ticker_search()` in `my_portfolio.py`.
+
+**Japan company name in direct code entry:**
+- Layer 1 (pattern match for `\d{3,4}(\.T)?`) now looks up the company name from `get_japan_tickers()` cache before building the label. `6752` → `🇯🇵 6752.T  Panasonic Holdings Corporation · TSE`.
+- Same fix in both `report_generator.py` and `my_portfolio.py`.
+
+**Baltic name search added to My Portfolio:**
+- `_ticker_search()` now calls `search_baltic()` (same as Report Generator). Searching "apranga" returns Baltic results.
+
+### My Portfolio — Baltic + Japan data fixes
+
+**Snapshot / history / earnings routing:**
+- `_fetch_snapshot`, `_fetch_history`, `_next_earnings` in `my_portfolio.py` now route `.VS/.TL/.RG` tickers to yfinance helpers (same as `.T` Japan). EODHD returns no reliable data for most Baltic stocks; yfinance does (Yahoo Finance covers Apranga etc.).
+
+**News for Japan/Baltic:**
+- `_fetch_news()` now routes `.T/.VS/.TL/.RG` to `yfinance.Ticker.news` instead of EODHD. Response normalised to `{title, link, date}` shape the renderer expects.
+
+**Chart X-axis labels:**
+- 5y/All periods: `format="%Y"`, `tickCount="year"` — shows `2021 2022 2023…` not months.
+- 6m/YTD/1m periods: `format="%b %Y"`, `tickCount="month"`.
+
+### Screener — index coverage + fundamentals
+
+**Path A fundamentals (sector/MCap/DivYield):**
+- `_fetch_fundamentals_batch(eodhd_tickers)` — new function, `@st.cache_data(ttl=86400)`. Calls `/api/fundamentals/{ticker}` per constituent (no filter param — EODHD `::` filter syntax unreliable). Extracts `General.Sector`, `Highlights.MarketCapitalizationMln`, `Highlights.DividendYield`. 25 tickers ≈ 4s first load, instant on cache hit.
+- Called in Path A after `_constituents_to_rows()` to merge sector/mcap/div_yield into rows.
+- **CRITICAL:** EODHD screener exchange string filter does NOT work (returns empty). Never use it as primary data source. `_fetch_fundamentals_batch` is the correct path.
+
+**Emerging market indices added to `_INDEX_QUERY_MAP`:**
+- IBOVESPA (`^BVSP`) — keywords: `brazil`, `ibovespa`, `b3`, `sao paulo`, `san paulo`, `bovespa`
+- IPC Mexico (`^MXX`), BIST 100 (`^XU100`), BSE Sensex (`^BSESN`), Nifty 50 (`^NSEI`)
+- TASI Saudi (`^TASI.SR`), TA-35 Israel (`^TA35.TA`), JSE Top 40 (`^J203.JO`)
+- IDX Composite Indonesia (`^JKSE`), WIG 20 Poland (`^WIG20`)
+
+**What was tried and failed for whole-exchange queries:**
+- `_exchange_query_map` + exchange-symbol-list: "SA" returned Vietnamese stocks, "IS" returned nothing. Exchange codes differ between real-time API and symbol-list API.
+- `bulk_last_day/{exchange}` endpoint: returned nothing for "SA" (Brazil) and "IS" (Turkey).
+- EODHD screener `exchange=SA` filter: returns empty (string filters unsupported).
+- **Conclusion:** for emerging market exchange queries, ConstituentResolver (Wikipedia) is the only reliable path. Only well-known indices with Wikipedia constituent pages work.
+
+**Checkbox label warning fixed:**
+- `cols[0].checkbox("", ...)` → `cols[0].checkbox("Select", label_visibility="collapsed")`. Streamlit now warns on empty labels.
+
+**Git workflow confirmed:**
+- Always commit and push to `Final-design-V3`. Streamlit Cloud deploys from that branch.
+- `master` branch is irrelevant for deployment.
+
+---
+
+## 13 · Industry Analysis — SWOT addition (2026-06-02)
 
 ### What was added
 New **SWOT page** in the Industry Analysis PDF, after Competitive Advantage detail, before Key Uncertainties.
