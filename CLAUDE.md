@@ -1,9 +1,9 @@
 # Your Humble EquityBot — Agent Handoff Documentation
 
-**Last updated:** 2026-05-11  
+**Last updated:** 2026-06-03  
 **Stack:** Python 3.11 · Streamlit · ReportLab · Claude / GPT-4o · EODHD · yfinance  
-**Deployment:** Streamlit Community Cloud (auto-deploys on push to `master`)  
-**Repo:** https://github.com/martynasusas-ux/EquityBot
+**Deployment:** Streamlit Community Cloud (auto-deploys on push to `Final-design-V3`)  
+**Repo:** https://github.com/GediminasBuda/EquityBot
 
 ---
 
