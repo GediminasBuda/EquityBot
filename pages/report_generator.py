@@ -403,8 +403,23 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
         _jp_ticker = f"{_jp_code}.T"
         if _jp_ticker not in seen:
             seen.add(_jp_ticker)
+            # Try to resolve a company name from the Japan cache
+            try:
+                from data_sources.japan_tickers import get_japan_tickers
+                _jp_name = next(
+                    (item.get("name", "") for item in get_japan_tickers(_RG_EODHD_KEY or "")
+                     if item.get("code", "").zfill(4) == _jp_code),
+                    "",
+                )
+            except Exception:
+                _jp_name = ""
+            _jp_label = (
+                f"🇯🇵 {_jp_ticker:<10}  {_jp_name[:50]}  · TSE"
+                if _jp_name else
+                f"🇯🇵 {_jp_ticker}  · TSE (enter to analyse)"
+            )
             suggestions.insert(0, (
-                f"🇯🇵 {_jp_ticker}  · TSE (enter to analyse)",
+                _jp_label,
                 _jp_ticker,
             ))
 
@@ -455,8 +470,10 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
                         f"{_b_flag} {_b_ticker}  · {_b_name} (enter to analyse)",
                         _b_ticker,
                     ))
-            else:
-                # No exchange suffix — suggest all three Baltic exchanges
+            elif any(c.isalpha() for c in _b_code):
+                # No exchange suffix — suggest all three Baltic exchanges.
+                # Guard: Baltic codes always contain letters (e.g. APG1L).
+                # Purely numeric queries (e.g. "6752") must not generate phantoms.
                 for _b_sfx, (_b_flag, _b_name) in _BALTIC.items():
                     _b_ticker = f"{_b_code}.{_b_sfx}"
                     if _b_ticker not in seen and len(suggestions) < 12:
