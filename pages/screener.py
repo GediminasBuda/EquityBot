@@ -411,69 +411,48 @@ if search_clicked and query.strip():
                 )
                 _price_map = _fetch_bulk_prices(_eodhd_tix)
 
-                # Screener call to get sector / market_cap / dividend_yield for
-                # the whole exchange in one request, then filter to constituents.
-                _fund_map: dict[str, dict] = {}
-                try:
-                    from data_sources.eodhd_screener_api import run_screener as _run_scr
-                    _scr_rows = _run_scr(
-                        filters=[["exchange", "=", _exch_code]],
-                        sort="market_capitalization.desc",
-                        limit=100,
-                    )
-                    _constituent_codes = {t.rsplit(".", 1)[0].upper() for t in _tickers}
-                    for _sr in _scr_rows:
-                        _c = (_sr.get("code") or "").upper()
-                        if _c in _constituent_codes:
-                            _fund_map[_c] = _sr
-                except Exception:
-                    pass  # fundamentals stay empty if screener call fails
-
                 rows = _constituents_to_rows(_tickers, _name_map, _price_map)
-                # Merge fundamentals into rows
-                for _row in rows:
-                    _fd = _fund_map.get(_row["code"].upper()) or {}
-                    if _fd.get("sector"):
-                        _row["sector"] = _fd["sector"]
-                    if _fd.get("market_capitalization") is not None:
-                        _row["market_capitalization"] = _fd["market_capitalization"]
-                    if _fd.get("dividend_yield") is not None:
-                        _row["dividend_yield"] = _fd["dividend_yield"]
                 intent = {
                     "title": f"{_idx_name} · {len(rows)} companies",
                     "notes": "",
                     "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
 
-            # ── Path A2: whole-exchange query → EODHD screener directly
+            # ── Path A2: whole-exchange query → exchange-symbol-list + bulk prices
             elif _detect_exchange_query(query.strip()):
                 _exch_code2, _exch_name2 = _detect_exchange_query(query.strip())
                 import re as _re_lim2
                 _lim2 = int(_re_lim2.search(r'\b(\d+)\b', query).group(1)) if _re_lim2.search(r'\b(\d+)\b', query) else 20
                 _lim2 = min(_lim2, 100)
-                st.write(f"📡 Screener · **{_exch_name2}** · top {_lim2} by market cap…")
-                from data_sources.eodhd_screener_api import run_screener as _run_exch
-                _exch_rows = _run_exch(
-                    filters=[["exchange", "=", _exch_code2]],
-                    sort="market_capitalization.desc",
-                    limit=_lim2,
-                )
-                # Add yf-ticker and change_p from bulk real-time
-                _exch_tix = tuple(
-                    f"{r['code']}.{_exch_code2}" for r in _exch_rows if r.get("code")
-                )
-                _exch_prices = _fetch_bulk_prices(_exch_tix) if _exch_tix else {}
-                for _er in _exch_rows:
-                    _c = _er.get("code", "")
-                    _pd = _exch_prices.get(f"{_c}.{_exch_code2}") or _exch_prices.get(_c) or {}
-                    if _pd.get("close"):
-                        _er["adjusted_close"] = _pd["close"]
-                    _er["change_p"] = _pd.get("change_p")
-                    _er["_yf_ticker"] = _to_yf(_c, _exch_code2)
-                rows = _exch_rows
+                st.write(f"📡 Fetching **{_exch_name2}** symbol list from EODHD…")
+                _name_map2 = _fetch_exchange_names(_exch_code2)
+                if not _name_map2:
+                    st.warning(f"Could not fetch symbol list for **{_exch_name2}**. Exchange code: `{_exch_code2}`.")
+                    _status.update(label="⚠ No data", state="error", expanded=True)
+                    st.stop()
+                # Take first N codes (EODHD returns them roughly by market cap)
+                _codes2 = list(_name_map2.keys())[:_lim2]
+                _eodhd_tix2 = tuple(f"{c}.{_exch_code2}" for c in _codes2)
+                st.write(f"📡 Fetching prices for {len(_codes2)} tickers…")
+                _price_map2 = _fetch_bulk_prices(_eodhd_tix2)
+                rows = []
+                for _c2 in _codes2:
+                    _pd2 = _price_map2.get(f"{_c2}.{_exch_code2}") or _price_map2.get(_c2) or {}
+                    rows.append({
+                        "code": _c2,
+                        "exchange": _exch_code2,
+                        "name": _name_map2.get(_c2, ""),
+                        "sector": "",
+                        "market_capitalization": None,
+                        "earnings_share": None,
+                        "dividend_yield": None,
+                        "adjusted_close": _pd2.get("close") or _pd2.get("adjusted_close"),
+                        "change_p": _pd2.get("change_p"),
+                        "_yf_ticker": _to_yf(_c2, _exch_code2),
+                    })
                 intent = {
-                    "title": f"{_exch_name2} · top {len(rows)} by market cap",
-                    "notes": "",
+                    "title": f"{_exch_name2} · {len(rows)} companies",
+                    "notes": "Sector/MCap/DivYield not available for whole-exchange queries.",
                     "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
 
