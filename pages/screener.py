@@ -334,6 +334,39 @@ def _fetch_exchange_names(exch_code: str) -> dict[str, str]:
     return {}
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def _fetch_fundamentals_batch(eodhd_tickers: tuple[str, ...]) -> dict[str, dict]:
+    """Fetch sector/mcap/div_yield for each ticker. Cached 24h. Returns code→{sector,mcap,div_yield}."""
+    import time as _time
+    out: dict[str, dict] = {}
+    if not _SCR_EODHD_KEY:
+        return out
+    for ticker in eodhd_tickers:
+        try:
+            r = _scr_requests.get(
+                f"https://eodhistoricaldata.com/api/fundamentals/{ticker}",
+                params={"api_token": _SCR_EODHD_KEY, "fmt": "json",
+                        "filter": "General::Sector,Highlights::MarketCapitalizationMln,Highlights::DividendYield"},
+                headers=_SCR_HEADERS,
+                timeout=15,
+            )
+            if r.status_code != 200:
+                continue
+            d = r.json()
+            general    = d.get("General") or {}
+            highlights = d.get("Highlights") or {}
+            mln = highlights.get("MarketCapitalizationMln")
+            out[ticker] = {
+                "sector":   general.get("Sector") or "",
+                "mcap":     float(mln) * 1e6 if mln else None,
+                "div_yield": highlights.get("DividendYield"),
+            }
+            _time.sleep(0.15)
+        except Exception:
+            continue
+    return out
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _fetch_bulk_prices(eodhd_tickers: tuple[str, ...]) -> dict[str, dict]:
     """Bulk real-time price fetch from EODHD. Returns code→{price, change_p}."""
@@ -437,6 +470,20 @@ if search_clicked and query.strip():
                 _price_map = _fetch_bulk_prices(_eodhd_tix)
 
                 rows = _constituents_to_rows(_tickers, _name_map, _price_map)
+
+                # Enrich with sector / market cap / div yield via per-ticker fundamentals
+                st.write(f"📊 Fetching fundamentals for {len(_eodhd_tix)} tickers…")
+                _fund = _fetch_fundamentals_batch(_eodhd_tix)
+                for _row in rows:
+                    _code = _row["code"]
+                    _fd = _fund.get(f"{_code}.{_exch_code}") or _fund.get(_code) or {}
+                    if _fd.get("sector"):
+                        _row["sector"] = _fd["sector"]
+                    if _fd.get("mcap") is not None:
+                        _row["market_capitalization"] = _fd["mcap"]
+                    if _fd.get("div_yield") is not None:
+                        _row["dividend_yield"] = _fd["div_yield"]
+
                 intent = {
                     "title": f"{_idx_name} · {len(rows)} companies",
                     "notes": "",
