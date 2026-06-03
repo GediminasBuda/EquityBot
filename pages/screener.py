@@ -336,7 +336,7 @@ def _fetch_exchange_names(exch_code: str) -> dict[str, str]:
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def _fetch_fundamentals_batch(eodhd_tickers: tuple[str, ...]) -> dict[str, dict]:
-    """Fetch sector/mcap/div_yield for each ticker. Cached 24h. Returns code→{sector,mcap,div_yield}."""
+    """Fetch sector/mcap/div_yield for each ticker. Cached 24h. Returns ticker→{sector,mcap,div_yield}."""
     import time as _time
     out: dict[str, dict] = {}
     if not _SCR_EODHD_KEY:
@@ -345,21 +345,23 @@ def _fetch_fundamentals_batch(eodhd_tickers: tuple[str, ...]) -> dict[str, dict]
         try:
             r = _scr_requests.get(
                 f"https://eodhistoricaldata.com/api/fundamentals/{ticker}",
-                params={"api_token": _SCR_EODHD_KEY, "fmt": "json",
-                        "filter": "General::Sector,Highlights::MarketCapitalizationMln,Highlights::DividendYield"},
+                params={"api_token": _SCR_EODHD_KEY, "fmt": "json"},
                 headers=_SCR_HEADERS,
                 timeout=15,
             )
             if r.status_code != 200:
                 continue
             d = r.json()
+            if not isinstance(d, dict):
+                continue
             general    = d.get("General") or {}
             highlights = d.get("Highlights") or {}
             mln = highlights.get("MarketCapitalizationMln")
+            div = highlights.get("DividendYield")
             out[ticker] = {
-                "sector":   general.get("Sector") or "",
-                "mcap":     float(mln) * 1e6 if mln else None,
-                "div_yield": highlights.get("DividendYield"),
+                "sector":    general.get("Sector") or "",
+                "mcap":      float(mln) * 1e6 if mln not in (None, "None", "") else None,
+                "div_yield": float(div) if div not in (None, "None", "") else None,
             }
             _time.sleep(0.15)
         except Exception:
