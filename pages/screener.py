@@ -298,7 +298,7 @@ def _fetch_exchange_names(exch_code: str) -> dict[str, str]:
     _FALLBACKS: dict[str, list[str]] = {
         "IS":  ["IS", "BIST", "IST"],
         "JSE": ["JSE", "JO"],
-        "SA":  ["SA", "BOVESPA"],
+        "SA":  ["BVMF", "NEO", "SAO", "SA"],   # Brazil B3; plain "SA" returns wrong data
         "WAR": ["WAR", "WA"],
         "MX":  ["MX", "BMV"],
     }
@@ -314,7 +314,7 @@ def _fetch_exchange_names(exch_code: str) -> dict[str, str]:
             if r.status_code != 200:
                 continue
             data = r.json()
-            if not isinstance(data, list) or not data:
+            if not isinstance(data, list) or len(data) < 5:
                 continue
             return {item["Code"]: item.get("Name", "") for item in data
                     if isinstance(item, dict) and item.get("Code")}
@@ -595,7 +595,7 @@ if results:
         is_sel = yf_tick in st.session_state.scr_selected
 
         cols = st.columns(_H)
-        if cols[0].checkbox("", value=is_sel, key=f"scr_chk_{i}_{yf_tick}",
+        if cols[0].checkbox("Select", value=is_sel, key=f"scr_chk_{i}_{yf_tick}",
                             label_visibility="collapsed"):
             st.session_state.scr_selected.add(yf_tick)
         else:
