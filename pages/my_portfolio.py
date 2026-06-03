@@ -813,10 +813,21 @@ def _ticker_search(query: str) -> list[tuple[str, str]]:
         _jp_ticker = f"{_jp_code}.T"
         if _jp_ticker not in seen:
             seen.add(_jp_ticker)
-            out.insert(0, (
-                f"🇯🇵 {_jp_ticker}  · TSE (enter to add)",
-                _jp_ticker,
-            ))
+            try:
+                from data_sources.japan_tickers import get_japan_tickers
+                _jp_name = next(
+                    (item.get("name", "") for item in get_japan_tickers(EODHD_API_KEY or "")
+                     if item.get("code", "").zfill(4) == _jp_code),
+                    "",
+                )
+            except Exception:
+                _jp_name = ""
+            _jp_label = (
+                f"🇯🇵 {_jp_ticker:<10}  {_jp_name[:50]}  · TSE"
+                if _jp_name else
+                f"🇯🇵 {_jp_ticker}  · TSE (enter to add)"
+            )
+            out.insert(0, (_jp_label, _jp_ticker))
 
     # ── Layer 2b: Japan seed / cache search ──────────────────────────────────
     try:
@@ -855,6 +866,43 @@ def _ticker_search(query: str) -> list[tuple[str, str]]:
                     break
         except Exception:
             pass
+
+    # ── Baltic direct-entry ───────────────────────────────────────────────────
+    _BALTIC_PF = {"VS": ("🇱🇹", "NASDAQ Vilnius"), "TL": ("🇪🇪", "NASDAQ Tallinn"), "RG": ("🇱🇻", "NASDAQ Riga")}
+    _BALTIC_ALIASES_PF = {"VSE": "VS", "VLN": "VS", "TAL": "TL", "RIG": "RG"}
+    _q_raw = q.strip()
+    _q_norm = _re_pf.sub(r':([A-Z]+)$', r'.\1', _q_raw.upper())
+    _is_ticker_query = bool(_q_raw == _q_raw.upper() and " " not in _q_raw)
+    if _is_ticker_query:
+        _baltic_match = _re_pf.match(r'^([A-Z0-9]{2,6})(\.(?:VS|TL|RG|VSE|VLN|TAL|RIG))?$', _q_norm)
+        if _baltic_match:
+            _b_code = _baltic_match.group(1)
+            _b_raw_sfx = (_baltic_match.group(2) or "").lstrip(".")
+            _b_exch = _BALTIC_ALIASES_PF.get(_b_raw_sfx, _b_raw_sfx)
+            if _b_exch and _b_exch in _BALTIC_PF:
+                _b_flag, _b_name = _BALTIC_PF[_b_exch]
+                _b_ticker = f"{_b_code}.{_b_exch}"
+                if _b_ticker not in seen:
+                    seen.add(_b_ticker)
+                    out.insert(0, (f"{_b_flag} {_b_ticker}  · {_b_name} (enter to add)", _b_ticker))
+            elif any(c.isalpha() for c in _b_code):
+                for _b_sfx, (_b_flag, _b_name) in _BALTIC_PF.items():
+                    _b_ticker = f"{_b_code}.{_b_sfx}"
+                    if _b_ticker not in seen and len(out) < 12:
+                        seen.add(_b_ticker)
+                        out.append((f"{_b_flag} {_b_ticker}  · {_b_name} (enter to add)", _b_ticker))
+
+    # ── Baltic name search ────────────────────────────────────────────────────
+    try:
+        from data_sources.baltic_tickers import search_baltic
+        _bl_slots = max(0, 12 - len(out))
+        if _bl_slots > 0:
+            for _bl_label, _bl_ticker in search_baltic(q, api_key=EODHD_API_KEY or "", max_results=_bl_slots):
+                if _bl_ticker not in seen:
+                    seen.add(_bl_ticker)
+                    out.append((_bl_label, _bl_ticker))
+    except Exception:
+        pass
 
     return out[:12]
 
