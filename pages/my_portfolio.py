@@ -301,7 +301,7 @@ def _jp_correct_name(yf_ticker: str, raw_name: str) -> str:
 
 
 def _snapshot_yf(yf_ticker: str) -> dict:
-    """yfinance snapshot for a single Japanese (TSE) ticker."""
+    """yfinance snapshot for a ticker not covered by EODHD (Japan/TSE, Baltic)."""
     _empty = {
         "eodhd_ticker": yf_ticker, "name": yf_ticker,
         "currency": "JPY", "sector": "",
@@ -396,8 +396,8 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
     """
     All snapshot metrics for one ticker from EODHD (or yfinance for Japan), including YTD%.
     """
-    # Japan / TSE: EODHD has no coverage → use yfinance
-    if yf_ticker.upper().endswith(".T"):
+    # Japan / TSE and Baltic: EODHD has no reliable coverage → use yfinance
+    if yf_ticker.upper().endswith((".T", ".VS", ".TL", ".RG")):
         return _snapshot_yf(yf_ticker)
 
     eodhd_ticker = _convert_ticker(yf_ticker)
@@ -508,8 +508,8 @@ def _fetch_history(yf_ticker: str, period: str) -> Optional[pd.DataFrame]:
     endpoint.
     Japanese (TSE) tickers use yfinance history.
     """
-    # Japan / TSE: use yfinance
-    if yf_ticker.upper().endswith(".T"):
+    # Japan / TSE and Baltic: use yfinance
+    if yf_ticker.upper().endswith((".T", ".VS", ".TL", ".RG")):
         return _history_yf(yf_ticker, period)
 
     eodhd_ticker = _convert_ticker(yf_ticker)
@@ -587,8 +587,8 @@ def _fetch_next_earnings(yf_ticker: str) -> Optional[str]:
     Uses /calendar/earnings — works for most US + EU listings. Indices,
     forex and ETFs return None. Japanese (TSE) tickers use yfinance calendar.
     """
-    # Japan / TSE: use yfinance
-    if yf_ticker.upper().endswith(".T"):
+    # Japan / TSE and Baltic: use yfinance
+    if yf_ticker.upper().endswith((".T", ".VS", ".TL", ".RG")):
         return _next_earnings_yf(yf_ticker)
 
     eodhd_ticker = _convert_ticker(yf_ticker)
