@@ -239,42 +239,56 @@ def _detect_exchange_query(q: str) -> tuple[str, str] | None:
 
 _INDEX_QUERY_MAP: list[tuple[list[str], str, str]] = [
     # keywords,                           yf_index,    display_name
-    (["dax", "dax40", "dax 40"],         "^GDAXI",    "DAX 40 · XETRA"),
+    # ── German indices ──────────────────────────────────────────────────────────
+    (["sdax"],                            "^SDAXI",    "SDAX · XETRA"),
+    (["tecdax", "tech dax"],             "^TECDAX",   "TecDAX · XETRA"),
     (["mdax"],                            "^MDAXI",    "MDAX · XETRA"),
-    (["cac 40", "cac40", "cac"],         "^FCHI",     "CAC 40 · Euronext Paris"),
-    (["ftse 100", "ftse100"],            "^FTSE",     "FTSE 100 · LSE"),
+    (["dax", "dax40", "dax 40", "germany", "german", "xetra companies", "deutsche"], "^GDAXI", "DAX 40 · XETRA"),
+    # ── French ──────────────────────────────────────────────────────────────────
+    (["cac 40", "cac40", "cac", "france", "french"],  "^FCHI",  "CAC 40 · Euronext Paris"),
+    # ── UK ──────────────────────────────────────────────────────────────────────
     (["ftse 250", "ftse250"],            "^FTMC",     "FTSE 250 · LSE"),
-    (["aex"],                             "^AEX",      "AEX · Euronext Amsterdam"),
-    (["smi"],                             "^SSMI",     "SMI · SIX Swiss"),
-    (["ibex 35", "ibex35", "ibex"],      "^IBEX",     "IBEX 35 · BME Madrid"),
-    (["ftse mib", "mib"],                "^MIB",      "FTSE MIB · Borsa Italiana"),
-    (["omx helsinki", "omxh25"],         "^OMXH25",   "OMX Helsinki 25"),
-    (["omx stockholm", "omxs30"],        "^OMXS30",   "OMX Stockholm 30"),
-    (["omx copenhagen", "omxc25"],       "^OMXC25",   "OMX Copenhagen 25"),
-    (["obx", "omx oslo"],                "^OBX",      "OBX · Oslo Børs"),
-    (["atx"],                             "^ATX",      "ATX · Vienna"),
-    (["wig20", "wig 20"],                "^WIG20",    "WIG 20 · Warsaw"),
-    (["bux"],                             "^BUX",      "BUX · Budapest"),
-    (["s&p 500", "s&p500", "sp500"],     "^GSPC",     "S&P 500"),
-    (["nasdaq 100", "nasdaq100", "ndx"], "^NDX",      "Nasdaq 100"),
+    (["ftse 100", "ftse100", "ftse", "uk", "britain", "british", "england", "london exchange"], "^FTSE", "FTSE 100 · LSE"),
+    # ── Netherlands ─────────────────────────────────────────────────────────────
+    (["aex", "netherlands", "dutch", "amsterdam"],    "^AEX",   "AEX · Euronext Amsterdam"),
+    # ── Switzerland ─────────────────────────────────────────────────────────────
+    (["smi", "switzerland", "swiss"],    "^SSMI",     "SMI · SIX Swiss"),
+    # ── Spain ───────────────────────────────────────────────────────────────────
+    (["ibex 35", "ibex35", "ibex", "spain", "spanish", "madrid"], "^IBEX", "IBEX 35 · BME Madrid"),
+    # ── Italy ───────────────────────────────────────────────────────────────────
+    (["ftse mib", "mib", "italy", "italian", "milan"], "^MIB",  "FTSE MIB · Borsa Italiana"),
+    # ── Nordic ──────────────────────────────────────────────────────────────────
+    (["omx helsinki", "omxh25", "finland", "finnish", "helsinki"], "^OMXH25", "OMX Helsinki 25"),
+    (["omx stockholm", "omxs30", "sweden", "swedish", "stockholm"], "^OMXS30", "OMX Stockholm 30"),
+    (["omx copenhagen", "omxc25", "denmark", "danish", "copenhagen"], "^OMXC25", "OMX Copenhagen 25"),
+    (["obx", "omx oslo", "norway", "norwegian", "oslo"], "^OBX", "OBX · Oslo Børs"),
+    # ── Other European ──────────────────────────────────────────────────────────
+    (["atx", "austria", "austrian", "vienna"],        "^ATX",   "ATX · Vienna"),
+    (["wig20", "wig 20", "poland", "polish", "warsaw", "gpw"], "^WIG20", "WIG 20 · Warsaw"),
+    (["bux", "hungary", "hungarian", "budapest"],     "^BUX",   "BUX · Budapest"),
+    (["stoxx 50", "stoxx50", "euro stoxx", "eurozone", "europe"], "^STOXX50E", "Euro Stoxx 50"),
+    # ── US ──────────────────────────────────────────────────────────────────────
+    (["s&p 500", "s&p500", "sp500", "usa", "us stocks", "american", "america", "united states"], "^GSPC", "S&P 500"),
+    (["nasdaq 100", "nasdaq100", "ndx", "nasdaq"],   "^NDX",   "Nasdaq 100"),
     (["dow jones", "dow"],               "^DJI",      "Dow Jones"),
-    (["tsx", "s&p/tsx"],                 "^GSPTSE",   "S&P/TSX 60"),
-    (["asx 200", "asx200"],              "^AXJO",     "ASX 200"),
-    (["nikkei"],                          "^N225",     "Nikkei 225"),
-    (["hang seng"],                       "^HSI",      "Hang Seng"),
-    (["kospi"],                           "^KS11",     "KOSPI"),
-    (["stoxx 50", "stoxx50", "euro stoxx"], "^STOXX50E", "Euro Stoxx 50"),
-    # Emerging markets
-    (["ibovespa", "ibov", "bovespa", "brazil", "b3", "são paulo", "sao paulo", "san paulo"], "^BVSP", "IBOVESPA · B3 São Paulo"),
-    (["ipc mexico", "bmv", "mexico exchange"],  "^MXX",  "IPC · BMV Mexico"),
-    (["istanbul", "bist", "turkey exchange"],    "^XU100", "BIST 100 · Istanbul"),
-    (["sensex", "bse india"],                   "^BSESN", "BSE Sensex · India"),
-    (["nifty", "nse india"],                    "^NSEI",  "Nifty 50 · NSE India"),
-    (["tasi", "tadawul", "saudi"],              "^TASI.SR", "TASI · Saudi Arabia"),
-    (["tel aviv", "ta-35", "ta35", "israel exchange"], "^TA35.TA", "TA-35 · Tel Aviv"),
-    (["johannesburg", "jse", "south africa exchange"], "^J203.JO", "JSE Top 40 · South Africa"),
-    (["jakarta", "idx", "indonesia exchange"],  "^JKSE",  "IDX Composite · Indonesia"),
-    (["warsaw", "wig20", "wig 20", "gpw"],      "^WIG20",  "WIG 20 · Warsaw"),
+    # ── Canada ──────────────────────────────────────────────────────────────────
+    (["tsx", "s&p/tsx", "canada", "canadian", "toronto"], "^GSPTSE", "S&P/TSX 60"),
+    # ── Australia ───────────────────────────────────────────────────────────────
+    (["asx 200", "asx200", "asx", "xasx", "australia", "australian"], "^AXJO", "ASX 200"),
+    # ── Asia-Pacific ────────────────────────────────────────────────────────────
+    (["nikkei", "japan", "japanese", "tokyo"],        "^N225",  "Nikkei 225"),
+    (["hang seng", "hong kong", "hkex"],              "^HSI",   "Hang Seng"),
+    (["kospi", "korea", "korean"],                    "^KS11",  "KOSPI"),
+    # ── Emerging markets ────────────────────────────────────────────────────────
+    (["ibovespa", "ibov", "bovespa", "brazil", "brazilian", "b3", "são paulo", "sao paulo", "san paulo"], "^BVSP", "IBOVESPA · B3 São Paulo"),
+    (["ipc mexico", "bmv", "mexico", "mexican"],      "^MXX",   "IPC · BMV Mexico"),
+    (["istanbul", "bist", "turkey", "turkish"],       "^XU100", "BIST 100 · Istanbul"),
+    (["sensex", "bse india"],                         "^BSESN", "BSE Sensex · India"),
+    (["nifty", "nse india", "india", "indian"],       "^NSEI",  "Nifty 50 · NSE India"),
+    (["tasi", "tadawul", "saudi", "saudi arabia"],    "^TASI.SR", "TASI · Saudi Arabia"),
+    (["tel aviv", "ta-35", "ta35", "israel"],         "^TA35.TA", "TA-35 · Tel Aviv"),
+    (["johannesburg", "jse", "south africa", "south african"], "^J203.JO", "JSE Top 40 · South Africa"),
+    (["jakarta", "idx", "indonesia", "indonesian"],   "^JKSE",  "IDX Composite · Indonesia"),
 ]
 
 
