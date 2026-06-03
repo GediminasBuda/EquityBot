@@ -195,6 +195,48 @@ if not ok:
     st.caption(f"⚠ LLM not configured: {_msg}")
 
 # Index name → Yahoo Finance index ticker (for ConstituentResolver)
+# Exchange-level queries: keywords → (EODHD exchange code, display name)
+# Used by Path A2 to run the screener directly for a whole exchange.
+_EXCHANGE_QUERY_MAP: list[tuple[list[str], str, str]] = [
+    (["brazil", "bovespa", "b3", "são paulo", "sao paulo", "sa exchange"], "SA", "B3 · São Paulo"),
+    (["mexico", "bmv", "bolsa mexicana"],                                  "MX", "BMV · Mexico"),
+    (["south africa", "johannesburg", "jse"],                              "JSE", "JSE · Johannesburg"),
+    (["turkey", "istanbul", "bist"],                                       "IS", "Borsa Istanbul"),
+    (["israel", "tel aviv", "tase"],                                       "TLV", "TASE · Tel Aviv"),
+    (["warsaw", "gpw", "poland exchange"],                                 "WAR", "GPW · Warsaw"),
+    (["budapest", "hungary exchange"],                                     "BUD", "BSE · Budapest"),
+    (["oslo", "norway exchange"],                                          "OL", "Oslo Børs"),
+    (["copenhagen", "denmark exchange"],                                   "CO", "Nasdaq Copenhagen"),
+    (["helsinki exchange", "finland exchange"],                            "HE", "Nasdaq Helsinki"),
+    (["stockholm exchange", "sweden exchange"],                            "ST", "Nasdaq Stockholm"),
+    (["vienna exchange", "austria exchange"],                              "VI", "Vienna Stock Exchange"),
+    (["zurich", "swiss exchange", "six exchange"],                         "SW", "SIX Swiss Exchange"),
+    (["euronext amsterdam", "netherlands exchange"],                       "AS", "Euronext Amsterdam"),
+    (["euronext brussels", "belgium exchange"],                            "BR", "Euronext Brussels"),
+    (["milan", "borsa italiana", "italy exchange"],                        "MI", "Borsa Italiana"),
+    (["madrid", "spain exchange", "bme"],                                  "MC", "BME Madrid"),
+    (["euronext paris", "france exchange"],                                "PA", "Euronext Paris"),
+    (["xetra", "frankfurt exchange", "germany exchange"],                  "XETRA", "Xetra · Germany"),
+    (["london exchange", "lse exchange"],                                  "LSE", "London Stock Exchange"),
+    (["toronto exchange", "tsx exchange", "canada exchange"],              "TO", "TSX · Toronto"),
+    (["asx", "australia exchange"],                                        "AU", "ASX · Australia"),
+    (["hong kong exchange", "hkex"],                                       "HK", "HKEX · Hong Kong"),
+    (["shanghai exchange", "sse"],                                         "SHG", "Shanghai Stock Exchange"),
+    (["shenzhen exchange", "szse"],                                        "SHE", "Shenzhen Stock Exchange"),
+    (["kospi exchange", "korea exchange"],                                 "KO", "KOSPI · South Korea"),
+    (["nse", "india exchange", "national stock exchange"],                 "NSE", "NSE · India"),
+]
+
+
+def _detect_exchange_query(q: str) -> tuple[str, str] | None:
+    """Return (eodhd_exchange_code, display_name) if query targets a whole exchange."""
+    q_low = q.lower()
+    for keywords, code, display in _EXCHANGE_QUERY_MAP:
+        if any(kw in q_low for kw in keywords):
+            return code, display
+    return None
+
+
 _INDEX_QUERY_MAP: list[tuple[list[str], str, str]] = [
     # keywords,                           yf_index,    display_name
     (["dax", "dax40", "dax 40"],         "^GDAXI",    "DAX 40 · XETRA"),
@@ -399,6 +441,38 @@ if search_clicked and query.strip():
                         _row["dividend_yield"] = _fd["dividend_yield"]
                 intent = {
                     "title": f"{_idx_name} · {len(rows)} companies",
+                    "notes": "",
+                    "filters": [], "signals": [], "sort": None, "limit": len(rows),
+                }
+
+            # ── Path A2: whole-exchange query → EODHD screener directly
+            elif _detect_exchange_query(query.strip()):
+                _exch_code2, _exch_name2 = _detect_exchange_query(query.strip())
+                import re as _re_lim2
+                _lim2 = int(_re_lim2.search(r'\b(\d+)\b', query).group(1)) if _re_lim2.search(r'\b(\d+)\b', query) else 20
+                _lim2 = min(_lim2, 100)
+                st.write(f"📡 Screener · **{_exch_name2}** · top {_lim2} by market cap…")
+                from data_sources.eodhd_screener_api import run_screener as _run_exch
+                _exch_rows = _run_exch(
+                    filters=[["exchange", "=", _exch_code2]],
+                    sort="market_capitalization.desc",
+                    limit=_lim2,
+                )
+                # Add yf-ticker and change_p from bulk real-time
+                _exch_tix = tuple(
+                    f"{r['code']}.{_exch_code2}" for r in _exch_rows if r.get("code")
+                )
+                _exch_prices = _fetch_bulk_prices(_exch_tix) if _exch_tix else {}
+                for _er in _exch_rows:
+                    _c = _er.get("code", "")
+                    _pd = _exch_prices.get(f"{_c}.{_exch_code2}") or _exch_prices.get(_c) or {}
+                    if _pd.get("close"):
+                        _er["adjusted_close"] = _pd["close"]
+                    _er["change_p"] = _pd.get("change_p")
+                    _er["_yf_ticker"] = _to_yf(_c, _exch_code2)
+                rows = _exch_rows
+                intent = {
+                    "title": f"{_exch_name2} · top {len(rows)} by market cap",
                     "notes": "",
                     "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
