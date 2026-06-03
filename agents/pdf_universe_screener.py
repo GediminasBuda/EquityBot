@@ -199,7 +199,7 @@ def render_universe_pdf(
                 Paragraph(rationale[:200], td_small),
             ])
 
-        col_w = [8*mm, 16*mm, 35*mm, 13*mm, 45*mm, CW - 8-16-35-13-45-3*mm]
+        col_w = [8*mm, 16*mm, 35*mm, 13*mm, 45*mm, CW - (8+16+35+13+45)*mm]
         t = Table(rows, colWidths=col_w, repeatRows=1)
         t.setStyle(TableStyle([
             ("BACKGROUND",     (0,0), (-1,0), NAVY),
