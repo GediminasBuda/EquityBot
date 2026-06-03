@@ -1611,11 +1611,18 @@ else:
                         )
 
                         x_type = "T"   # temporal works for both Date + Time
+                        # For multi-year periods show year labels; shorter periods use Altair defaults
+                        if sel_period in ("5y", "All"):
+                            x_axis = alt.Axis(format="%Y", tickCount="year")
+                        elif sel_period in ("6m", "YTD", "1m"):
+                            x_axis = alt.Axis(format="%b %Y", tickCount="month")
+                        else:
+                            x_axis = alt.Axis()
                         chart = (
                             alt.Chart(df_chart)
                                .mark_line(strokeWidth=2)
                                .encode(
-                                   x=alt.X(f"{time_col}:{x_type}", title=""),
+                                   x=alt.X(f"{time_col}:{x_type}", title="", axis=x_axis),
                                    y=alt.Y(
                                        "Close:Q",
                                        title="",
