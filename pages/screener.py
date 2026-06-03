@@ -604,68 +604,96 @@ if search_clicked and query.strip():
 
     with st.status("🔍 Interpreting query…", expanded=True) as _status:
         try:
-            import importlib
+            import importlib, re as _re_lim
 
-            # ── Path A: known stock index → ConstituentResolver (like Gravity Taxers)
+            # Determine which path to take. Priority: A → C → B
+            # _path: "A" = index/Wikipedia, "C" = exchange symbol list, "B" = LLM screener
+            _path      = None
+            _exch_det  = None   # (code, display) for Path C
+            rows       = []
+            intent     = {}
+
+            # Index → exchange fallback codes (used when Path A Wikipedia scrape fails)
+            _IDX_EXCH_FB: dict[str, str] = {
+                "^XU100": "IS",  "^TASI.SR": "XSAU", "^TA35.TA": "TLV",
+                "^J203.JO": "JSE", "^JKSE": "JKSE",  "^BVSP": "SA",
+                "^MXX": "MX",   "^BSESN": "BSE",     "^NSEI": "NSE",
+                "^KS11": "KO",  "^HSI": "HK",         "^N225": "TSE",
+                "^AXJO": "AU",  "^GSPTSE": "TO",       "^WIG20": "WAR",
+                "^BUX": "BUD",  "^ATX": "VI",          "^OBX": "OL",
+                "^OMXH25": "HE", "^OMXS30": "ST",      "^OMXC25": "CO",
+                "^FTSE": "LSE", "^GDAXI": "XETRA",     "^FCHI": "PA",
+                "^IBEX": "MC",  "^MIB": "MI",          "^AEX": "AS",
+                "^SSMI": "SW",  "^GSPC": "NYSE",
+            }
+
+            # ── Detect path ───────────────────────────────────────────────────
             _idx = _detect_index_query(query.strip())
             if _idx:
                 _yf_idx, _idx_name = _idx
                 st.write(f"📋 Recognised index: **{_idx_name}** — fetching constituents…")
                 from constituent_resolver import ConstituentResolver
-                _resolver = ConstituentResolver()
-                _tickers  = _resolver.resolve(_yf_idx)
+                _tickers = ConstituentResolver().resolve(_yf_idx)
 
-                if not _tickers:
-                    st.warning(
-                        f"Could not fetch constituents for **{_idx_name}** "
-                        f"(Wikipedia source unavailable). "
-                        f"Try a broader query like 'largest German companies'."
-                    )
-                    _status.update(label="⚠ No constituents found", state="error", expanded=True)
-                    st.stop()
+                if _tickers:
+                    _path = "A"
+                else:
+                    # Wikipedia failed → fall back to exchange symbol list
+                    st.write(f"⚠ Wikipedia source unavailable for {_idx_name} — falling back to exchange list…")
+                    _exch_det = _detect_exchange_query(query.strip())
+                    if not _exch_det:
+                        _fb_code = _IDX_EXCH_FB.get(_yf_idx)
+                        if _fb_code:
+                            _all_exch = _fetch_all_eodhd_exchanges()
+                            _exch_det = (_fb_code, _all_exch.get(_fb_code, _fb_code))
+                    if _exch_det:
+                        _path = "C"
+                        st.write(f"🏛 Fallback exchange: **{_exch_det[1]}** ({_exch_det[0]})")
+                    else:
+                        st.warning(
+                            f"Could not fetch constituents for **{_idx_name}**. "
+                            f"Try the exchange code directly (e.g. IS, BUD, WAR)."
+                        )
+                        _status.update(label="⚠ No constituents found", state="error", expanded=True)
+                        st.stop()
 
-                # Apply limit from query text
-                import re as _re_lim
+            if _path is None:
+                _exch_det = _detect_exchange_query(query.strip())
+                _path = "C" if _exch_det else "B"
+
+            # ── Path A: index constituents (Wikipedia / FMP) ──────────────────
+            if _path == "A":
                 _lim_match = _re_lim.search(r'\b(\d+)\b', query)
                 _limit = int(_lim_match.group(1)) if _lim_match else 40
                 _tickers = _tickers[:_limit]
 
-                # Enrich: exchange names + bulk prices + screener fundamentals
-                _sfx = _tickers[0].rsplit(".", 1)[-1] if "." in _tickers[0] else "US"
+                _sfx      = _tickers[0].rsplit(".", 1)[-1] if "." in _tickers[0] else "US"
                 _exch_code = _YF_SUFFIX_TO_EXCH.get(_sfx.upper(), _sfx)
                 st.write(f"📡 Fetching names, prices & fundamentals from EODHD ({_exch_code})…")
-                _name_map  = _fetch_exchange_names(_exch_code)
-                # Build EODHD-format tickers for bulk real-time
+                _name_map = _fetch_exchange_names(_exch_code)
                 _eodhd_tix = tuple(
                     f"{t.rsplit('.', 1)[0]}.{_exch_code}" if "." in t else f"{t}.US"
                     for t in _tickers
                 )
                 _price_map = _fetch_bulk_prices(_eodhd_tix)
-
                 rows = _constituents_to_rows(_tickers, _name_map, _price_map)
 
-                # Enrich with sector / market cap / div yield via per-ticker fundamentals
                 st.write(f"📊 Fetching fundamentals for {len(_eodhd_tix)} tickers…")
                 _fund = _fetch_fundamentals_batch(_eodhd_tix)
                 for _row in rows:
-                    _code = _row["code"]
-                    _fd = _fund.get(f"{_code}.{_exch_code}") or _fund.get(_code) or {}
-                    if _fd.get("sector"):
-                        _row["sector"] = _fd["sector"]
-                    if _fd.get("mcap") is not None:
-                        _row["market_capitalization"] = _fd["mcap"]
-                    if _fd.get("div_yield") is not None:
-                        _row["dividend_yield"] = _fd["div_yield"]
+                    _c = _row["code"]
+                    _fd = _fund.get(f"{_c}.{_exch_code}") or _fund.get(_c) or {}
+                    if _fd.get("sector"):      _row["sector"] = _fd["sector"]
+                    if _fd.get("mcap") is not None:  _row["market_capitalization"] = _fd["mcap"]
+                    if _fd.get("div_yield") is not None: _row["dividend_yield"] = _fd["div_yield"]
 
                 intent = {
                     "title": f"{_idx_name} · {len(rows)} companies",
-                    "notes": "",
-                    "filters": [], "signals": [], "sort": None, "limit": len(rows),
+                    "notes": "", "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
 
-            # ── Path C: direct exchange code / exchange NL phrase
-            # exchange-symbol-list → fundamentals batch → sort by MCap
-            elif (_exch_det := _detect_exchange_query(query.strip())):
+            # ── Path C: exchange symbol list → fundamentals → sort by MCap ───
+            elif _path == "C":
                 _exch_code, _exch_display = _exch_det
                 st.write(f"🏛 Exchange: **{_exch_display}** ({_exch_code}) — fetching symbol list…")
 
@@ -679,13 +707,10 @@ if search_clicked and query.strip():
                     st.stop()
 
                 _all_codes = list(_sym_map.keys())
-                _MAX_FUND = 120  # max fundamentals calls per search
-                _sampled = len(_all_codes) > _MAX_FUND
+                _MAX_FUND  = 120
+                _sampled   = len(_all_codes) > _MAX_FUND
                 if _sampled:
-                    st.write(
-                        f"ℹ {len(_all_codes)} symbols found — fetching fundamentals for "
-                        f"first {_MAX_FUND} (sorted by MCap from those)."
-                    )
+                    st.write(f"ℹ {len(_all_codes)} symbols — fetching fundamentals for first {_MAX_FUND}…")
                     _all_codes = _all_codes[:_MAX_FUND]
 
                 _eodhd_tix = tuple(f"{c}.{_exch_code}" for c in _all_codes)
@@ -696,11 +721,10 @@ if search_clicked and query.strip():
 
                 rows = []
                 for c in _all_codes:
-                    _et = f"{c}.{_exch_code}"
-                    _fd = _fund.get(_et) or {}
-                    _pd = _price_map.get(_et) or _price_map.get(c) or {}
+                    _et  = f"{c}.{_exch_code}"
+                    _fd  = _fund.get(_et) or {}
+                    _pd  = _price_map.get(_et) or _price_map.get(c) or {}
                     _yf_sfx = _EODHD_TO_YF_SUFFIX.get(_exch_code.upper(), "")
-                    _yf_t   = f"{c}{_yf_sfx}" if _yf_sfx else c
                     rows.append({
                         "code": c, "exchange": _exch_code,
                         "name": _sym_map.get(c, ""),
@@ -709,26 +733,21 @@ if search_clicked and query.strip():
                         "dividend_yield": _fd.get("div_yield"),
                         "adjusted_close": _pd.get("close") or _pd.get("adjusted_close"),
                         "change_p": _pd.get("change_p"),
-                        "_yf_ticker": _yf_t,
+                        "_yf_ticker": f"{c}{_yf_sfx}" if _yf_sfx else c,
                     })
 
-                # Sort by MCap desc (None last)
                 rows.sort(key=lambda r: r["market_capitalization"] or 0, reverse=True)
-
-                import re as _re_lim2
-                _lim2 = int(m.group(1)) if (m := _re_lim2.search(r'\b(\d+)\b', query)) else 20
-                rows = rows[:_lim2]
+                _lim2 = int(m.group(1)) if (m := _re_lim.search(r'\b(\d+)\b', query)) else 20
+                rows  = rows[:_lim2]
 
                 intent = {
                     "title": f"{_exch_display} · top {len(rows)} by MCap",
-                    "notes": "Sorted by market cap from exchange symbol list." + (
-                        f" (sampled {_MAX_FUND} of {len(_sym_map)} total symbols)"
-                        if _sampled else ""
-                    ),
+                    "notes": (f"Sampled first {_MAX_FUND} of {len(_sym_map)} total symbols."
+                               if _sampled else ""),
                     "filters": [], "signals": [], "sort": None, "limit": len(rows),
                 }
 
-            # ── Path B: general NL query → LLM → EODHD screener API
+            # ── Path B: general NL query → LLM → EODHD screener API ──────────
             else:
                 import models.screener_intent as _si_mod
                 importlib.reload(_si_mod)
