@@ -629,6 +629,25 @@ def _fetch_next_earnings(yf_ticker: str) -> Optional[str]:
 # ── News (cached) ─────────────────────────────────────────────────────────────
 @st.cache_data(ttl=1800, show_spinner=False)
 def _fetch_news(yf_ticker: str, limit: int = 15) -> list[dict]:
+    # Japan / Baltic: EODHD has no news → use yfinance
+    if yf_ticker.upper().endswith((".T", ".VS", ".TL", ".RG")):
+        try:
+            import yfinance as _yf_news
+            raw = _yf_news.Ticker(yf_ticker).news or []
+            out = []
+            for item in raw[:limit]:
+                content = item.get("content") or {}
+                title = content.get("title") or item.get("title") or ""
+                url   = (content.get("canonicalUrl") or {}).get("url") or item.get("link") or ""
+                date  = content.get("pubDate") or item.get("providerPublishTime") or ""
+                if isinstance(date, int):
+                    from datetime import timezone
+                    date = datetime.fromtimestamp(date, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+                out.append({"title": title, "link": url, "date": date, "text": ""})
+            return out
+        except Exception:
+            return []
+
     eodhd_ticker = _convert_ticker(yf_ticker)
     data = _eodhd_get(
         "/news",
@@ -1660,7 +1679,7 @@ else:
                 with st.expander("📰 Latest news", expanded=False):
                     news_items = _fetch_news(ticker, limit=15)
                     if not news_items:
-                        st.warning("No EODHD news available for this ticker.")
+                        st.warning("No news available for this ticker.")
                     else:
                         for n in news_items:
                             title   = n.get("title")   or "(no title)"
