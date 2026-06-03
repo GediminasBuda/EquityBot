@@ -1,6 +1,6 @@
 # HANDOFF — Session Continuation Document
 
-**Last updated:** 2026-06-03 (session 5)  
+**Last updated:** 2026-06-03 (session 6)  
 **Author:** Claude session, written for the next one.
 
 If you're a Claude agent that just opened this repo on a fresh machine, **read this file end-to-end before touching anything**. Then read `CLAUDE.md` for broader project documentation.
@@ -297,7 +297,7 @@ Report Generator search now detects Baltic ticker patterns (APG1L, APG1L.VS etc.
 - `_exchange_query_map` + exchange-symbol-list: "SA" returned Vietnamese stocks, "IS" returned nothing. Exchange codes differ between real-time API and symbol-list API.
 - `bulk_last_day/{exchange}` endpoint: returned nothing for "SA" (Brazil) and "IS" (Turkey).
 - EODHD screener `exchange=SA` filter: returns empty (string filters unsupported).
-- **Conclusion:** for emerging market exchange queries, ConstituentResolver (Wikipedia) is the only reliable path. Only well-known indices with Wikipedia constituent pages work.
+- **Conclusion (updated session 6):** Path C (exchange-symbol-list) is now the standard path for exchange queries. Works well for small/medium exchanges (Budapest, Warsaw). Some EODHD codes return wrong data (PSE → Vietnamese stocks) — unfixable on our side.
 
 **Checkbox label warning fixed:**
 - `cols[0].checkbox("", ...)` → `cols[0].checkbox("Select", label_visibility="collapsed")`. Streamlit now warns on empty labels.
@@ -305,6 +305,58 @@ Report Generator search now detects Baltic ticker patterns (APG1L, APG1L.VS etc.
 **Git workflow confirmed:**
 - Always commit and push to `Final-design-V3`. Streamlit Cloud deploys from that branch.
 - `master` branch is irrelevant for deployment.
+
+---
+
+## 14 · Session 6 changes (2026-06-03) — Screener overhaul
+
+### Three-path screener architecture (final design)
+
+**Priority: Path A → Path C → Path B**
+
+| Path | Trigger | Mechanism |
+|---|---|---|
+| A | Known index keyword (dax, ftse100, nikkei, etc.) | ConstituentResolver → Wikipedia / FMP |
+| C | Exchange code word (BUD, WAR, LSE) or NL phrase (budapest, greek stocks) | EODHD exchange-symbol-list → fundamentals batch → sort MCap |
+| B | Everything else | LLM parses query → EODHD screener API (numeric filters only) |
+
+### Path A — expanded keywords
+- Added country-level keywords: `australia/asx/xasx → ASX 200`, `germany/german → DAX`, `uk/british → FTSE 100`, `japan/japanese → Nikkei`, etc.
+- Added SDAX (`^SDAXI`) and TecDAX (`^TECDAX`)
+
+### Path C — new (exchange-level screening)
+**Files:** `pages/screener.py` — `_detect_exchange_query()`, `_fetch_all_eodhd_exchanges()`, `_EXCH_CODE_STOPWORDS`, `_EXCH_MANUAL_ALIASES`, `_EXCH_NL_PHRASES`
+
+**How it works:**
+1. `_fetch_all_eodhd_exchanges()` — calls `/api/exchanges-list`, cached 24h — returns every EODHD exchange code automatically. No hardcoding needed for new exchanges.
+2. Detection checks: (1) manual aliases (ATHEX→AT, BIST→IS, GPW→WAR…), (2) live code match on uppercase words, (3) NL phrases ("athens", "budapest stocks"…)
+3. `_fetch_exchange_names(code)` → exchange-symbol-list → all listed symbols
+4. `_fetch_fundamentals_batch` on first 120 symbols → sector, MCap, DivYield
+5. Sort by MCap desc, return top N
+
+**Stopwords:** short codes that are also common English words (AT, IS, ST, CO, BR, PA, PR, HE, TO, AS…) are blocked from auto-detection. Reach them via manual alias (ATHEX, BIST, XCSE…) or NL phrase ("athens", "istanbul"…).
+
+**Known EODHD data quality issues (unfixable):**
+- `PSE` exchange-symbol-list returns Vietnamese stocks instead of Philippine stocks
+- Some obscure exchange codes return empty or wrong data
+- These are EODHD API bugs — nothing to fix on our side
+
+### Path A → C fallback
+When Path A ConstituentResolver fails (Wikipedia unavailable), instead of showing error + stop, now automatically falls back to Path C using `_IDX_EXCH_FB` dict:
+```python
+_IDX_EXCH_FB = {
+    "^XU100": "IS",   # BIST Istanbul
+    "^TASI.SR": "XSAU",
+    "^N225": "TSE",
+    "^FTSE": "LSE",
+    "^GDAXI": "XETRA",
+    # ... 20+ entries
+}
+```
+Example: "turkish stocks" → BIST 100 → Wikipedia fails → falls back to IS exchange → Path C → real Turkish stocks.
+
+### Routing logic rewrite
+The routing block was rewritten with an explicit `_path = "A" / "C" / "B"` variable. Previous version had a broken `elif/else` chain where `else` (Path B) was attached to the wrong `if`, causing Path B to run over already-successful Path A results.
 
 ---
 
