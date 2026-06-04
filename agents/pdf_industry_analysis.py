@@ -292,6 +292,191 @@ def _advantage_banner(size: str, evolution: str, styles: dict) -> Table:
     return t
 
 
+# ── Local number formatters ──────────────────────────────────────────────────
+
+def _b(v) -> str:
+    if v is None:
+        return "n/a"
+    if abs(v) >= 1_000:
+        return f"{v / 1_000:,.1f}B"
+    return f"{v:,.0f}M"
+
+def _x(v, d=1) -> str:
+    return "n/a" if v is None else f"{v:.{d}f}x"
+
+def _pct(v) -> str:
+    return "n/a" if v is None else f"{v * 100:.1f}%"
+
+def _val(v, decimals=2) -> str:
+    return "n/a" if v is None else f"{v:,.{decimals}f}"
+
+
+# ── Market snapshot + annual financials page ──────────────────────────────────
+
+def _snapshot_page(company: CompanyData, styles: dict) -> list:
+    """Render Current Market Snapshot + 5-year Annual Financials tables."""
+    out = []
+    cur = company.currency or ""
+
+    # ── Section header ────────────────────────────────────────────────────────
+    out += _section("Current Market Snapshot", styles)
+
+    # ── Table 1: market snapshot key metrics ─────────────────────────────────
+    LHDR = ParagraphStyle(
+        "snap_lhdr", fontName="Helvetica-Bold", fontSize=8.5,
+        textColor=HexColor("#555"), alignment=TA_LEFT, leading=11,
+    )
+    LVAL = ParagraphStyle(
+        "snap_lval", fontName="Helvetica-Bold", fontSize=9,
+        textColor=NAVY, alignment=TA_LEFT, leading=12,
+    )
+
+    def kv(label: str, value: str):
+        return [Paragraph(label, LHDR), Paragraph(value, LVAL)]
+
+    snap_data = [
+        kv("Price", f"{_val(company.current_price, 2)} {cur}"),
+        kv("Market Cap", f"{_b(company.market_cap)} {cur}"),
+        kv("Enterprise Value", f"{_b(company.enterprise_value)} {cur}"),
+        kv("P/E (TTM)", _x(company.pe_ratio)),
+        kv("Forward P/E", _x(company.forward_pe)),
+        kv("EV/EBITDA", _x(company.ev_ebitda)),
+        kv("EV/EBIT", _x(company.ev_ebit)),
+        kv("EV/Sales", _x(company.ev_sales)),
+        kv("Gross Margin", _pct(company.gross_margin)),
+        kv("EBIT Margin", _pct(company.ebit_margin)),
+        kv("Net Margin", _pct(company.net_margin)),
+        kv("ROE", _pct(company.roe)),
+        kv("FCF Yield", _pct(company.fcf_yield)),
+        kv("Dividend Yield", _pct(company.dividend_yield)),
+        kv("Beta", _val(company.beta, 2) if company.beta else "n/a"),
+        kv("52w High", f"{_val(company.week_52_high, 2)} {cur}" if company.week_52_high else "n/a"),
+        kv("52w Low", f"{_val(company.week_52_low, 2)} {cur}" if company.week_52_low else "n/a"),
+        kv("Employees", f"{company.employees:,}" if company.employees else "n/a"),
+    ]
+
+    # Lay out in 3 columns (label+value pairs side by side)
+    n_cols = 3
+    col_w = CW / n_cols
+    rows_3col = []
+    for i in range(0, len(snap_data), n_cols):
+        row = []
+        for j in range(n_cols):
+            if i + j < len(snap_data):
+                pair = snap_data[i + j]
+                inner = Table([[pair[0]], [pair[1]]], colWidths=[col_w - 8])
+                inner.setStyle(TableStyle([
+                    ("TOPPADDING",    (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                    ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+                ]))
+                row.append(inner)
+            else:
+                row.append("")
+        rows_3col.append(row)
+
+    snap_tbl = Table(rows_3col, colWidths=[col_w] * n_cols)
+    snap_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), HexColor("#F8FAFC")),
+        ("ROWBACKGROUNDS",(0, 0), (-1, -1), [HexColor("#F8FAFC"), white]),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.25, HexColor("#DDD")),
+    ]))
+    out.append(snap_tbl)
+    out.append(Spacer(1, 14))
+
+    # ── Table 2: Annual financials ────────────────────────────────────────────
+    out += _section("Annual Financials", styles)
+
+    all_years = company.sorted_years()
+    hist_years = list(reversed(all_years[:5]))  # 5 most recent, chronological
+
+    THDR = ParagraphStyle(
+        "af_hdr", fontName="Helvetica-Bold", fontSize=7.5,
+        textColor=white, alignment=TA_CENTER, leading=10,
+    )
+    TROW = ParagraphStyle(
+        "af_row", fontName="Helvetica", fontSize=8,
+        textColor=NAVY, alignment=TA_CENTER, leading=10,
+    )
+    TLBL = ParagraphStyle(
+        "af_lbl", fontName="Helvetica-Bold", fontSize=8,
+        textColor=HexColor("#444"), alignment=TA_LEFT, leading=10,
+    )
+
+    def ph(txt): return Paragraph(str(txt), THDR)
+    def pv(txt): return Paragraph(str(txt), TROW)
+    def pl(txt): return Paragraph(str(txt), TLBL)
+
+    year_cols = [str(y) for y in hist_years]
+    header_row = [ph("Metric (" + cur + ")")] + [ph(y) for y in year_cols]
+
+    metrics = [
+        ("Revenue",       lambda a: _b(a.revenue)),
+        ("Gross Profit",  lambda a: _b(a.gross_profit)),
+        ("EBITDA",        lambda a: _b(a.ebitda)),
+        ("EBIT",          lambda a: _b(a.ebit)),
+        ("Net Income",    lambda a: _b(a.net_income)),
+        ("EPS (diluted)", lambda a: _val(a.eps_diluted, 2) if a.eps_diluted is not None else "n/a"),
+        ("FCF",           lambda a: _b(a.fcf)),
+        ("Net Debt",      lambda a: _b(a.net_debt)),
+        ("Total Equity",  lambda a: _b(a.total_equity)),
+        ("ROE",           lambda a: _pct(a.roe)),
+        ("EBIT Margin",   lambda a: _pct(a.ebit_margin)),
+        ("Gross Margin",  lambda a: _pct(a.gross_margin)),
+    ]
+
+    af_rows = [header_row]
+    for label, fn in metrics:
+        row = [pl(label)]
+        for yr in hist_years:
+            a = company.annual_financials.get(yr)
+            row.append(pv(fn(a) if a else "n/a"))
+        af_rows.append(row)
+
+    n_year_cols = len(hist_years)
+    lbl_w = CW * 0.22
+    yr_w  = (CW - lbl_w) / max(n_year_cols, 1)
+    col_widths = [lbl_w] + [yr_w] * n_year_cols
+
+    af_tbl = Table(af_rows, colWidths=col_widths, repeatRows=1)
+    af_style = [
+        ("BACKGROUND",    (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), white),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [HexColor("#F8FAFC"), white]),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.25, HexColor("#DDD")),
+        ("ALIGN",         (1, 0), (-1, -1), "CENTER"),
+    ]
+    # Shade margin/return rows slightly differently
+    for i, (label, _) in enumerate(metrics, start=1):
+        if label in ("ROE", "EBIT Margin", "Gross Margin"):
+            af_style.append(("TEXTCOLOR", (1, i), (-1, i), HexColor("#1A5E2A")))
+    af_tbl.setStyle(TableStyle(af_style))
+    out.append(af_tbl)
+
+    # Source note
+    out.append(Spacer(1, 6))
+    out.append(Paragraph(
+        f"<i>Source: EODHD (primary) / yfinance (fallback). "
+        f"Monetary values in {cur} millions (M) / billions (B). "
+        f"Percentages shown as xx.x%. n/a = not available in source data.</i>",
+        ParagraphStyle("snap_fn", fontName=ITALIC_FONT, fontSize=7,
+                       textColor=MGRAY, alignment=TA_LEFT, leading=9),
+    ))
+    return out
+
+
 # ── SWOT colours ─────────────────────────────────────────────────────────────
 _SWOT_S_COLOR = HexColor("#1A5E2A")   # dark green  — Strengths
 _SWOT_W_COLOR = HexColor("#922B21")   # dark red    — Weaknesses
@@ -456,6 +641,10 @@ class IndustryAnalysisPDFGenerator:
             story.append(Paragraph("Sources cited:", st["ia_sub_title"]))
             for s in ca_sources:
                 story.append(Paragraph(f"•  {s}", st["ia_source"]))
+
+        # ── Market Snapshot + Annual Financials ──────────────────────────────
+        story.append(PageBreak())
+        story += _snapshot_page(company, st)
 
         # ── SWOT page ────────────────────────────────────────────────────────
         swot = analysis.get("swot") or {}
