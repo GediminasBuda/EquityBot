@@ -231,7 +231,14 @@ def _build_industry_prompt(
 _SWOT_SYSTEM = """You are "Your Humble EquityBot" — a buyside investment analyst.
 Write a rigorous SWOT analysis of the subject company. Support every claim with
 specific financial data, market share figures, or cited sources. Be concise but
-substantive. Return ONE valid JSON object with no markdown fences."""
+substantive. Return ONE valid JSON object with no markdown fences.
+
+CRITICAL FINANCIAL DATA RULE: A company financial data block is provided below.
+For ALL financial figures (revenue, margins, EPS, cash, debt, ROIC, take rates,
+growth rates, valuation multiples, etc.) you MUST use ONLY the numbers from that
+block. Do NOT substitute figures from your training data — the training data is
+stale and will contain outdated numbers. If a specific figure is not in the
+provided data, say "per latest filings" without inventing a number."""
 
 _SWOT_SCHEMA = """\
 Based on the Porter 5 Forces industry analysis and Competitive Advantage
@@ -268,6 +275,61 @@ No markdown fences. No prose outside the JSON object.
 """
 
 
+def _format_swot_financials(company: CompanyData) -> str:
+    """Build a compact financial block for the SWOT prompt using the latest available data."""
+    cur = company.currency or ""
+    lines = ["=== COMPANY FINANCIAL DATA (use ONLY these numbers — do not substitute from training data) ==="]
+
+    # Current market snapshot
+    lines.append(
+        f"Report date: {company.ticker} | Price: {company.current_price} {cur} | "
+        f"Mkt Cap: {_b(company.market_cap)} {cur} | EV: {_b(company.enterprise_value)} {cur}"
+    )
+    lines.append(
+        f"P/E (TTM): {_x(company.pe_ratio)} | Fwd P/E: {_x(company.forward_pe)} | "
+        f"EV/EBITDA: {_x(company.ev_ebitda)} | EV/EBIT: {_x(company.ev_ebit)}"
+    )
+    lines.append(
+        f"Net margin (TTM): {_pct(company.net_margin)} | EBIT margin (TTM): {_pct(company.ebit_margin)} | "
+        f"Gross margin (TTM): {_pct(company.gross_margin)} | ROE: {_pct(company.roe)}"
+    )
+    lines.append(
+        f"Div yield: {_pct(company.dividend_yield)} | FCF yield: {_pct(company.fcf_yield)} | "
+        f"Beta: {company.beta or 'n/a'} | Employees: {company.employees or 'n/a'}"
+    )
+
+    # Annual history — 5 most recent years
+    all_years = company.sorted_years()
+    hist_years = list(reversed(all_years[:5]))  # chronological order
+    if hist_years:
+        lines.append("")
+        lines.append("Annual financials (fiscal years, most recent last):")
+        header = f"{'Year':>6} {'Revenue':>12} {'GrossProfit':>12} {'EBITDA':>10} {'EBIT':>10} {'NetIncome':>10} {'EPS':>7} {'FCF':>10} {'NetDebt':>10} {'Equity':>10} {'ROE':>7} {'EBITmgn':>8}"
+        lines.append(header)
+        lines.append("-" * len(header))
+        for yr in hist_years:
+            a = company.annual_financials.get(yr)
+            if not a:
+                continue
+            lines.append(
+                f"{yr:>6} "
+                f"{_b(a.revenue):>12} "
+                f"{_b(a.gross_profit):>12} "
+                f"{_b(a.ebitda):>10} "
+                f"{_b(a.ebit):>10} "
+                f"{_b(a.net_income):>10} "
+                f"{a.eps_diluted if a.eps_diluted is not None else 'n/a':>7} "
+                f"{_b(a.fcf):>10} "
+                f"{_b(a.net_debt):>10} "
+                f"{_b(a.total_equity):>10} "
+                f"{_pct(a.roe):>7} "
+                f"{_pct(a.ebit_margin):>8}"
+            )
+        lines.append(f"(All monetary values in {cur} millions/billions as shown. 'n/a' = not available.)")
+
+    return "\n".join(lines)
+
+
 def build_swot_prompt(
     company: CompanyData,
     analysis: dict,
@@ -293,7 +355,8 @@ def build_swot_prompt(
         f"Company: {company.name or company.ticker}  |  Ticker: {company.ticker}",
         f"Sector: {company.sector or 'n/a'}  |  Industry: {company.industry or 'n/a'}",
         f"Country: {company.country or 'n/a'}  |  Currency: {company.currency or 'n/a'}",
-        f"Market cap: {company.market_cap or 'n/a'}  |  Price: {company.current_price or 'n/a'}",
+        "",
+        _format_swot_financials(company),
         "",
         "=== COMPETITIVE ADVANTAGE (from main analysis) ===",
         f"Size: {analysis.get('competitive_advantage_size','')}  |  "
