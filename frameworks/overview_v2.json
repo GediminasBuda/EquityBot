@@ -2,7 +2,7 @@
   "id": "overview_v2",
   "name": "Investment Memo Bull/Bear",
   "icon": "💎",
-  "description": "An overview of a company with core financial data, business Snapshot, Bull / Bear cases, buy/hold/sell recommendation, and peer group comparison. Analysis is based on EODHD data; where data is absent, yfinance is used as a fallback source. · PDF report",
+  "description": "An overview of a company with core financial data, business Snapshot, Bull / Bear cases, buy/hold/sell recommendation, and peer group comparison. Analysis is based on EODHD data; where data is absent, yfinance is used as a fallback source.",
   "is_builtin": true,
   "base_id": null,
   "version": 1,
