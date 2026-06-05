@@ -2,7 +2,7 @@
   "id": "overview_v2",
   "name": "Investment Memo Bull/Bear",
   "icon": "💎",
-  "description": "Investment memo identical in structure to the original Overview but with 100% of underlying data sourced exclusively from EODHD's All-In-One API. Every field is annotated with ✓ EODHD (verified) or — (not provided by EODHD). LLM-generated narrative (Snapshot, Bull, Bear, Recommendation) is grounded only in EODHD inputs.",
+  "description": "An overview of a company with core financial data, business Snapshot, Bull / Bear cases, buy/hold/sell recommendation, and peer group comparison. Analysis is based on EODHD data; where data is absent, yfinance is used as a fallback source. · PDF report",
   "is_builtin": true,
   "base_id": null,
   "version": 1,
