@@ -121,7 +121,7 @@ New report type. Files:
 * **Always syntax-check before commit:** `python -c "import ast; ast.parse(open('FILE').read())"`
 * **Ask before destructive ops** (file deletion, force-push, rebase)
 * **Don't echo back what was just done** — terse confirmations preferred
-* User speaks **Lithuanian + English mixed** — match their language
+* User communicates in **English only** — always respond in English
 
 ---
 
@@ -385,8 +385,34 @@ New **SWOT page** in the Industry Analysis PDF, after Competitive Advantage deta
 
 ---
 
+## 15 · Session 7 changes (2026-06-05) — Japan ticker search fixes
+
+### Investment Memo Bull/Bear description update
+- `frameworks/overview_v2.json` — updated description to plain English: overview, snapshot, bull/bear, recommendation, peer comparison, EODHD + yfinance fallback. Removed duplicate "· PDF report" label (UI appends it automatically from framework metadata).
+
+### Japan autocomplete fixes (`data_sources/japan_tickers.py`, `pages/report_generator.py`)
+
+**Bug fixed — `.T` suffix in `search_japan()`:**
+- Typing `6061.T` lowercased to `"6061.t"` was never matching code `"6061"` — `"6061.t" in "6061"` is False.
+- Fix: strip `.t` from query at the top of `search_japan()` before matching.
+
+**Seed list expanded to full TOPIX (~1 650 companies):**
+- Replaced the old ~220-company seed with all TOPIX index constituents from `topixweight_e.csv` (JPX data file).
+- Covers 1 650 companies across all sectors. Alphanumeric codes (e.g. `167A`, `212A`) for newer IPOs included.
+- Non-TOPIX tickers (e.g. `5951`, `6061`) still won't have names in the seed — handled by the fallback below.
+
+**yfinance name fallback for non-TOPIX tickers (Layer 1 in `_smart_search`):**
+- When Layer 1 direct-code match can't find a name in seed/cache, fires one `yfinance.Search(ticker, max_results=3, news_count=0)` call.
+- Only uses result on exact symbol match (e.g. result symbol == `"6061.T"`) to avoid wrong names.
+- Fast enough for autocomplete (< 1s on Streamlit Cloud). Confirmed working in live test.
+
+### Communication preference
+- User communicates in **English only**. Always respond in English.
+
+---
+
 ## 13 · How to greet the user when you start
 
 Don't summarise this whole document. Just confirm you've read it, name current state in one line, ask what to do.
 
-The user speaks Lithuanian + English mixed. Match their language. Terse, technical, no-fluff.
+Always respond in **English only**. Terse, technical, no-fluff.
