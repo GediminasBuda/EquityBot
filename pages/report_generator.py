@@ -413,6 +413,17 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
                 )
             except Exception:
                 _jp_name = ""
+            # Fallback: yfinance Search for exact ticker (fast, one call)
+            if not _jp_name:
+                try:
+                    import yfinance as _yf_name
+                    _yf_sr = _yf_name.Search(_jp_ticker, max_results=3, news_count=0)
+                    for _yf_q in (_yf_sr.quotes or []):
+                        if (_yf_q.get("symbol") or "").upper() == _jp_ticker:
+                            _jp_name = _yf_q.get("shortname") or _yf_q.get("longname") or ""
+                            break
+                except Exception:
+                    pass
             _jp_label = (
                 f"🇯🇵 {_jp_ticker:<10}  {_jp_name[:50]}  · TSE"
                 if _jp_name else
