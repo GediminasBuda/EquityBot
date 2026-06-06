@@ -2095,11 +2095,19 @@ if generate_clicked and ticker_input:
                 _prog.progress(68, text="🔍  Fetching peer data…")
                 st.write("🔍  Fetching peer data (EODHD or yfinance for TSE peers)…")
                 peers: dict[str, CompanyData] = {}
-                raw_peers = peer_list or [
+                _llm_peers = [
                     p.get("ticker", "")
                     for p in analysis.get("suggested_peers", [])
                 ]
-                raw_peers = [t.strip().upper() for t in raw_peers if t.strip()][:6]
+                _seen: set[str] = set()
+                raw_peers: list[str] = []
+                for _t in list(peer_list) + _llm_peers:
+                    _t = _t.strip().upper()
+                    if _t and _t not in _seen:
+                        _seen.add(_t)
+                        raw_peers.append(_t)
+                    if len(raw_peers) == 6:
+                        break
                 for pt in raw_peers:
                     try:
                         if pt.endswith(".T"):
