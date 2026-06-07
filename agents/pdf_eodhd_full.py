@@ -702,7 +702,9 @@ def _render_price_chart_png(eod_data: list, ticker: str,
     for row in eod_data:
         if not isinstance(row, dict): continue
         d = row.get("date")
-        p = row.get("close") or row.get("adjusted_close")
+        adj = row.get("adjusted_close")
+        raw = row.get("close")
+        p = adj if adj not in (None, "", "NA", 0) else raw
         if d and p is not None:
             try:
                 dates.append(_dt.strptime(d, "%Y-%m-%d"))
@@ -738,7 +740,7 @@ def _render_price_chart_png(eod_data: list, ticker: str,
         ax.spines[sp].set_color("#DDDDDD")
         ax.spines[sp].set_linewidth(0.5)
     ax.grid(True, axis="y", color="#DDDDDD", linewidth=0.4, alpha=0.7)
-    fig.text(0.99, 0.02, f"Source: EODHD /eod ({len(dates)} obs)",
+    fig.text(0.99, 0.02, f"Source: EODHD /eod — split-adjusted close ({len(dates)} obs)",
              ha="right", va="bottom", fontsize=5.5, color="#666666",
              style="italic")
     fig.tight_layout(pad=0.4)
@@ -766,11 +768,13 @@ def _page_price_chart(bundle: dict, styles: dict) -> list:
         el.append(img)
         el.append(Spacer(1, 6))
 
-    # Summary statistics from EOD data
-    closes = [
-        float(r["close"]) for r in eod
-        if isinstance(r, dict) and r.get("close") not in (None, "", "NA")
-    ]
+    # Summary statistics from EOD data — prefer split-adjusted close
+    def _adj_close(r):
+        adj = r.get("adjusted_close")
+        return float(adj) if adj not in (None, "", "NA", 0) else (
+            float(r["close"]) if r.get("close") not in (None, "", "NA") else None
+        )
+    closes = [c for r in eod if isinstance(r, dict) for c in [_adj_close(r)] if c is not None]
     volumes = [
         float(r["volume"]) for r in eod
         if isinstance(r, dict) and r.get("volume") not in (None, "", "NA", 0)
