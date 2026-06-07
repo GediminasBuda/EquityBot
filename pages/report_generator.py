@@ -2261,42 +2261,49 @@ if generate_clicked and ticker_input:
                     company, _fpr_bundle = fetch_company_data_eodhd_only(ticker_input)
                     st.write(f"✓  EODHD endpoints used: {_fpr_bundle.get('endpoints_used',0)}/9")
 
-                # Step 2: Peers — required for this framework. If the user
-                # didn't supply any, ask the LLM to suggest some so the
-                # peer page always has content.
+                # Step 2: Peers — user-selected peers fill slots first; LLM
+                # suggestions backfill remaining slots up to 6 total.
                 fpr_peers: dict = {}
                 _fpr_suggest_usage: dict = {}
-                if peer_list:
-                    _peer_tickers_to_fetch = [
-                        p.strip().upper() for p in peer_list if p.strip()
-                    ][:6]
-                    _prog.progress(35, text="🔍  Fetching EODHD peer data…")
-                    st.write(f"🔍  Fetching {len(_peer_tickers_to_fetch)} peer(s) from EODHD…")
-                else:
+                _user_peer_tickers = [
+                    p.strip().upper() for p in peer_list if p.strip()
+                ]
+                _slots_remaining = 6 - len(_user_peer_tickers)
+
+                if _slots_remaining > 0:
                     _prog.progress(30, text="🤝  Asking LLM to suggest peers…")
-                    st.write("🤝  No peers supplied — asking LLM for peer suggestions…")
+                    if _user_peer_tickers:
+                        st.write(
+                            f"🤝  {len(_user_peer_tickers)} peer(s) supplied — "
+                            f"asking LLM to fill up to {_slots_remaining} more…"
+                        )
+                    else:
+                        st.write("🤝  No peers supplied — asking LLM for peer suggestions…")
                     try:
                         from models.fisher_peers import suggest_peers as _suggest_peers
-                        _peer_tickers_to_fetch, _fpr_suggest_usage = _suggest_peers(
-                            company, max_peers=6,
+                        _llm_suggested, _fpr_suggest_usage = _suggest_peers(
+                            company, max_peers=_slots_remaining,
                         )
                     except Exception as _se:
-                        _peer_tickers_to_fetch = []
+                        _llm_suggested = []
                         st.warning(f"Peer suggestion failed: {_se}")
                     if _fpr_suggest_usage:
                         _show_token_usage(_fpr_suggest_usage)
-                    if _peer_tickers_to_fetch:
-                        st.write(
-                            f"💡  LLM suggested peers: "
-                            f"{', '.join(_peer_tickers_to_fetch)}"
-                        )
-                    else:
+                    # Deduplicate: LLM suggestions that aren't already user-picked
+                    _user_set = set(_user_peer_tickers)
+                    _llm_new = [t for t in _llm_suggested if t not in _user_set]
+                    _peer_tickers_to_fetch = (_user_peer_tickers + _llm_new)[:6]
+                    if _llm_new:
+                        st.write(f"💡  LLM added peers: {', '.join(_llm_new)}")
+                    elif not _user_peer_tickers:
                         st.warning(
                             "⚠ LLM could not suggest peers automatically. "
                             "The peer comparison page will be empty — try "
                             "adding peers manually in the **Peer Tickers** "
                             "field."
                         )
+                else:
+                    _peer_tickers_to_fetch = _user_peer_tickers[:6]
 
                 if _peer_tickers_to_fetch:
                     _prog.progress(40, text="🔍  Fetching EODHD peer data…")
