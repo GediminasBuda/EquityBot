@@ -225,6 +225,9 @@ The `eodhd_sheet` report type skips the LLM entirely but the code after all bran
 ### Investment Memo peer list ignoring LLM suggestions when user adds peers
 In `pages/report_generator.py`, the peer list was built with `peer_list or llm_peers` — if the user selected even one peer, LLM suggestions were skipped entirely, leaving only 1 peer in the comparison table. **Fix:** changed to a merge strategy: user-selected peers fill slots first, then LLM-suggested peers (`suggested_peers` from analysis JSON) backfill the remaining slots, deduplicating throughout, up to 6 total.
 
+### Fisher Alternatives + Peers ignoring LLM suggestions when user adds peers
+Same bug as above, in the `fisher_peers` dispatch block of `pages/report_generator.py`. The `if peer_list: ... else: <LLM suggest>` branch meant any user-supplied peer(s) skipped the LLM suggestion entirely. **Fix:** same merge strategy — user peers fill slots first, then `suggest_peers()` from `models/fisher_peers.py` is always called to backfill remaining slots (up to `6 - len(user_peers)`), deduplicating throughout, max 6 total. If the user supplies 6 peers the LLM call is skipped.
+
 ---
 
 ## 8. Report Types
