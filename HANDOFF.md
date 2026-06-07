@@ -1,6 +1,6 @@
 # HANDOFF — Session Continuation Document
 
-**Last updated:** 2026-06-03 (session 6)  
+**Last updated:** 2026-06-07 (session 8)  
 **Author:** Claude session, written for the next one.
 
 If you're a Claude agent that just opened this repo on a fresh machine, **read this file end-to-end before touching anything**. Then read `CLAUDE.md` for broader project documentation.
@@ -408,6 +408,35 @@ New **SWOT page** in the Industry Analysis PDF, after Competitive Advantage deta
 
 ### Communication preference
 - User communicates in **English only**. Always respond in English.
+
+---
+
+## 16 · Session 8 changes (2026-06-07) — EODHD price chart split-adjustment fix
+
+### Bug: EODHD Direct price chart showed unadjusted prices
+
+**File:** `agents/pdf_eodhd_full.py`
+
+**Symptom:** CPRT chart showed a spike to $159 followed by a crash to ~$31, making it look like a 80% drawdown. Reality: two 2:1 splits in Nov-2022 and Aug-2023 were not reflected in the chart because raw `close` was used instead of `adjusted_close`.
+
+**Root cause (line 705):**
+```python
+# WRONG — close is always non-null so adjusted_close was never used
+p = row.get("close") or row.get("adjusted_close")
+```
+
+**Fix — same pattern already used in `agents/price_chart.py`:**
+```python
+adj = row.get("adjusted_close")
+raw = row.get("close")
+p = adj if adj not in (None, "", "NA", 0) else raw
+```
+
+**Also fixed:**
+- Summary stats (Period High/Low, First/Last Close, Period Return) now also use `adjusted_close`-first logic via helper `_adj_close()`.
+- Chart footnote updated: "split-adjusted close" so reader knows prices are adjusted.
+
+**Commit:** `894eb54` on `Final-design-V3`
 
 ---
 
