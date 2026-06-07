@@ -283,8 +283,7 @@ def _page_profile(bundle: dict, styles: dict) -> list:
     # Title + description
     el.append(_sec("Company Profile", styles))
     desc = g.get("Description") or "No description available."
-    desc_short = desc[:1100] + ("…" if len(desc) > 1100 else "")
-    el.append(Paragraph(desc_short, styles["body"]))
+    el.append(Paragraph(desc, styles["body"]))
     el.append(Spacer(1, 6))
 
     # Identity block
