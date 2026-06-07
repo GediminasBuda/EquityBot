@@ -342,6 +342,25 @@ def _calculate_checklist(company: CompanyData) -> list[dict]:
         "pass": is_payer,
     })
 
+    # 8. Founder still on board
+    officers = getattr(company, "officers", []) or []
+    if officers:
+        founders = [
+            o["name"] for o in officers
+            if "founder" in (o.get("title") or "").lower()
+        ]
+        founder_on_board = bool(founders)
+        actual_str = founders[0] if founders else "Not found"
+    else:
+        founder_on_board = False
+        actual_str = "n/a"
+    checks.append({
+        "criterion": "Founder-led",
+        "threshold": None,
+        "actual": actual_str,
+        "pass": founder_on_board,
+    })
+
     return checks
 
 
