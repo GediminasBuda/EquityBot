@@ -1,6 +1,6 @@
 # Your Humble EquityBot — Agent Handoff Documentation
 
-**Last updated:** 2026-06-03  
+**Last updated:** 2026-06-07  
 **Stack:** Python 3.11 · Streamlit · ReportLab · Claude / GPT-4o · EODHD · yfinance  
 **Deployment:** Streamlit Community Cloud (auto-deploys on push to `Final-design-V3`)  
 **Repo:** https://github.com/GediminasBuda/EquityBot
@@ -221,6 +221,9 @@ Added ~20 new fields to `CompanyData` (52-week levels, ownership %, officers, et
 
 ### `analysis` NameError in eodhd_sheet branch
 The `eodhd_sheet` report type skips the LLM entirely but the code after all branches referenced `analysis` variable. **Fix:** added `analysis = {}` in the `eodhd_sheet` dispatch block.
+
+### Investment Memo peer list ignoring LLM suggestions when user adds peers
+In `pages/report_generator.py`, the peer list was built with `peer_list or llm_peers` — if the user selected even one peer, LLM suggestions were skipped entirely, leaving only 1 peer in the comparison table. **Fix:** changed to a merge strategy: user-selected peers fill slots first, then LLM-suggested peers (`suggested_peers` from analysis JSON) backfill the remaining slots, deduplicating throughout, up to 6 total.
 
 ---
 
