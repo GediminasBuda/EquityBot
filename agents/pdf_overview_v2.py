@@ -315,11 +315,13 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     _ev = company.enterprise_value
     if _ev is None and company.market_cap is not None and company.net_debt is not None:
         _ev = company.market_cap + company.net_debt
-    ttm_ev_sales = None
-    if _ev and ttm_revenue and ttm_revenue > 0:
-        ttm_ev_sales = _ev / ttm_revenue
-    else:
-        ttm_ev_sales = company.ev_sales  # fallback to scalar
+    # EV/Sales TTM: use ttm_revenue when available, otherwise fall back to
+    # latest annual revenue — same denominator the peer table uses, so both
+    # tables stay consistent. Never trust company.ev_sales (stale yfinance scalar).
+    _latest_af = company.latest_annual()
+    _annual_rev = _latest_af.revenue if _latest_af else None
+    _rev_denom = ttm_revenue or _annual_rev
+    ttm_ev_sales = (_ev / _rev_denom) if (_ev and _rev_denom and _rev_denom > 0) else None
 
     rows_data = []
 
@@ -395,8 +397,7 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
             ttm_val=company.market_cap)
     # For TTM shares, prefer latest annual (more reliable than info["sharesOutstanding"]
     # which can be the float-adjusted count and differs from total issued shares).
-    _latest = company.latest_annual()
-    _la_raw = _latest.shares_outstanding if _latest and _latest.shares_outstanding else None
+    _la_raw = _latest_af.shares_outstanding if _latest_af and _latest_af.shares_outstanding else None
     _ttm_shares = (
         _la_raw / 1_000_000 if _la_raw and _la_raw > 1_000_000 else _la_raw
     ) if _la_raw else company.shares_outstanding

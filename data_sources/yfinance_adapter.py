@@ -211,14 +211,10 @@ class YFinanceAdapter:
             # TTM revenue is fetched below via info["totalRevenue"] instead.
             company.revenue_per_share = _safe(info.get("revenuePerShare"), float)
 
-            # ── TTM Revenue from info["totalRevenue"] ─────────────────────────
-            # Yahoo Finance computes totalRevenue as trailing twelve months.
-            # This is more reliable than quarterly_financials for TSE stocks
-            # where quarterly data coverage is often incomplete.
-            _total_rev = _safe(info.get("totalRevenue"), float, 1 / 1_000_000)
-            if _total_rev and _total_rev > 0:
-                company.ttm_revenue = _total_rev
-                logger.debug(f"[yfinance] TTM revenue from info.totalRevenue: {_total_rev:.1f}M")
+            # NOTE: info["totalRevenue"] is intentionally NOT used here.
+            # For TSE stocks yfinance returns the most recent single quarter's
+            # revenue in this field (e.g. 604M instead of TTM 2,295M for 2477.T).
+            # TTM revenue is derived from quarterly_financials sum or latest annual.
 
             # ── Annual Financial History ──────────────────────────────────────
             q_financials = q_cashflow = q_balance = None
