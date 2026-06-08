@@ -280,7 +280,8 @@ def _calculate_checklist(company: CompanyData) -> list[dict]:
     })
 
     # 2. EBIT Margin > 10%
-    em = company.ebit_margin or (la.ebit_margin if la else None)
+    # Prefer latest_annual so the value matches the Financial Summary table
+    em = (la.ebit_margin if la and la.ebit_margin is not None else None) or company.ebit_margin
     checks.append({
         "criterion": "EBIT Margin > 10.0%",
         "threshold": 10.0,
@@ -289,7 +290,8 @@ def _calculate_checklist(company: CompanyData) -> list[dict]:
     })
 
     # 3. Last ROE > 10%
-    roe = company.roe or (la.roe if la else None)
+    # Prefer latest_annual so the value matches the Financial Summary table
+    roe = (la.roe if la and la.roe is not None else None) or company.roe
     checks.append({
         "criterion": "Last ROE > 10.0%",
         "threshold": 10.0,
@@ -307,7 +309,10 @@ def _calculate_checklist(company: CompanyData) -> list[dict]:
     })
 
     # 5. Net Cash (net_debt < 0)
-    nd = company.net_debt or (la.net_debt if la else None)
+    # Prefer latest_annual so the value matches the Financial Summary table
+    nd = (la.net_debt if la and la.net_debt is not None else None)
+    if nd is None:
+        nd = company.net_debt
     is_net_cash = nd is not None and nd < 0
     checks.append({
         "criterion": "Net Cash (no net debt)",

@@ -328,6 +328,7 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     add_row("ROE",        lambda a: a.roe,        "%")
     add_row("Div. Yield", lambda a: a.div_yield,  "%")
     add_row("FCF Yield",  lambda a: a.fcf_yield,  "%")
+    add_row("EV",         lambda a: a.enterprise_value, "M")
     add_row("EV/EBIT",    lambda a: a.ev_ebit,    "x")
     add_row("EV/Sales",   lambda a: a.ev_sales,   "x",
             est_val=fe.ev_sales if fe else None)
@@ -435,6 +436,21 @@ def _build_peer_table(
         la = c.latest_annual()
         # Determine the peer's reporting currency (fall back to price currency)
         peer_ccy = (c.currency or c.currency_price or "").strip().upper()
+
+        # Prefer latest_annual() values so all ratio rows are consistent with
+        # the Financial Summary table (which also reads from AnnualFinancials).
+        # The scalar CompanyData fields (e.g. company.roe, company.ev_sales)
+        # come from yfinance TTM or EODHD Highlights and can differ from the
+        # year-end annual values shown in the Financial Summary column.
+        roe_val  = (la.roe     if la and la.roe     is not None else c.roe)
+        evebit   = (la.ev_ebit if la and la.ev_ebit is not None else c.ev_ebit)
+        evsales  = (la.ev_sales if la and la.ev_sales is not None else c.ev_sales)
+        # Gearing = Net Debt / EBITDA — compute from latest annual when available
+        if la and la.net_debt is not None and la.ebitda and la.ebitda > 0:
+            gearing_val = la.net_debt / la.ebitda
+        else:
+            gearing_val = c.gearing
+
         row = [
             Paragraph(
                 f"<b>{c.name or c.ticker}</b>" if is_anchor else (c.name or c.ticker),
@@ -443,12 +459,12 @@ def _build_peer_table(
             p_cell(c.ticker),
             p_cell(_fmt_with_ccy(la.revenue if la else None, peer_ccy), right=True),
             p_cell(_fmt_with_ccy(c.market_cap, peer_ccy), right=True),
-            p_cell(_fmt_pct(c.roe),      right=True),
-            p_cell(_fmt_x(c.price_to_book), right=True),
-            p_cell(_fmt_x(c.pe_ratio),   right=True),
-            p_cell(_fmt_x(c.ev_ebit),    right=True),
-            p_cell(_fmt_x(c.ev_sales),   right=True),
-            p_cell(_fmt_x(c.gearing),    right=True),
+            p_cell(_fmt_pct(roe_val),        right=True),
+            p_cell(_fmt_x(c.price_to_book),  right=True),
+            p_cell(_fmt_x(c.pe_ratio),       right=True),
+            p_cell(_fmt_x(evebit),           right=True),
+            p_cell(_fmt_x(evsales),          right=True),
+            p_cell(_fmt_x(gearing_val),      right=True),
         ]
         return row
 
