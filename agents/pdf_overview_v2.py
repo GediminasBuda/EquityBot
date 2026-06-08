@@ -299,18 +299,27 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     def lbl(text):
         return Paragraph(text + _EODHD_CHECK, tl_style)
 
-    # ── TTM values (quarterly-sum fields take priority; fall back to derivations) ──
-    ttm_revenue = company.ttm_revenue or (
-        company.revenue_per_share * company.shares_outstanding
-        if company.revenue_per_share and company.shares_outstanding else None
-    )
-    ttm_ebitda   = company.ttm_ebitda
-    ttm_ebit_val = company.ttm_ebit   # distinct name to avoid shadowing lambda param
-    ttm_ni_ifrs  = company.ttm_net_income
-    ttm_ni_adj   = (
-        company.eps_ttm * company.shares_outstanding
-        if company.eps_ttm and company.shares_outstanding else None
-    )
+    # ── TTM values — use getattr() defensively: old cached CompanyData objects
+    # (created before these fields existed) won't have the attribute at all.
+    ttm_revenue  = (getattr(company, 'ttm_revenue', None)
+                    or (company.revenue_per_share * company.shares_outstanding
+                        if company.revenue_per_share and company.shares_outstanding else None))
+    ttm_ebitda   = getattr(company, 'ttm_ebitda', None)
+    ttm_ebit_val = getattr(company, 'ttm_ebit', None)
+    ttm_ni_ifrs  = getattr(company, 'ttm_net_income', None)
+    ttm_ni_adj   = (company.eps_ttm * company.shares_outstanding
+                    if company.eps_ttm and company.shares_outstanding else None)
+
+    # EV/Sales TTM: compute from actual EV + TTM revenue (avoids stale cached
+    # yfinance enterpriseToRevenue scalar which can be wildly wrong for TSE stocks)
+    _ev = company.enterprise_value
+    if _ev is None and company.market_cap is not None and company.net_debt is not None:
+        _ev = company.market_cap + company.net_debt
+    ttm_ev_sales = None
+    if _ev and ttm_revenue and ttm_revenue > 0:
+        ttm_ev_sales = _ev / ttm_revenue
+    else:
+        ttm_ev_sales = company.ev_sales  # fallback to scalar
 
     rows_data = []
 
@@ -379,7 +388,7 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     add_row("EV/EBIT", lambda a: a.ev_ebit, "x",
             ttm_val=company.ev_ebit)
     add_row("EV/Sales", lambda a: a.ev_sales, "x",
-            ttm_val=company.ev_sales,
+            ttm_val=ttm_ev_sales,
             est_val=fe.ev_sales if fe else None)
 
     add_row("Mkt Cap (M)", lambda a: a.market_cap, "M",
@@ -476,6 +485,16 @@ def _build_peer_table(
     def make_row(c: CompanyData, is_anchor=False):
         la = c.latest_annual()
         peer_ccy = (c.currency or c.currency_price or "").strip().upper()
+        # Recompute EV/Sales from EV + latest-annual revenue to bypass stale cached
+        # yfinance enterpriseToRevenue scalars (especially wrong for TSE stocks).
+        _peer_ev = c.enterprise_value
+        if _peer_ev is None and c.market_cap is not None and c.net_debt is not None:
+            _peer_ev = c.market_cap + c.net_debt
+        _peer_evsales = None
+        if _peer_ev and la and la.revenue and la.revenue > 0:
+            _peer_evsales = _peer_ev / la.revenue
+        else:
+            _peer_evsales = c.ev_sales
         row = [
             Paragraph(
                 f"<b>{c.name or c.ticker}</b>" if is_anchor else (c.name or c.ticker),
@@ -488,7 +507,7 @@ def _build_peer_table(
             p_cell(_fmt_x(c.price_to_book), right=True),
             p_cell(_fmt_x(c.pe_ratio),      right=True),
             p_cell(_fmt_x(c.ev_ebit),       right=True),
-            p_cell(_fmt_x(c.ev_sales),      right=True),
+            p_cell(_fmt_x(_peer_evsales),   right=True),
             p_cell(_fmt_x(c.gearing),       right=True),
         ]
         return row
