@@ -393,12 +393,18 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
 
     add_row("Mkt Cap (M)", lambda a: a.market_cap, "M",
             ttm_val=company.market_cap)
+    # For TTM shares, prefer latest annual (more reliable than info["sharesOutstanding"]
+    # which can be the float-adjusted count and differs from total issued shares).
+    _la_shares = la.shares_outstanding if la and la.shares_outstanding else None
+    _ttm_shares = (
+        _la_shares / 1_000_000 if _la_shares and _la_shares > 1_000_000 else _la_shares
+    ) if _la_shares else company.shares_outstanding
     add_row("Shares Out. (M)", lambda a: (
         a.shares_outstanding / 1_000_000
         if a.shares_outstanding and a.shares_outstanding > 1_000_000
         else a.shares_outstanding
     ), "ps",
-        ttm_val=company.shares_outstanding)
+        ttm_val=_ttm_shares)
 
     all_rows = [col_headers] + rows_data
 

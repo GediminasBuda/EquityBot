@@ -249,6 +249,28 @@ class YFinanceAdapter:
             except Exception as e:
                 logger.warning(f"[yfinance] TTM computation failed for {ticker}: {e}")
 
+            # ── Re-derive net_debt and EV from quarterly balance sheet ────────
+            # info["totalCash"] = cash-and-equivalents ONLY. For companies that
+            # hold significant short-term financial investments (common for
+            # Japanese stocks), this understates liquid assets by several billion.
+            # The quarterly balance sheet key "Cash Cash Equivalents And Short
+            # Term Investments" captures the full liquid asset base — same key
+            # used in the annual history parser, which gives the correct -6.6B
+            # annual figures. We redo the scalar net_debt/EV with this better source.
+            try:
+                self._fix_net_debt_from_balance_sheet(company, q_balance)
+            except Exception as e:
+                logger.debug(f"[yfinance] quarterly balance sheet net_debt fix failed: {e}")
+
+            # ── TTM Revenue fallback to latest annual ─────────────────────────
+            # If info["totalRevenue"] returned None AND quarterly sum failed,
+            # use the most recent annual revenue as best available approximation.
+            if getattr(company, 'ttm_revenue', None) is None:
+                la = company.latest_annual()
+                if la and la.revenue:
+                    company.ttm_revenue = la.revenue
+                    logger.debug(f"[yfinance] TTM revenue fallback to latest annual: {la.revenue:.1f}M")
+
             # ── Historical Dividends Per Share (sum payments by calendar year) ───
             try:
                 divs = yt.dividends
@@ -620,6 +642,69 @@ class YFinanceAdapter:
         if company.annual_financials:
             fields_filled.append("annual_financials")
             logger.debug(f"[yfinance] Annual data years: {list(company.annual_financials.keys())}")
+
+    def _fix_net_debt_from_balance_sheet(self, company: CompanyData, q_balance) -> None:
+        """
+        Re-derive current net_debt and enterprise_value from the most recent
+        quarterly balance sheet, using the same cash keys as the annual parser.
+
+        Problem: info["totalCash"] = cash-and-equivalents only. For companies
+        holding significant short-term financial investments (e.g. Japanese
+        platform stocks), the full liquid position is under "Cash Cash Equivalents
+        And Short Term Investments". info["totalCash"] can show 1.6B when the
+        true liquid asset base is 6.6B, making EV = MCap + wrong_net_debt.
+        """
+        if q_balance is None or q_balance.empty:
+            return
+
+        # Sort columns so most recent quarter is first
+        try:
+            cols = sorted(q_balance.columns, reverse=True)
+        except TypeError:
+            cols = list(q_balance.columns)
+        if not cols:
+            return
+        recent_col = cols[0]
+
+        # Full cash: prefer broad key (includes ST investments), then narrow
+        cash_m = None
+        for ck in ["Cash Cash Equivalents And Short Term Investments",
+                   "Cash And Cash Equivalents"]:
+            if ck in q_balance.index:
+                v = q_balance.loc[ck, recent_col]
+                try:
+                    if not pd.isna(v) and float(v) > 0:
+                        cash_m = float(v) / 1_000_000
+                        break
+                except Exception:
+                    pass
+
+        if cash_m is None:
+            return  # couldn't improve on info["totalCash"]
+
+        # Financial debt: look for standard debt keys
+        debt_m = 0.0
+        for dk in ["Total Debt",
+                   "Long Term Debt And Capital Lease Obligation",
+                   "Long Term Debt",
+                   "Short Long Term Debt Total"]:
+            if dk in q_balance.index:
+                v = q_balance.loc[dk, recent_col]
+                try:
+                    if not pd.isna(v):
+                        debt_m = float(v) / 1_000_000
+                        break
+                except Exception:
+                    pass
+
+        new_net_debt = debt_m - cash_m
+        logger.debug(
+            f"[yfinance] net_debt corrected via q_balance: "
+            f"cash={cash_m:.0f}M, debt={debt_m:.0f}M → net_debt={new_net_debt:.0f}M"
+        )
+        company.net_debt = new_net_debt
+        if company.market_cap is not None:
+            company.enterprise_value = company.market_cap + new_net_debt
 
     def _compute_ttm_metrics(
         self,
