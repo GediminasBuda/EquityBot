@@ -67,9 +67,41 @@ AMBER_HEX = "#D68910"
 MGRAY_HEX = "#555555"
 
 # ── Typography ────────────────────────────────────────────────────────────────
-BASE_FONT      = 'Helvetica'
-BOLD_FONT      = 'Helvetica-Bold'
-OBLIQUE_FONT   = 'Helvetica-Oblique'
+def _setup_fonts() -> tuple:
+    """Try to register Calibri Light fonts; fall back to Helvetica on Linux/cloud."""
+    import os
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        font_dirs = [
+            r"C:\Windows\Fonts",
+            os.path.expanduser("~/Library/Fonts"),
+            "/usr/share/fonts/truetype",
+        ]
+        for d in font_dirs:
+            light_path = os.path.join(d, "calibril.ttf")
+            if not os.path.exists(light_path):
+                continue
+            pdfmetrics.registerFont(TTFont("CalibriLight", light_path))
+            # Bold: use Calibri Regular (medium weight suits a Light theme)
+            bold_path = os.path.join(d, "calibri.ttf")
+            pdfmetrics.registerFont(TTFont("CalibriLight-Bold",
+                                           bold_path if os.path.exists(bold_path) else light_path))
+            # Italic
+            ital_path = os.path.join(d, "calibrili.ttf")
+            pdfmetrics.registerFont(TTFont("CalibriLight-Italic",
+                                           ital_path if os.path.exists(ital_path) else light_path))
+            from reportlab.pdfbase.pdfmetrics import registerFontFamily
+            registerFontFamily("CalibriLight",
+                normal="CalibriLight", bold="CalibriLight-Bold",
+                italic="CalibriLight-Italic", boldItalic="CalibriLight-Bold")
+            logger.debug("Calibri Light fonts registered")
+            return "CalibriLight", "CalibriLight-Bold", "CalibriLight-Italic"
+    except Exception as e:
+        logger.debug(f"Calibri font setup skipped: {e}")
+    return "Helvetica", "Helvetica-Bold", "Helvetica-Oblique"
+
+BASE_FONT, BOLD_FONT, OBLIQUE_FONT = _setup_fonts()
 
 # ── EODHD verified-data checkmark ─────────────────────────────────────────────
 # ZapfDingbats '4' = ✓ checkmark (built-in PDF font, no TTF needed)
@@ -192,19 +224,22 @@ def _draw_header(canvas, doc, company: CompanyData, report_date: str):
 def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     """
     Build the annual financial table.
-    Columns: label | (up to 10 most recent fiscal years) | estimate
+    Columns: label | (up to 10 most recent fiscal years) | TTM | forward estimate
     """
     cur = company.currency or ""
     all_years = company.sorted_years()
 
-    # Pick up to 10 historical years + mark the most recent estimate column
-    hist_years = all_years[:10]   # most recent 10 years (descending)
+    hist_years = all_years[:10]          # most recent 10 years (descending)
     show_years = list(reversed(hist_years))  # chronological order
-    est_year   = (show_years[-1] + 1) if show_years else datetime.utcnow().year
 
-    # When many columns (≥9 data cols incl. estimate) shrink Paragraph
-    # styles so numeric cells don't overflow narrow ~42pt columns.
-    _compact = (len(show_years) + 1) >= 9
+    fe = company.forward_estimates
+    est_year = (show_years[-1] + 1) if show_years else datetime.utcnow().year
+    if fe is not None:
+        est_year = fe.year
+
+    # n_data_cols = historical years + TTM col + estimate col
+    n_data_cols = len(show_years) + 2
+    _compact = n_data_cols >= 9
     if _compact:
         th_style = ParagraphStyle("th_c", parent=styles["table_header"],
                                   fontSize=6.5, leading=8)
@@ -217,50 +252,22 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         tl_style = styles["table_label"]
         tc_style = styles["table_cell"]
 
-    # Column headers — append ✓ (ZapfDingbats) when the year is EODHD-sourced
     def _yr_hdr(y: int) -> str:
-        af = company.annual_financials.get(y)
-        check = _EODHD_CHECK if (af and getattr(af, "source", "") == "eodhd") else ""
+        a = company.annual_financials.get(y)
+        check = _EODHD_CHECK if (a and getattr(a, "source", "") == "eodhd") else ""
         return str(y) + check
 
-    year_headers = [_yr_hdr(y) for y in show_years] + [f"{est_year}E"]
+    year_headers = [_yr_hdr(y) for y in show_years] + ["TTM", f"{est_year}E"]
     col_headers  = [Paragraph("", th_style)] + [
-        Paragraph(y, th_style) for y in year_headers
+        Paragraph(h, th_style) for h in year_headers
     ]
 
     def af(yr):
         return company.annual_financials.get(yr)
 
     def cell(v, fmt="M"):
-        """Format a value for the table cell. V2: empty → '— (n/a)' marker."""
         if v is None:
-            return Paragraph(
-                f'<font color="{MGRAY_HEX}">— n/a</font>', tc_style)
-        if fmt == "M":   # millions → show as B or M
-            s = f"{v/1000:.1f}B" if abs(v) >= 1000 else f"{v:,.1f}M"
-        elif fmt == "%":
-            s = f"{v*100:.1f}%"
-        elif fmt == "x":
-            s = f"{v:.1f}x"
-        elif fmt == "ps":  # per share
-            s = f"{v:.2f}"
-        else:
-            s = str(v)
-        return Paragraph(s, tc_style)
-
-    def lbl(text):
-        # V2: each row label is annotated with ✓ to confirm the metric is
-        # provided by EODHD. (All financial-statement fields used here are
-        # part of the EODHD All-In-One /fundamentals payload.)
-        return Paragraph(text + _EODHD_CHECK, tl_style)
-
-    # ── Forward estimates helper ──────────────────────────────────────────────
-    fe = company.forward_estimates   # ForwardEstimates | None
-
-    def est_cell_val(v, fmt="M"):
-        """Render an estimate value in a distinct italic style."""
-        if v is None:
-            return Paragraph("—", tc_style)
+            return Paragraph(f'<font color="{MGRAY_HEX}">— n/a</font>', tc_style)
         if fmt == "M":
             s = f"{v/1000:.1f}B" if abs(v) >= 1000 else f"{v:,.1f}M"
         elif fmt == "%":
@@ -271,135 +278,162 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
             s = f"{v:.2f}"
         else:
             s = str(v)
-        # Italic + slightly lighter to signal "estimate"
+        return Paragraph(s, tc_style)
+
+    def italic_cell(v, fmt="M", dash="—"):
+        """Italic cell for TTM and estimate columns."""
+        if v is None:
+            return Paragraph(f'<font color="{MGRAY_HEX}">{dash}</font>', tc_style)
+        if fmt == "M":
+            s = f"{v/1000:.1f}B" if abs(v) >= 1000 else f"{v:,.1f}M"
+        elif fmt == "%":
+            s = f"{v*100:.1f}%"
+        elif fmt == "x":
+            s = f"{v:.1f}x"
+        elif fmt == "ps":
+            s = f"{v:.2f}"
+        else:
+            s = str(v)
         return Paragraph(f"<i>{s}</i>", tc_style)
 
-    def est_cell_none():
-        return Paragraph("—", tc_style)
+    def lbl(text):
+        return Paragraph(text + _EODHD_CHECK, tl_style)
 
-    # Update est_year to use forward_estimates.year if available
-    if fe is not None:
-        est_year = fe.year
-        year_headers = [_yr_hdr(y) for y in show_years] + [f"{est_year}E"]
-        col_headers = [Paragraph("", th_style)] + [
-            Paragraph(y, th_style) for y in year_headers
-        ]
+    # ── TTM values from CompanyData scalars (current/trailing twelve months) ──
+    ttm_revenue = None
+    if company.revenue_per_share and company.shares_outstanding:
+        ttm_revenue = company.revenue_per_share * company.shares_outstanding
+    ttm_ni_adj = None
+    if company.eps_ttm and company.shares_outstanding:
+        ttm_ni_adj = company.eps_ttm * company.shares_outstanding
 
-    # Build rows: (label, [col values])
     rows_data = []
 
-    def add_row(label, getter, fmt="M", est_val=None):
-        """
-        Add a row to the table.
-        getter: callable(AnnualFinancials) → value  for historical cols
-        est_val: the estimate-year value (or None → show dash)
-        """
+    def add_row(label, getter, fmt="M", ttm_val=None, est_val=None):
+        """getter: callable(AnnualFinancials) → value for historical cols."""
         vals = [lbl(label)]
         for y in show_years:
             a = af(y)
             vals.append(cell(getter(a) if a else None, fmt))
-        # Estimate column
-        vals.append(est_cell_val(est_val, fmt) if est_val is not None else est_cell_none())
+        vals.append(italic_cell(ttm_val, fmt))       # TTM column
+        vals.append(italic_cell(est_val, fmt))        # Estimate column
         rows_data.append(vals)
 
-    add_row(f"Sales ({cur}M)",  lambda a: a.revenue,
+    add_row(f"Sales ({cur}M)", lambda a: a.revenue,
+            ttm_val=ttm_revenue,
             est_val=fe.revenue if fe else None)
-    add_row("EBITDA",              lambda a: a.ebitda)
+    add_row("EBITDA", lambda a: a.ebitda)
 
-    # Net Profit — two rows: IFRS reported and underlying (EPS-derived)
-    add_row("Net Profit (IFRS)",  lambda a: a.net_income)    # IFRS attributable to shareholders
-    # Underlying forward net income derived from consensus EPS × current shares
+    add_row("Net Profit (IFRS)", lambda a: a.net_income)
     _fe_ni_underlying = None
     if fe and fe.eps_diluted and company.shares_outstanding:
         _fe_ni_underlying = fe.eps_diluted * company.shares_outstanding
-    add_row("Net Profit (Adj.)",  lambda a: a.net_income_underlying,
+    add_row("Net Profit (Adj.)", lambda a: a.net_income_underlying,
+            ttm_val=ttm_ni_adj,
             est_val=_fe_ni_underlying)
 
-    add_row("Net Fin. Debt",      lambda a: a.net_debt)      # not forward-looking
-    add_row("Net Margin",       lambda a: a.net_margin,  "%",
+    add_row("Net Fin. Debt", lambda a: a.net_debt,
+            ttm_val=company.net_debt)
+    add_row("Net Margin", lambda a: a.net_margin, "%",
+            ttm_val=company.net_margin,
             est_val=fe.net_margin if fe else None)
-    add_row("EBIT Margin",      lambda a: a.ebit_margin, "%")  # not in free estimates
-    add_row("EPS (dil.)",       lambda a: a.eps_diluted, "ps",
+    add_row("EBIT Margin", lambda a: a.ebit_margin, "%",
+            ttm_val=company.ebit_margin)
+    add_row("EPS (dil.)", lambda a: a.eps_diluted, "ps",
+            ttm_val=company.eps_ttm,
             est_val=fe.eps_diluted if fe else None)
 
-    # Valuation rows
-    add_row("P/E",        lambda a: a.pe_ratio,  "x",
+    add_row("P/E", lambda a: a.pe_ratio, "x",
+            ttm_val=company.pe_ratio,
             est_val=fe.pe_ratio if fe else None)
-    add_row("ROE",        lambda a: a.roe,        "%")
-    add_row("Div. Yield", lambda a: a.div_yield,  "%")
-    add_row("FCF Yield",  lambda a: a.fcf_yield,  "%")
-    add_row("EV",         lambda a: a.enterprise_value, "M")
-    add_row("EV/EBIT",    lambda a: a.ev_ebit,    "x")
-    add_row("EV/Sales",   lambda a: a.ev_sales,   "x",
+    add_row("ROE", lambda a: a.roe, "%",
+            ttm_val=company.roe)
+    add_row("Div. Yield", lambda a: a.div_yield, "%",
+            ttm_val=company.dividend_yield)
+    add_row("FCF Yield", lambda a: a.fcf_yield, "%",
+            ttm_val=company.fcf_yield)
+
+    # EV — only show historical when balance sheet data is available.
+    # If net_debt is None, the annual EV was computed as just market_cap
+    # (ignoring cash), which is wrong. Show n/a in that case; the TTM
+    # column uses company.enterprise_value which comes from yfinance/EODHD
+    # directly and is always correct.
+    def _annual_ev(a):
+        if a is None or a.market_cap is None:
+            return None
+        if a.net_debt is not None:
+            return a.market_cap + a.net_debt
+        if a.total_debt is not None and a.cash is not None:
+            return a.market_cap + (a.total_debt - a.cash)
+        return None
+
+    add_row("EV", _annual_ev, "M",
+            ttm_val=company.enterprise_value)
+    add_row("EV/EBIT", lambda a: a.ev_ebit, "x",
+            ttm_val=company.ev_ebit)
+    add_row("EV/Sales", lambda a: a.ev_sales, "x",
+            ttm_val=company.ev_sales,
             est_val=fe.ev_sales if fe else None)
 
-    # Market cap (historical) + shares outstanding
-    add_row("Mkt Cap (M)",     lambda a: a.market_cap,  "M")
-    # shares_outstanding is normalized to millions by DataManager; defensive
-    # fallback divides only if a legacy raw value (>1M) leaks through.
+    add_row("Mkt Cap (M)", lambda a: a.market_cap, "M",
+            ttm_val=company.market_cap)
     add_row("Shares Out. (M)", lambda a: (
         a.shares_outstanding / 1_000_000
         if a.shares_outstanding and a.shares_outstanding > 1_000_000
         else a.shares_outstanding
-    ), "ps")
+    ), "ps",
+        ttm_val=company.shares_outstanding)
 
-    # Insert header as first row
     all_rows = [col_headers] + rows_data
 
-    # Column widths: label fixed, data cols evenly split among hist + est.
-    # With 10 historical + 1 estimate = 11 data cols on A4 (~565 pt content
-    # width), narrow label column to leave room for narrow numeric cells.
-    n_data_cols = len(show_years) + 1  # +1 for estimate
-    label_w = 88 if n_data_cols >= 9 else 105
-    data_w  = (CW - label_w) / n_data_cols
+    ttm_col = len(show_years) + 1   # TTM column index
+    est_col = len(show_years) + 2   # estimate column index
+
+    label_w  = 88 if n_data_cols >= 9 else 105
+    data_w   = (CW - label_w) / n_data_cols
     col_widths = [label_w] + [data_w] * n_data_cols
 
     t = Table(all_rows, colWidths=col_widths, repeatRows=1)
 
-    # Last column index = n_data_cols (label is col 0, last hist is col n_data_cols-1,
-    # estimate column is col n_data_cols)
-    est_col = n_data_cols
-
-    # Adaptive sizing: with 10+ historical columns numeric cells must shrink
-    # so values like "12,345.6" don't overflow ~42pt-wide columns.
-    body_fs   = 6.5 if n_data_cols >= 9 else 7.5
-    hdr_fs    = 7.0 if n_data_cols >= 9 else 7.5
-    cell_pad  = 2   if n_data_cols >= 9 else 5
+    body_fs  = 6.5 if n_data_cols >= 9 else 7.5
+    hdr_fs   = 7.0 if n_data_cols >= 9 else 7.5
+    cell_pad = 2   if n_data_cols >= 9 else 5
 
     ts = [
-        # Header row — white background, navy text + thick navy underline
         ('BACKGROUND',  (0,0), (-1,0), white),
         ('TEXTCOLOR',   (0,0), (-1,0), NAVY),
         ('FONTNAME',    (0,0), (-1,0), BOLD_FONT),
         ('FONTSIZE',    (0,0), (-1,0), hdr_fs),
         ('ALIGN',       (0,0), (-1,0), 'CENTER'),
-        ('VALIGN',      (0,0), (-1,-1),'MIDDLE'),
-        # Body — plain white (no alternating fill, saves ink)
+        ('VALIGN',      (0,0), (-1,-1), 'MIDDLE'),
         ('BACKGROUND',  (0,1), (-1,-1), white),
-        # Estimate column header — navy text, italic-style by colour
+        # TTM column — light blue tint to distinguish from historical
+        ('BACKGROUND',  (ttm_col,0), (ttm_col,-1), HexColor('#EEF6FB')),
+        ('TEXTCOLOR',   (ttm_col,0), (ttm_col,0),  BLUE),
+        ('LINEBEFORE',  (ttm_col,0), (ttm_col,-1), 1.2, BLUE),
+        ('LINEAFTER',   (ttm_col,0), (ttm_col,-1), 1.2, BLUE),
+        # Estimate column header
         ('BACKGROUND',  (est_col,0), (est_col,0), white),
         ('TEXTCOLOR',   (est_col,0), (est_col,0), BLUE),
-        # Label column — bold but no fill
+        ('LINEBEFORE',  (est_col,0), (est_col,-1), 1.2, BLUE),
+        # Label column
         ('FONTNAME',    (0,1), (0,-1), BOLD_FONT),
         ('FONTSIZE',    (0,1), (0,-1), body_fs),
         ('ALIGN',       (0,1), (0,-1), 'LEFT'),
         # Data columns
         ('ALIGN',       (1,1), (-1,-1), 'RIGHT'),
         ('FONTSIZE',    (1,1), (-1,-1), body_fs),
-        # Grid — light interior rules + thicker navy header underline
+        # Grid
         ('GRID',        (0,0), (-1,-1), 0.3, BORDER),
-        ('LINEBELOW',   (0,0), (-1,0), 1.4, NAVY),
-        # Thicker left border on estimate column
-        ('LINEBEFORE',  (est_col,0), (est_col,-1), 1.2, BLUE),
+        ('LINEBELOW',   (0,0), (-1,0),  1.4, NAVY),
         # Padding
         ('TOPPADDING',  (0,0), (-1,-1), 3),
         ('BOTTOMPADDING',(0,0),(-1,-1), 3),
         ('LEFTPADDING', (0,0), (-1,-1), cell_pad),
         ('RIGHTPADDING',(0,0), (-1,-1), cell_pad),
-        # Separator after Net Fin. Debt row (row index 4)
-        ('LINEBELOW',   (0,4), (-1,4), 0.6, BLUE),
-        # Separator after EPS row (row index 7)
-        ('LINEBELOW',   (0,7), (-1,7), 0.6, BLUE),
+        # Row separators (row indices: 0=header,1=Sales,…,4=Net Profit Adj,5=Net Fin.Debt,…,8=EPS)
+        ('LINEBELOW',   (0,4), (-1,4), 0.6, BLUE),   # after Net Profit (Adj.)
+        ('LINEBELOW',   (0,7), (-1,7), 0.6, BLUE),   # after EBIT Margin
     ]
     t.setStyle(TableStyle(ts))
     return t
@@ -434,23 +468,7 @@ def _build_peer_table(
 
     def make_row(c: CompanyData, is_anchor=False):
         la = c.latest_annual()
-        # Determine the peer's reporting currency (fall back to price currency)
         peer_ccy = (c.currency or c.currency_price or "").strip().upper()
-
-        # Prefer latest_annual() values so all ratio rows are consistent with
-        # the Financial Summary table (which also reads from AnnualFinancials).
-        # The scalar CompanyData fields (e.g. company.roe, company.ev_sales)
-        # come from yfinance TTM or EODHD Highlights and can differ from the
-        # year-end annual values shown in the Financial Summary column.
-        roe_val  = (la.roe     if la and la.roe     is not None else c.roe)
-        evebit   = (la.ev_ebit if la and la.ev_ebit is not None else c.ev_ebit)
-        evsales  = (la.ev_sales if la and la.ev_sales is not None else c.ev_sales)
-        # Gearing = Net Debt / EBITDA — compute from latest annual when available
-        if la and la.net_debt is not None and la.ebitda and la.ebitda > 0:
-            gearing_val = la.net_debt / la.ebitda
-        else:
-            gearing_val = c.gearing
-
         row = [
             Paragraph(
                 f"<b>{c.name or c.ticker}</b>" if is_anchor else (c.name or c.ticker),
@@ -459,12 +477,12 @@ def _build_peer_table(
             p_cell(c.ticker),
             p_cell(_fmt_with_ccy(la.revenue if la else None, peer_ccy), right=True),
             p_cell(_fmt_with_ccy(c.market_cap, peer_ccy), right=True),
-            p_cell(_fmt_pct(roe_val),        right=True),
-            p_cell(_fmt_x(c.price_to_book),  right=True),
-            p_cell(_fmt_x(c.pe_ratio),       right=True),
-            p_cell(_fmt_x(evebit),           right=True),
-            p_cell(_fmt_x(evsales),          right=True),
-            p_cell(_fmt_x(gearing_val),      right=True),
+            p_cell(_fmt_pct(c.roe),         right=True),
+            p_cell(_fmt_x(c.price_to_book), right=True),
+            p_cell(_fmt_x(c.pe_ratio),      right=True),
+            p_cell(_fmt_x(c.ev_ebit),       right=True),
+            p_cell(_fmt_x(c.ev_sales),      right=True),
+            p_cell(_fmt_x(c.gearing),       right=True),
         ]
         return row
 
@@ -983,13 +1001,27 @@ class OverviewV2PDFGenerator:
     def _page1(self, company: CompanyData, analysis: dict, styles: dict) -> list:
         el = []
 
-        # V2 banner — clarifies the data sourcing constraint.
+        # V2 banner — data source indicator (EODHD or yfinance)
+        _uses_eodhd = (
+            any(getattr(af, "source", "") == "eodhd"
+                for af in company.annual_financials.values())
+            or "eodhd" in (company.data_sources or [])
+        )
+        if _uses_eodhd:
+            _src_text = (
+                'Data source: <b>EODHD All-In-One API</b>. '
+                'Fields marked <font name="ZapfDingbats" color="#2E7D32" size="6">4</font>'
+                ' = EODHD verified.'
+            )
+        else:
+            _src_text = (
+                'Data source: <b>yfinance (Yahoo Finance)</b> — '
+                'EODHD does not cover this exchange. '
+                'Depth typically 3–5 years; some fields may be unavailable.'
+            )
         el.append(Paragraph(
-            f'<font color="{NAVY_HEX}"><b>Investment Memo V2 — EODHD Based</b></font>'
-            f'  ·  <font color="{MGRAY_HEX}">All metrics sourced from the EODHD '
-            f'All-In-One API. Fields marked '
-            f'<font name="ZapfDingbats" color="#2E7D32">4</font> = verified EODHD; '
-            f'<i>— n/a</i> = not provided by EODHD.</font>',
+            f'<font color="{NAVY_HEX}"><b>Investment Memo V2</b></font>'
+            f'  ·  <font color="{MGRAY_HEX}">{_src_text}</font>',
             ParagraphStyle("v2_banner", fontName=BASE_FONT, fontSize=7.5,
                            leading=10, spaceAfter=4, borderPadding=4,
                            borderColor=NAVY, borderWidth=0.4)))
@@ -1128,8 +1160,15 @@ class OverviewV2PDFGenerator:
                 el.append(Paragraph(f"Peer table unavailable: {e}", styles["body_small"]))
         else:
             el.append(Paragraph("No peer data available.", styles["body_small"]))
+        el.append(Paragraph(
+            "<i>* ROE, P/E, EV/EBIT, EV/Sales and Gearing are TTM (trailing twelve months) "
+            "or most recent available. Market Cap reflects current price. "
+            "Annual Sales is from the latest reported fiscal year.</i>",
+            ParagraphStyle("peer_fn", parent=styles["body_small"],
+                           fontSize=6.5, leading=9, spaceAfter=4)
+        ))
 
-        el.append(Spacer(1, 12))
+        el.append(Spacer(1, 8))
 
         # Checklist
         el.append(section_title("Investment Checklist", styles))
@@ -1147,6 +1186,13 @@ class OverviewV2PDFGenerator:
         )
         el.append(Spacer(1, 6))
         el.append(Paragraph(score_text, styles["body_small"]))
+        el.append(Paragraph(
+            "<i>* Checklist metrics use TTM (trailing twelve months) data from the "
+            "primary data source (EODHD or yfinance). Where TTM is unavailable, "
+            "the most recent annual value is used as a fallback.</i>",
+            ParagraphStyle("ck_fn", parent=styles["body_small"],
+                           fontSize=6.5, leading=9, spaceAfter=4)
+        ))
 
         # Data sources footnote
         el.append(Spacer(1, 10))
