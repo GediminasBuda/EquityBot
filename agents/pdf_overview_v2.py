@@ -301,9 +301,9 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
 
     # ── TTM values — use getattr() defensively: old cached CompanyData objects
     # (created before these fields existed) won't have the attribute at all.
-    ttm_revenue  = (getattr(company, 'ttm_revenue', None)
-                    or (company.revenue_per_share * company.shares_outstanding
-                        if company.revenue_per_share and company.shares_outstanding else None))
+    # Do NOT fall back to revenue_per_share * shares: for TSE stocks yfinance
+    # returns revenuePerShare as the most recent single quarter's figure, not TTM.
+    ttm_revenue  = getattr(company, 'ttm_revenue', None)
     ttm_ebitda   = getattr(company, 'ttm_ebitda', None)
     ttm_ebit_val = getattr(company, 'ttm_ebit', None)
     ttm_ni_ifrs  = getattr(company, 'ttm_net_income', None)

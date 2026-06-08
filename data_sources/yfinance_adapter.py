@@ -183,13 +183,14 @@ class YFinanceAdapter:
             elif total_debt is not None:
                 company.net_debt = total_debt
             elif total_cash is not None:
-                # Fallback: use Non-Current Liabilities as debt proxy when
-                # totalDebt is unavailable (common for Japanese TSE stocks).
-                # net_debt = NCL - Cash  (negative = net cash position)
-                ncl = _safe(info.get("totalNonCurrentLiabilities"), float, 1 / 1_000_000)
-                if ncl is not None:
-                    company.net_debt = ncl - total_cash
-                    logger.debug(f"[yfinance] net_debt via NCL fallback: {company.net_debt:.1f}M")
+                # No totalDebt in info → treat as zero financial debt.
+                # We intentionally do NOT use totalNonCurrentLiabilities as a
+                # proxy: NCL includes lease liabilities, deferred taxes, and
+                # other non-debt items which grossly overstate financial debt
+                # for capital-light companies (e.g. Japanese platform stocks).
+                # The annual balance sheet path has its own targeted key search.
+                company.net_debt = -total_cash
+                logger.debug(f"[yfinance] net_debt: no totalDebt, assuming zero financial debt → {company.net_debt:.1f}M")
 
             # Recompute enterprise_value from MCap + net_debt for reliability.
             # yfinance's info["enterpriseValue"] and info["enterpriseToRevenue"]
@@ -204,7 +205,20 @@ class YFinanceAdapter:
 
             # TTM EPS from trailingEps (more reliable than quarterly sum)
             company.eps_ttm = _safe(info.get("trailingEps"), float)
+            # revenuePerShare from info is intentionally NOT stored as a fallback
+            # for TTM revenue: for TSE stocks it returns the most recent single
+            # quarter's per-share revenue, not the trailing twelve-month total.
+            # TTM revenue is fetched below via info["totalRevenue"] instead.
             company.revenue_per_share = _safe(info.get("revenuePerShare"), float)
+
+            # ── TTM Revenue from info["totalRevenue"] ─────────────────────────
+            # Yahoo Finance computes totalRevenue as trailing twelve months.
+            # This is more reliable than quarterly_financials for TSE stocks
+            # where quarterly data coverage is often incomplete.
+            _total_rev = _safe(info.get("totalRevenue"), float, 1 / 1_000_000)
+            if _total_rev and _total_rev > 0:
+                company.ttm_revenue = _total_rev
+                logger.debug(f"[yfinance] TTM revenue from info.totalRevenue: {_total_rev:.1f}M")
 
             # ── Annual Financial History ──────────────────────────────────────
             q_financials = q_cashflow = q_balance = None
@@ -623,10 +637,23 @@ class YFinanceAdapter:
         for computing reliable EV/Sales and EV/EBIT multiples.
         """
         def _ttm_sum(df, *keys):
-            """Sum most-recent 4 quarters for the first matching row key."""
+            """Sum most-recent 4 quarters for the first matching row key.
+
+            Columns in yfinance quarterly DataFrames are timestamps; we sort
+            descending so [:4] always picks the 4 most-recent periods even if
+            the DataFrame arrives in a different order for some exchanges.
+            If fewer than 4 non-NaN quarters are available we annualise the
+            available data (multiply by 4/count) so at least 1 quarter yields
+            a reasonable estimate rather than returning None.
+            """
             if df is None or df.empty:
                 return None
-            recent_cols = list(df.columns)[:4]  # columns sorted most-recent first
+            # Sort columns descending (most recent quarter first)
+            try:
+                sorted_cols = sorted(df.columns, reverse=True)
+            except TypeError:
+                sorted_cols = list(df.columns)
+            recent_cols = sorted_cols[:4]
             for key in keys:
                 if key in df.index:
                     total, count = 0.0, 0
@@ -638,13 +665,17 @@ class YFinanceAdapter:
                                 count += 1
                         except Exception:
                             pass
-                    if count >= 3:   # ≥3 quarters required to be meaningful
-                        return total
+                    if count > 0:
+                        # Annualise when fewer than 4 quarters available
+                        return total * (4 / count) if count < 4 else total
             return None
 
         if q_financials is not None and not q_financials.empty:
-            company.ttm_revenue = _ttm_sum(
-                q_financials, "Total Revenue")
+            # Only overwrite ttm_revenue if not already set from info.totalRevenue
+            # (the info path is more reliable for exchanges with sparse quarterly data)
+            _rev_from_qtr = _ttm_sum(q_financials, "Total Revenue")
+            if getattr(company, 'ttm_revenue', None) is None:
+                company.ttm_revenue = _rev_from_qtr
             company.ttm_ebit = _ttm_sum(
                 q_financials, "Operating Income", "Total Operating Income As Reported")
             company.ttm_ebitda = _ttm_sum(
