@@ -237,6 +237,17 @@ Same bug as above, in the `fisher_peers` dispatch block of `pages/report_generat
 ### Investment Memo V2 — banner hardcoded as EODHD even for yfinance-only stocks
 The page-1 banner always said "Investment Memo V2 — EODHD Based" regardless of the actual data source used. **Fix (2026-06-08):** banner now detects whether annual data has `source == "eodhd"` or `"eodhd"` is in `company.data_sources`, and displays the appropriate source text (EODHD or yfinance).
 
+### Investment Memo V2 — AttributeError on ttm_revenue for cached objects
+`_build_financial_table` in `pdf_overview_v2.py` accessed `company.ttm_revenue` (and `ttm_ebitda`, `ttm_ebit`, `ttm_net_income`) directly. If the Streamlit app still had the old `CompanyData` class in memory (before restarting after the field was added to `base.py`), instances created from that old class don't have the attribute, raising `AttributeError` and crashing the entire Financial Summary table. **Fix (2026-06-08):** all four new TTM fields now accessed via `getattr(company, 'ttm_revenue', None)` etc. — defensive against old cached class instances.
+
+### Investment Memo V2 — EV/Sales stale in TTM column and peer table (yfinance scalar)
+`company.ev_sales` is populated from yfinance's pre-computed `enterpriseToRevenue` ratio. For Japanese TSE stocks this value is internally inconsistent (different price reference) and could be 20x instead of the correct ~3x. The TTM column in the Financial Summary and the Peer Group table both displayed this stale scalar. **Fix (2026-06-08):**
+- TTM column: compute `ttm_ev_sales = enterprise_value / ttm_revenue` fresh on every render (bypasses the stale scalar entirely).
+- Peer table `make_row`: compute `ev_sales = peer_ev / la.revenue` from the stored EV and latest-annual revenue, falling back to `c.ev_sales` only if those are unavailable. This self-corrects even without clearing the peer cache.
+
+### Investment Memo V2 — TTM column empty for yfinance-only stocks (no quarterly data fetched)
+Sales, EBITDA, Net Income rows in the TTM column showed `— n/a` for Japanese stocks. Root cause: `ttm_revenue` etc. were defined in `CompanyData` but never populated. **Fix (2026-06-08):** added `_compute_ttm_metrics()` to `YFinanceAdapter` that sums the last 4 quarters from `yt.quarterly_financials` (keys: `Total Revenue`, `Operating Income`, `EBITDA`, `Net Income`). Requires ≥3 non-NaN quarters to be counted as valid. Also added net-debt NCL fallback: if `totalDebt` is `None`, derive `net_debt = Total Non Current Liabilities - Cash` from the balance sheet, then always recompute `enterprise_value = market_cap + net_debt` for reliability.
+
 ---
 
 ## 8. Report Types
