@@ -341,6 +341,12 @@ class CompanyData:
     quarterly_revenue_growth_yoy: Optional[float] = None
     quarterly_earnings_growth_yoy: Optional[float] = None
 
+    # ── TTM P&L (sum of last 4 reported quarters) ─────────────────────────────
+    ttm_revenue: Optional[float] = None      # millions
+    ttm_ebitda: Optional[float] = None       # millions
+    ttm_ebit: Optional[float] = None         # millions (operating income)
+    ttm_net_income: Optional[float] = None   # millions (IFRS attributable)
+
     # ── 10-Year Annual History ────────────────────────────────────────────────
     # Keys are fiscal year integers: {2024: AnnualFinancials(...), 2023: ...}
     annual_financials: Dict[int, AnnualFinancials] = field(default_factory=dict)

@@ -182,16 +182,38 @@ class YFinanceAdapter:
                 company.net_debt = total_debt - total_cash
             elif total_debt is not None:
                 company.net_debt = total_debt
+            elif total_cash is not None:
+                # Fallback: use Non-Current Liabilities as debt proxy when
+                # totalDebt is unavailable (common for Japanese TSE stocks).
+                # net_debt = NCL - Cash  (negative = net cash position)
+                ncl = _safe(info.get("totalNonCurrentLiabilities"), float, 1 / 1_000_000)
+                if ncl is not None:
+                    company.net_debt = ncl - total_cash
+                    logger.debug(f"[yfinance] net_debt via NCL fallback: {company.net_debt:.1f}M")
+
+            # Recompute enterprise_value from MCap + net_debt for reliability.
+            # yfinance's info["enterpriseValue"] and info["enterpriseToRevenue"]
+            # can be stale or inconsistent (especially for TSE stocks). Using
+            # MCap + net_debt gives consistent, current-price-based EV.
+            if company.market_cap is not None and company.net_debt is not None:
+                company.enterprise_value = company.market_cap + company.net_debt
+            # else: keep yfinance's enterpriseValue if we couldn't compute net_debt
 
             company.current_ratio  = _safe(info.get("currentRatio"), float)
             company.debt_to_equity = _safe(info.get("debtToEquity"), float)
 
+            # TTM EPS from trailingEps (more reliable than quarterly sum)
+            company.eps_ttm = _safe(info.get("trailingEps"), float)
+            company.revenue_per_share = _safe(info.get("revenuePerShare"), float)
+
             # ── Annual Financial History ──────────────────────────────────────
+            q_financials = q_cashflow = q_balance = None
             try:
                 financials = yt.financials          # Income statement
                 balance    = yt.balance_sheet       # Balance sheet
                 cashflow   = yt.cashflow            # Cash flows
                 # Quarterly data used as cross-check for partial-year annual figures
+                # and for computing TTM sums from last 4 quarters.
                 try:
                     q_financials = yt.quarterly_financials
                     q_cashflow   = yt.quarterly_cashflow
@@ -206,6 +228,12 @@ class YFinanceAdapter:
                 )
             except Exception as e:
                 logger.warning(f"[yfinance] Could not fetch annual history for {ticker}: {e}")
+
+            # ── TTM metrics from last 4 reported quarters ─────────────────────
+            try:
+                self._compute_ttm_metrics(company, q_financials, q_cashflow, fields_filled)
+            except Exception as e:
+                logger.warning(f"[yfinance] TTM computation failed for {ticker}: {e}")
 
             # ── Historical Dividends Per Share (sum payments by calendar year) ───
             try:
@@ -317,12 +345,30 @@ class YFinanceAdapter:
             # ── Derived Calculations ──────────────────────────────────────────
             company.calculate_current_ratios()
 
-            # EV/EBIT — yfinance doesn't provide this directly, we calculate it
-            if company.ev_ebit is None and company.enterprise_value and company.latest_annual():
-                la = company.latest_annual()
-                if la and la.ebit and la.ebit > 0:
-                    company.ev_ebit = company.enterprise_value / la.ebit
+            # EV/EBIT — yfinance doesn't provide this directly, we calculate it.
+            # Prefer TTM EBIT for currency; fall back to latest annual.
+            ev = company.enterprise_value
+            if ev:
+                if company.ttm_ebit and company.ttm_ebit > 0:
+                    company.ev_ebit = ev / company.ttm_ebit
                     fields_filled.append("ev_ebit")
+                elif company.ev_ebit is None and company.latest_annual():
+                    la = company.latest_annual()
+                    if la and la.ebit and la.ebit > 0:
+                        company.ev_ebit = ev / la.ebit
+                        fields_filled.append("ev_ebit")
+
+            # EV/Sales — always compute from our EV and TTM revenue rather than
+            # using yfinance's pre-computed enterpriseToRevenue, which can be
+            # stale or internally inconsistent (seen on TSE stocks).
+            if ev and company.ttm_revenue and company.ttm_revenue > 0:
+                company.ev_sales = ev / company.ttm_revenue
+                fields_filled.append("ev_sales")
+            elif company.ev_sales is None:
+                # Fallback: use latest annual revenue
+                la = company.latest_annual()
+                if la and la.revenue and la.revenue > 0 and ev:
+                    company.ev_sales = ev / la.revenue
 
             # FCF Yield
             if company.fcf_yield is None and company.market_cap and company.latest_annual():
@@ -525,6 +571,16 @@ class YFinanceAdapter:
                     if val is not None:
                         af.cash = val
                         break
+                # Net Debt fallback: if no standard debt key matched, use
+                # Non-Current Liabilities as a proxy for financial debt.
+                # net_debt = NCL - Cash  (negative = net cash position).
+                if af.total_debt is None and af.cash is not None:
+                    for ncl_key in ["Total Non Current Liabilities Net Minority Interest",
+                                    "Non Current Liabilities"]:
+                        val = _df_val(balance, ncl_key, idx)
+                        if val is not None:
+                            af.total_debt = val
+                            break
                 # Store shares in MILLIONS to match EODHD convention. _df_val
                 # already divided by 1M, so no further conversion needed. This
                 # ensures derived calculations like total_equity / shares (both
@@ -550,6 +606,61 @@ class YFinanceAdapter:
         if company.annual_financials:
             fields_filled.append("annual_financials")
             logger.debug(f"[yfinance] Annual data years: {list(company.annual_financials.keys())}")
+
+    def _compute_ttm_metrics(
+        self,
+        company: CompanyData,
+        q_financials,
+        q_cashflow,
+        fields_filled: list,
+    ) -> None:
+        """
+        Compute TTM (trailing twelve months) P&L by summing the last 4 reported
+        quarters from yfinance's quarterly_financials DataFrame.
+
+        Stores results in company.ttm_revenue / ttm_ebitda / ttm_ebit /
+        ttm_net_income. These are used by the Financial Summary TTM column and
+        for computing reliable EV/Sales and EV/EBIT multiples.
+        """
+        def _ttm_sum(df, *keys):
+            """Sum most-recent 4 quarters for the first matching row key."""
+            if df is None or df.empty:
+                return None
+            recent_cols = list(df.columns)[:4]  # columns sorted most-recent first
+            for key in keys:
+                if key in df.index:
+                    total, count = 0.0, 0
+                    for col in recent_cols:
+                        try:
+                            v = df.loc[key, col]
+                            if not pd.isna(v):
+                                total += float(v) / 1_000_000  # raw → millions
+                                count += 1
+                        except Exception:
+                            pass
+                    if count >= 3:   # ≥3 quarters required to be meaningful
+                        return total
+            return None
+
+        if q_financials is not None and not q_financials.empty:
+            company.ttm_revenue = _ttm_sum(
+                q_financials, "Total Revenue")
+            company.ttm_ebit = _ttm_sum(
+                q_financials, "Operating Income", "Total Operating Income As Reported")
+            company.ttm_ebitda = _ttm_sum(
+                q_financials, "EBITDA", "Normalized EBITDA")
+            company.ttm_net_income = _ttm_sum(
+                q_financials, "Net Income", "Net Income Common Stockholders",
+                "Net Income Including Noncontrolling Interests")
+
+            if any(v is not None for v in [
+                company.ttm_revenue, company.ttm_net_income
+            ]):
+                fields_filled.append("ttm_financials")
+                logger.debug(
+                    f"[yfinance] TTM: Rev={company.ttm_revenue}, "
+                    f"EBIT={company.ttm_ebit}, NI={company.ttm_net_income}"
+                )
 
     def _parse_forward_estimates(
         self,

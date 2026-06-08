@@ -299,13 +299,18 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     def lbl(text):
         return Paragraph(text + _EODHD_CHECK, tl_style)
 
-    # ── TTM values from CompanyData scalars (current/trailing twelve months) ──
-    ttm_revenue = None
-    if company.revenue_per_share and company.shares_outstanding:
-        ttm_revenue = company.revenue_per_share * company.shares_outstanding
-    ttm_ni_adj = None
-    if company.eps_ttm and company.shares_outstanding:
-        ttm_ni_adj = company.eps_ttm * company.shares_outstanding
+    # ── TTM values (quarterly-sum fields take priority; fall back to derivations) ──
+    ttm_revenue = company.ttm_revenue or (
+        company.revenue_per_share * company.shares_outstanding
+        if company.revenue_per_share and company.shares_outstanding else None
+    )
+    ttm_ebitda   = company.ttm_ebitda
+    ttm_ebit_val = company.ttm_ebit   # distinct name to avoid shadowing lambda param
+    ttm_ni_ifrs  = company.ttm_net_income
+    ttm_ni_adj   = (
+        company.eps_ttm * company.shares_outstanding
+        if company.eps_ttm and company.shares_outstanding else None
+    )
 
     rows_data = []
 
@@ -322,9 +327,11 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     add_row(f"Sales ({cur}M)", lambda a: a.revenue,
             ttm_val=ttm_revenue,
             est_val=fe.revenue if fe else None)
-    add_row("EBITDA", lambda a: a.ebitda)
+    add_row("EBITDA", lambda a: a.ebitda,
+            ttm_val=ttm_ebitda)
 
-    add_row("Net Profit (IFRS)", lambda a: a.net_income)
+    add_row("Net Profit (IFRS)", lambda a: a.net_income,
+            ttm_val=ttm_ni_ifrs)
     _fe_ni_underlying = None
     if fe and fe.eps_diluted and company.shares_outstanding:
         _fe_ni_underlying = fe.eps_diluted * company.shares_outstanding
