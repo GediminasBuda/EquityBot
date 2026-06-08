@@ -222,6 +222,53 @@ class YFinanceAdapter:
                 financials = yt.financials          # Income statement
                 balance    = yt.balance_sheet       # Balance sheet
                 cashflow   = yt.cashflow            # Cash flows
+
+                # ── TTM from income_stmt first column ─────────────────────────
+                # yfinance's income_stmt DataFrame (newer API, same data as
+                # yt.financials) has the TTM period as its FIRST (most recent)
+                # column when the company's fiscal year end has passed. This is
+                # exactly what Yahoo Finance shows in the "TTM" column alongside
+                # the annual figures. We read it directly here before the annual
+                # parse, so it takes priority over the quarterly-sum approach.
+                try:
+                    income_stmt = yt.income_stmt  # newer attribute name
+                    if income_stmt is not None and not income_stmt.empty:
+                        cols_sorted = sorted(income_stmt.columns, reverse=True)
+                        if cols_sorted:
+                            ttm_col = cols_sorted[0]
+                            # Confirm this column is more recent than the second
+                            # (i.e. it's a TTM period, not just the last annual)
+                            annual_cols = cols_sorted[1:]
+                            is_ttm_col = (len(annual_cols) == 0 or
+                                          (hasattr(ttm_col, 'year') and
+                                           hasattr(annual_cols[0], 'year') and
+                                           ttm_col > annual_cols[0]))
+                            if is_ttm_col:
+                                def _is_val(df, key, col):
+                                    try:
+                                        v = df.loc[key, col]
+                                        return float(v) / 1_000_000 if not pd.isna(v) else None
+                                    except Exception:
+                                        return None
+                                for rev_key in ["Total Revenue", "Operating Revenue"]:
+                                    rv = _is_val(income_stmt, rev_key, ttm_col)
+                                    if rv and rv > 0:
+                                        company.ttm_revenue = rv
+                                        logger.debug(f"[yfinance] TTM revenue from income_stmt[{rev_key}]: {rv:.1f}M")
+                                        break
+                                for ebit_key in ["Operating Income", "EBIT"]:
+                                    ev = _is_val(income_stmt, ebit_key, ttm_col)
+                                    if ev is not None:
+                                        company.ttm_ebit = ev
+                                        break
+                                for ni_key in ["Net Income", "Net Income Common Stockholders"]:
+                                    nv = _is_val(income_stmt, ni_key, ttm_col)
+                                    if nv is not None:
+                                        company.ttm_net_income = nv
+                                        break
+                except Exception as e:
+                    logger.debug(f"[yfinance] income_stmt TTM read failed: {e}")
+
                 # Quarterly data used as cross-check for partial-year annual figures
                 # and for computing TTM sums from last 4 quarters.
                 try:
@@ -752,16 +799,17 @@ class YFinanceAdapter:
             return None
 
         if q_financials is not None and not q_financials.empty:
-            # Only overwrite ttm_revenue if not already set from info.totalRevenue
-            # (the info path is more reliable for exchanges with sparse quarterly data)
-            _rev_from_qtr = _ttm_sum(q_financials, "Total Revenue")
+            # Only fill fields not already populated by income_stmt TTM column
             if getattr(company, 'ttm_revenue', None) is None:
-                company.ttm_revenue = _rev_from_qtr
-            company.ttm_ebit = _ttm_sum(
-                q_financials, "Operating Income", "Total Operating Income As Reported")
+                company.ttm_revenue = _ttm_sum(
+                    q_financials, "Total Revenue", "Operating Revenue")
+            if getattr(company, 'ttm_ebit', None) is None:
+                company.ttm_ebit = _ttm_sum(
+                    q_financials, "Operating Income", "Total Operating Income As Reported")
             company.ttm_ebitda = _ttm_sum(
                 q_financials, "EBITDA", "Normalized EBITDA")
-            company.ttm_net_income = _ttm_sum(
+            if getattr(company, 'ttm_net_income', None) is None:
+                company.ttm_net_income = _ttm_sum(
                 q_financials, "Net Income", "Net Income Common Stockholders",
                 "Net Income Including Noncontrolling Interests")
 
