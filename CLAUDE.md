@@ -242,11 +242,12 @@ The page-1 banner always said "Investment Memo V2 — EODHD Based" regardless of
 
 ### Investment Memo V2 — EV/Sales stale in TTM column and peer table (yfinance scalar)
 `company.ev_sales` is populated from yfinance's pre-computed `enterpriseToRevenue` ratio. For Japanese TSE stocks this value is internally inconsistent (different price reference) and could be 20x instead of the correct ~3x. The TTM column in the Financial Summary and the Peer Group table both displayed this stale scalar. **Fix (2026-06-08):**
-- TTM column: compute `ttm_ev_sales = enterprise_value / ttm_revenue` fresh on every render (bypasses the stale scalar entirely).
+- TTM column: compute `ttm_ev_sales = enterprise_value / (ttm_revenue or latest_annual.revenue)` — uses annual revenue as denominator fallback so result stays consistent with the peer table.
+- Peer table `make_row`: compute `ev_sales = peer_ev / la.revenue` from stored EV and latest-annual revenue, falling back to `c.ev_sales` only if both unavailable.
 - Peer table `make_row`: compute `ev_sales = peer_ev / la.revenue` from the stored EV and latest-annual revenue, falling back to `c.ev_sales` only if those are unavailable. This self-corrects even without clearing the peer cache.
 
 ### Investment Memo V2 — TTM column empty for yfinance-only stocks (no quarterly data fetched)
-Sales, EBITDA, Net Income rows in the TTM column showed `— n/a` for Japanese stocks. Root cause: `ttm_revenue` etc. were defined in `CompanyData` but never populated. **Fix (2026-06-08):** added `_compute_ttm_metrics()` to `YFinanceAdapter` that sums the last 4 quarters from `yt.quarterly_financials` (keys: `Total Revenue`, `Operating Income`, `EBITDA`, `Net Income`). Requires ≥3 non-NaN quarters to be counted as valid. Also added net-debt NCL fallback: if `totalDebt` is `None`, derive `net_debt = Total Non Current Liabilities - Cash` from the balance sheet, then always recompute `enterprise_value = market_cap + net_debt` for reliability.
+Sales, EBITDA, Net Income rows in the TTM column showed `— n/a` for Japanese stocks. Root cause: `ttm_revenue` etc. were defined in `CompanyData` but never populated. **Fix (2026-06-08):** added `_compute_ttm_metrics()` to `YFinanceAdapter` that sums the last 4 quarters from `yt.quarterly_financials` (columns sorted descending, annualises partial data via `total * 4/count`). Revenue fallback chain: quarterly sum → `latest_annual().revenue`. Do NOT use `info["totalRevenue"]` — for TSE stocks yfinance returns the most recent single quarter's revenue in that field (e.g. 604M instead of 2,295M TTM). Do NOT use `totalNonCurrentLiabilities` as net-debt proxy — NCL includes non-financial items and overstates debt. Use `_fix_net_debt_from_balance_sheet()` which reads the most recent quarterly balance sheet with the same multi-key cash lookup as the annual parser (`"Cash Cash Equivalents And Short Term Investments"` captures full liquid assets vs `info["totalCash"]` cash-only).
 
 ---
 
