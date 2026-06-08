@@ -228,6 +228,15 @@ In `pages/report_generator.py`, the peer list was built with `peer_list or llm_p
 ### Fisher Alternatives + Peers ignoring LLM suggestions when user adds peers
 Same bug as above, in the `fisher_peers` dispatch block of `pages/report_generator.py`. The `if peer_list: ... else: <LLM suggest>` branch meant any user-supplied peer(s) skipped the LLM suggestion entirely. **Fix:** same merge strategy — user peers fill slots first, then `suggest_peers()` from `models/fisher_peers.py` is always called to backfill remaining slots (up to `6 - len(user_peers)`), deduplicating throughout, max 6 total. If the user supplies 6 peers the LLM call is skipped.
 
+### Investment Memo V2 — data inconsistency across tables (ROE, EV/Sales)
+`CompanyData` scalar fields (`company.roe`, `company.ev_sales`, etc.) come from yfinance TTM or EODHD Highlights and use the **current live price** for EV-based multiples. `AnnualFinancials[year]` ratios use the **year-end stock price**. For EODHD companies these stay in sync; for yfinance-only companies (Japanese `.T` stocks) they can diverge significantly — e.g. ROE 15.4% (annual-derived) vs 6.3% (TTM scalar), or EV/Sales 8.8x (year-end price) vs 20.4x (current price). **Fix (2026-06-08):** added a dedicated **TTM column** to the Financial Summary table (between the most-recent year and the forward-estimate column), populated from `CompanyData` scalars. The Peer table and Investment Checklist continue to use TTM scalars, with clear footnotes stating this. Footnotes added under both tables in `_page3`.
+
+### Investment Memo V2 — annual EV incorrectly equals market cap for Japanese stocks
+`yfinance_adapter.py` computes historical `AnnualFinancials.enterprise_value = market_cap + net_debt`. If the annual balance sheet keys don't match (common for `.T` stocks — yfinance uses different row names), `net_debt` stays `None`, and the fallback `af.enterprise_value = af.market_cap` silently ignores the cash position. This makes the EV column show an inflated value (year-end market cap only, no cash deduction). **Fix (2026-06-08):** the `_annual_ev()` lambda in `_build_financial_table` now returns `None` when `net_debt` cannot be determined from balance sheet data, showing `— n/a` instead of a misleading value. The TTM column always shows the correct `company.enterprise_value` (sourced from `info["enterpriseValue"]` which is reliable). **Known open issue:** the underlying balance-sheet key mismatch in `yfinance_adapter._parse_annual_history` for `.T` tickers has not been fixed — investigate which key names yfinance actually uses for Japanese stock balance sheets.
+
+### Investment Memo V2 — banner hardcoded as EODHD even for yfinance-only stocks
+The page-1 banner always said "Investment Memo V2 — EODHD Based" regardless of the actual data source used. **Fix (2026-06-08):** banner now detects whether annual data has `source == "eodhd"` or `"eodhd"` is in `company.data_sources`, and displays the appropriate source text (EODHD or yfinance).
+
 ---
 
 ## 8. Report Types
