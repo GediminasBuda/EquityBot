@@ -800,7 +800,21 @@ class YFinanceAdapter:
                 company.ttm_ebit = _ttm_sum(
                     q_financials, "Operating Income", "Total Operating Income As Reported")
             company.ttm_ebitda = _ttm_sum(
-                q_financials, "EBITDA", "Normalized EBITDA")
+                q_financials, "EBITDA", "Normalized EBITDA",
+                "EBITDA including unusual items")
+            # Fallback: derive EBITDA from EBIT + D&A (quarterly D&A from cashflow)
+            if getattr(company, 'ttm_ebitda', None) is None:
+                _ebit_ttm = _ttm_sum(
+                    q_financials, "Operating Income",
+                    "Total Operating Income As Reported")
+                _da_ttm = _ttm_sum(
+                    q_cashflow,
+                    "Depreciation & Amortization",
+                    "Depreciation And Amortization",
+                    "Reconciled Depreciation",
+                    "Depreciation")
+                if _ebit_ttm is not None and _da_ttm is not None:
+                    company.ttm_ebitda = _ebit_ttm + _da_ttm
             if getattr(company, 'ttm_net_income', None) is None:
                 company.ttm_net_income = _ttm_sum(
                 q_financials, "Net Income", "Net Income Common Stockholders",

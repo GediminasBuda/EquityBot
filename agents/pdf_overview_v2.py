@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # ── Dimensions ────────────────────────────────────────────────────────────────
 W, H    = A4              # 595.3 × 841.9 pts
 ML = MR = 18*mm           # left / right margin
-MT      = 38*mm           # top margin (leaves room for header drawn on canvas)
+MT      = 28*mm           # top margin (leaves room for compact header drawn on canvas)
 MB      = 14*mm           # bottom margin
 CW      = W - ML - MR     # content width ≈ 481 pts
 
@@ -48,7 +48,7 @@ CW      = W - ML - MR     # content width ≈ 481 pts
 # Pantone 303 / RGB(0, 63, 84). Ink-saving: header band is white, brand text
 # is rendered in this dark teal/navy.
 NAVY    = HexColor('#003F54')
-BLUE    = HexColor('#2E75B6')
+BLUE    = HexColor('#003F54')   # all lines use brand navy (was #2E75B6)
 LBLUE   = HexColor('#D6E8F7')   # table header bg / alt rows
 LLBLUE  = HexColor('#FFFFFF')   # alt row fill — kept white to save ink
 GREEN   = HexColor('#1A7E3D')
@@ -171,46 +171,53 @@ def _draw_header(canvas, doc, company: CompanyData, report_date: str):
     """
     canvas.saveState()
 
-    # Company name — large, navy on white
+    # Row 1: company name (left) aligned with price (right)
+    NAME_Y    = H - 11*mm
+    # Row 2: subtitle (left) aligned with mcap (right)
+    SUBTITLE_Y = H - 17*mm
+    # Separator line — close below subtitle
+    LINE_Y    = H - 21*mm
+
+    # Company name
     canvas.setFont(BOLD_FONT, 14)
     canvas.setFillColor(NAVY)
     name = company.name or company.ticker
-    canvas.drawString(ML, H - 12*mm, name)
+    canvas.drawString(ML, NAME_Y, name)
 
-    # Subtitle line: sector | country | exchange | ticker | date
+    # Subtitle: sector | country | exchange | ticker | date
     subtitle = " | ".join(filter(None, [
         company.sector, company.country,
         company.exchange, company.ticker, report_date
     ]))
     canvas.setFont(BASE_FONT, 8)
     canvas.setFillColor(MGRAY)
-    canvas.drawString(ML, H - 18.5*mm, subtitle)
+    canvas.drawString(ML, SUBTITLE_Y, subtitle)
 
-    # Right side: price | mkt cap
+    # Right side: price (row 1) | mcap (row 2)
     cur = company.currency_price or company.currency or ""
-    price_str  = (f"Price: {company.current_price:,.2f} {cur}"
-                  if company.current_price else "Price n/a")
-    mcap_str   = (f"MCap: {_fmt_b(company.market_cap)} {company.currency or ''}"
-                  if company.market_cap else "")
+    price_str = (f"Price: {company.current_price:,.2f} {cur}"
+                 if company.current_price else "Price n/a")
+    mcap_str  = (f"MCap: {_fmt_b(company.market_cap)} {company.currency or ''}"
+                 if company.market_cap else "")
 
+    right_x = W - MR
     canvas.setFont(BOLD_FONT, 8.5)
     canvas.setFillColor(NAVY)
-    right_x = W - MR
-    canvas.drawRightString(right_x, H - 10*mm, price_str)
+    canvas.drawRightString(right_x, NAME_Y, price_str)
     canvas.setFont(BASE_FONT, 8)
     canvas.setFillColor(NAVY)
-    canvas.drawRightString(right_x, H - 15.5*mm, mcap_str)
+    canvas.drawRightString(right_x, SUBTITLE_Y, mcap_str)
 
-    # Thin separator line below header
-    canvas.setStrokeColor(BLUE)
+    # Thin separator line — snug below subtitle
+    canvas.setStrokeColor(NAVY)
     canvas.setLineWidth(0.8)
-    canvas.line(ML, H - 27*mm, W - MR, H - 27*mm)
+    canvas.line(ML, LINE_Y, W - MR, LINE_Y)
 
-    # Page number (bottom right)
+    # Page number (bottom right) — no date (date is in header)
     canvas.setFont(BASE_FONT, 7)
     canvas.setFillColor(MGRAY)
     canvas.drawRightString(W - MR, 8*mm,
-                           f"Page {doc.page}  |  Your Humble EquityBot  |  {report_date}")
+                           f"Page {doc.page}  |  Your Humble EquityBot")
 
     canvas.restoreState()
 

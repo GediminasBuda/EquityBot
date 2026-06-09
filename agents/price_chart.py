@@ -289,10 +289,6 @@ def _render_chart(
     span = p_max - p_min if p_max > p_min else max(p_max * 0.05, 1.0)
     ax.set_ylim(p_min - span * 0.06, p_max + span * 0.12)
 
-    # Footnote (data source)
-    fig.text(0.99, 0.02, f"Source: {source}", ha="right", va="bottom",
-             fontsize=5.5, color=TICK_COLOR, style="italic")
-
     fig.tight_layout(pad=0.4)
 
     buf = io.BytesIO()
