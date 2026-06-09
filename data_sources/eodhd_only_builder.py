@@ -237,11 +237,10 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
                 company.ttm_ebitda = _ebi_sum * 4 / _ebi_n
 
     # ── TTM Net Income ───────────────────────────────────────────────────────
-    # Primary: derive from ProfitMargin (decimal) × RevenueTTM (both already
-    # loaded from Highlights). Fallback: sum last 4 quarterly net income rows.
-    if company.ttm_revenue and company.net_margin is not None:
-        company.ttm_net_income = company.ttm_revenue * company.net_margin
-    elif _q_inc:
+    # Primary: sum last 4 quarterly net income rows directly from EODHD
+    # quarterly income statement — reported figures, no derivation needed.
+    # Fallback: ProfitMargin × RevenueTTM only when quarterly data is absent.
+    if _q_inc:
         _ni_sum, _ni_n = 0.0, 0
         for _qd in _sorted_q[:4]:
             _row = _q_inc[_qd]
@@ -251,6 +250,8 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
                 _ni_sum += _ni; _ni_n += 1
         if _ni_n:
             company.ttm_net_income = _ni_sum * 4 / _ni_n
+    if company.ttm_net_income is None and company.ttm_revenue and company.net_margin is not None:
+        company.ttm_net_income = company.ttm_revenue * company.net_margin
 
     # ── TTM FCF from quarterly cash flow ────────────────────────────────────
     _q_cf = ((fund.get("Financials") or {})
