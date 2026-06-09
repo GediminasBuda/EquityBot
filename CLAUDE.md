@@ -1,6 +1,6 @@
 # Your Humble EquityBot — Agent Handoff Documentation
 
-**Last updated:** 2026-06-07  
+**Last updated:** 2026-06-09  
 **Stack:** Python 3.11 · Streamlit · ReportLab · Claude / GPT-4o · EODHD · yfinance  
 **Deployment:** Streamlit Community Cloud (auto-deploys on push to `Final-design-V3`)  
 **Repo:** https://github.com/GediminasBuda/EquityBot
@@ -251,6 +251,29 @@ Sales, EBITDA, Net Income rows in the TTM column showed `— n/a` for Japanese s
 
 ### `yt.income_stmt` breaks the entire yfinance fetch ("No data found")
 Calling `yt.income_stmt` (a newer yfinance attribute alias) makes a **separate HTTP request** after the main Ticker fetch. This second request corrupts yfinance's internal Ticker cache for that symbol. As a result, every subsequent call on the same `yt` object — `yt.financials`, `yt.quarterly_financials`, `yt.balance_sheet`, etc. — returns empty DataFrames, leaving `company.annual_financials` empty. The report generator then raises "No data found for 2477.T". **Fix (2026-06-08):** removed `yt.income_stmt` entirely from `yfinance_adapter.py`. To read the TTM column, reuse the already-fetched `financials` DataFrame (`yt.financials`): sort its columns descending; if the first column is newer than the second, it is the TTM period — read `"Total Revenue"` / `"Operating Income"` / `"Net Income"` from that column. This avoids any extra HTTP call.
+
+### Investment Memo V2 — TTM Revenue/EBITDA never populated (wrong code path)
+`eodhd_adapter.py` and `data_manager.py` do NOT run for Investment Memo V2. V2 uses its own dedicated builder: `data_sources/eodhd_only_builder.py` → `fetch_company_data_eodhd_only()`. Fixes applied to `eodhd_adapter.py` are completely invisible to V2. The V2 builder never read `Highlights.RevenueTTM` or `Highlights.EBITDA`. **Fix (2026-06-09):** in `eodhd_only_builder.py`, read `_to_m(h.get("RevenueTTM"))` and `_to_m(h.get("EBITDA"))` into `company.ttm_revenue` / `company.ttm_ebitda`. Added `ttm_last_quarter_date` from `Financials.Income_Statement.quarterly` most-recent key. Added `ttm_fcf` from quarterly `Cash_Flow` sum. Added fallbacks that sum last 4 quarterly rows when Highlights fields are null. **Critical rule: when debugging V2 data issues, always look in `eodhd_only_builder.py` first.**
+
+### Investment Memo V2 — historical EPS not split-adjusted
+EODHD's `Financials.Income_Statement.yearly.eps` stores **as-reported** (pre-split) EPS. For a company with a 3:1 stock split, years before the split show 3× the correct EPS. There was a post-hoc override from `Earnings.Annual.epsActual` (which IS split-adjusted), but it ran AFTER `calculate_derived()` — so P/E was computed from the wrong EPS, then EPS was patched but P/E remained stale. **Fix (2026-06-09):** in `eodhd_only_builder.py`, pre-parse `Earnings.Annual.epsActual` into a `year → value` dict BEFORE the income-statement loop. Use it as the PRIMARY EPS source inside the loop so `calculate_derived()` sees the correct split-adjusted figure from the start. Fallback to `Income_Statement.eps` only when `epsActual` is absent. Removed the redundant post-hoc override block.
+
+### Investment Memo V2 — historical Market Cap and EV inflated for split stocks
+`ye_prices` (year-end price lookup from EODHD EOD data) used `row.get("close") or row.get("adjusted_close")` — taking `close` (raw, unadjusted) first. For a stock with a 3:1 split, the 2022 `close` is ~$90 while `adjusted_close` is ~$30. Market cap computed from `close × shares` was inflated 3×, and EV = market_cap + net_debt inherited that error. **Fix (2026-06-09):** reversed preference: `row.get("adjusted_close") or row.get("close")`. Always prefer `adjusted_close` which EODHD retroactively adjusts for splits and dividends.
+
+### Investment Memo V2 — PDF header, colors, and table formatting (2026-06-09)
+Multiple formatting fixes applied to `agents/pdf_overview_v2.py` and `agents/price_chart.py`:
+- **Header layout:** company name and Price now on the same baseline (`H-11mm`); subtitle and MCap on the same baseline (`H-17mm`); separator line at `H-21mm` (snug below subtitle). Top margin reduced 38mm → 28mm (tighter gap to chart).
+- **All line colors → #003F54:** `BLUE = HexColor('#003F54')` (was `#2E75B6`). All table grid separators, TTM column borders, and the header rule now use brand navy consistently.
+- **Removed:** framed V2 disclaimer banner (replaced by small unbordered footnote under Financial Summary); section-title `HRFlowable` underlines; chart footnote "Source: EODHD…"; date from footer (date is in header subtitle).
+- **Section titles:** `section_title()` now returns a plain `Paragraph` — no `HRFlowable` underline.
+- **TTM column:** uses `cell()` not `italic_cell()` — TTM is factual historical data. Only estimate column keeps italic.
+
+### Investment Memo V2 — Net Profit table cleanup and FCF row (2026-06-09)
+- "Net Profit (IFRS)" renamed to **"Net Income"** (reflects that the field `a.net_income` is used for both EODHD and yfinance data sources).
+- "Net Profit (Adj.)" row removed — `net_income_underlying` (EPS × shares) was computed and displayed alongside reported net income, causing confusion. Forward estimate now uses `fe.eps_diluted × shares` as the Net Income estimate directly.
+- New **"FCF (M)"** row added between Div. Yield and FCF Yield, showing `a.fcf` from EODHD cashflow statement for historical years and `company.ttm_fcf` (quarterly sum) for the TTM column.
+- Row separator `LINEBELOW` indices updated to match new row layout.
 
 ---
 
