@@ -266,7 +266,7 @@ def _render_chart(
         )
 
     # Title
-    title_text = f"{company_name or ticker}  ·  5-Year Daily Close"
+    title_text = f"{company_name or ticker}  ·  Daily Close"
     ax.set_title(title_text, fontsize=9, color=TITLE_COLOR,
                  fontweight="bold", loc="left", pad=4)
 
