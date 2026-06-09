@@ -275,6 +275,13 @@ Multiple formatting fixes applied to `agents/pdf_overview_v2.py` and `agents/pri
 - **Section titles:** `section_title()` now returns a plain `Paragraph` — no `HRFlowable` underline.
 - **TTM column:** uses `cell()` not `italic_cell()` — TTM is factual historical data. Only estimate column keeps italic.
 
+### Investment Memo V2 — TTM Net Income, EPS, Sales estimate, formatting (2026-06-09 session 2)
+- **TTM Net Income**: populated in `eodhd_only_builder.py` by summing last 4 quarterly `netIncomeApplicableToCommonShares` rows from `Financials.Income_Statement.quarterly`. Fallback: `ProfitMargin × RevenueTTM`. Added to `data_manager.py` EODHD merge whitelist.
+- **EPS split-adjustment**: EODHD's `Income_Statement.yearly.eps` is as-reported (pre-split). EODHD's `outstandingShares.annual` IS retroactively split-adjusted (e.g. shows 967M for 2022 after a 3:1 split in 2023). **Fix:** compute `af.eps_diluted = af.net_income / af.shares_outstanding` in the final recompute loop — both in millions, both on consistent post-split basis. Removed the flawed split-factor adjustment block that was dividing already-wrong EPS by the split ratio.
+- **2026E Sales unit bug**: `Earnings.Trend.revenueEstimateAvg` is in full dollars. Changed `_f()` → `_to_m()` for `fe.revenue` so it is stored in millions like all other revenue fields. Was displaying `29375108.94B` instead of `29.38B`.
+- **Number formatting**: `cell()`, `italic_cell()`, `_fmt_b()` in `pdf_overview_v2.py` changed from `:.1f` to `:.2f` for B and M suffixes. Percentages remain `:.1f`.
+- **Chart title**: removed "5-Year" from `price_chart.py` — now shows `"{Company Name} · Daily Close"` only (chart period can vary).
+
 ### Investment Memo V2 — Net Profit table cleanup and FCF row (2026-06-09)
 - "Net Profit (IFRS)" renamed to **"Net Income"** (reflects that the field `a.net_income` is used for both EODHD and yfinance data sources).
 - "Net Profit (Adj.)" row removed — `net_income_underlying` (EPS × shares) was computed and displayed alongside reported net income, causing confusion. Forward estimate now uses `fe.eps_diluted × shares` as the Net Income estimate directly.
