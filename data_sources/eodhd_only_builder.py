@@ -236,6 +236,29 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
             if _ebi_n:
                 company.ttm_ebitda = _ebi_sum * 4 / _ebi_n
 
+    # ── TTM FCF from quarterly cash flow ────────────────────────────────────
+    _q_cf = ((fund.get("Financials") or {})
+             .get("Cash_Flow", {})
+             .get("quarterly") or
+             (fund.get("Financials") or {})
+             .get("Cash_Flow", {})
+             .get("quarter") or {})
+    if _q_cf:
+        _sorted_qcf = sorted(_q_cf.keys(), reverse=True)
+        _fcf_sum, _fcf_n = 0.0, 0
+        for _qd in _sorted_qcf[:4]:
+            _row = _q_cf[_qd]
+            _fcf_q = _to_m(_row.get("freeCashFlow"))
+            if _fcf_q is None:
+                _ocf = _to_m(_row.get("totalCashFromOperatingActivities"))
+                _cap = _to_m(_row.get("capitalExpenditures"))
+                if _ocf is not None and _cap is not None:
+                    _fcf_q = _ocf - abs(_cap)
+            if _fcf_q is not None:
+                _fcf_sum += _fcf_q; _fcf_n += 1
+        if _fcf_n:
+            company.ttm_fcf = _fcf_sum * 4 / _fcf_n
+
     company.book_value_per_share = _f(h.get("BookValue"))
     company.revenue_per_share    = _f(h.get("RevenuePerShareTTM"))
     company.eps_ttm              = _f(h.get("EarningsShare")) or _f(h.get("DilutedEpsTTM"))
@@ -319,6 +342,36 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     cf_by_year = {_year_from_date(k): v for k, v in cf_a.items()
                   if _year_from_date(k)}
 
+    # ── Pre-parse Earnings.Annual into a year→epsActual lookup ───────────────
+    # EODHD's Earnings.Annual stores split-adjusted EPS (epsActual). This is
+    # more reliable than Income_Statement.eps which reflects the as-reported
+    # (pre-split) figures. We build the lookup here so the income-statement
+    # loop can use it as the PRIMARY EPS source rather than a post-hoc override.
+    earnings = fund.get("Earnings") or {}
+    _annual_eps_raw = earnings.get("Annual") or {}
+    # Determine fiscal-year-end months so we can skip quarterly stub entries
+    # that EODHD occasionally mixes into the Annual block.
+    _fy_months: set[int] = set()
+    for ds in inc_a.keys():
+        if isinstance(ds, str) and len(ds) >= 7:
+            try: _fy_months.add(int(ds[5:7]))
+            except (ValueError, TypeError): pass
+    eps_by_year: dict[int, float] = {}
+    if isinstance(_annual_eps_raw, dict):
+        for date_str, entry in _annual_eps_raw.items():
+            if not isinstance(entry, dict): continue
+            yr = _year_from_date(date_str)
+            if not yr: continue
+            if _fy_months and isinstance(date_str, str) and len(date_str) >= 7:
+                try:
+                    if int(date_str[5:7]) not in _fy_months:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            eps_val = _f(entry.get("epsActual"))
+            if eps_val is not None:
+                eps_by_year[yr] = eps_val
+
     for date_str, inc in inc_a.items():
         yr = _year_from_date(date_str)
         if not yr or not isinstance(inc, dict):
@@ -339,7 +392,10 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         # consistent (NI sign matches EPS sign).
         af.net_income    = (_to_m(inc.get("netIncomeApplicableToCommonShares"))
                             or _to_m(inc.get("netIncome")))
-        af.eps_diluted   = _f(inc.get("eps") or inc.get("epsDiluted"))
+        # EPS: prefer Earnings.Annual.epsActual (split-adjusted) over the
+        # income statement figure (which reflects as-reported pre-split values).
+        af.eps_diluted = (eps_by_year.get(yr)
+                          or _f(inc.get("eps") or inc.get("epsDiluted")))
         af.cost_of_revenue = _to_m(inc.get("costOfRevenue"))
         af.depreciation_amortization = _to_m(
             inc.get("depreciationAndAmortization") or inc.get("reconciledDepreciation")
@@ -424,35 +480,8 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
                 continue
             af.shares_outstanding = shares_in_m
 
-    # ── Apply EPS from Earnings.Annual (underlying / adjusted) ───────────────
-    # EODHD's "Earnings.Annual" block confusingly also contains the most
-    # recent quarterly result (e.g. "2026-03-31" with Q1 epsActual). Skip
-    # those — only apply entries whose month matches the fiscal year-end
-    # of the income statement.
-    annual_eps = earnings.get("Annual") or {}
-    fy_months = set()
-    for ds in inc_a.keys():
-        if isinstance(ds, str) and len(ds) >= 7:
-            try: fy_months.add(int(ds[5:7]))
-            except (ValueError, TypeError): pass
-
-    if isinstance(annual_eps, dict):
-        for date_str, entry in annual_eps.items():
-            if not isinstance(entry, dict): continue
-            yr = _year_from_date(date_str)
-            if not yr or yr not in company.annual_financials:
-                continue
-            # If we know the fiscal-year-end months, require a match.
-            if fy_months and isinstance(date_str, str) and len(date_str) >= 7:
-                try:
-                    month = int(date_str[5:7])
-                    if month not in fy_months:
-                        continue
-                except (ValueError, TypeError):
-                    pass
-            eps_val = _f(entry.get("epsActual"))
-            if eps_val is not None:
-                company.annual_financials[yr].eps_diluted = eps_val
+    # (EPS from Earnings.Annual is now applied inline during income-statement
+    # parsing above via eps_by_year lookup — no post-hoc override needed.)
 
     # ── Per-year DPS from /div endpoint (full dividend history) ──────────────
     # Sum every dividend record into the matching fiscal year so the
@@ -500,7 +529,9 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         for row in eod:
             if not isinstance(row, dict): continue
             d = row.get("date")
-            p = row.get("close") or row.get("adjusted_close")
+            # adjusted_close is split/dividend-adjusted → correct for historical
+            # market-cap and EV calculations. Fall back to close only if absent.
+            p = row.get("adjusted_close") or row.get("close")
             yr = _year_from_date(d)
             pv = _f(p)
             if yr is not None and pv is not None and pv > 0:
@@ -539,7 +570,7 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         "net_margin", "ebit_margin", "roe", "roa",
         "book_value_per_share", "revenue_per_share", "eps_ttm",
         "quarterly_revenue_growth_yoy", "quarterly_earnings_growth_yoy",
-        "ttm_revenue", "ttm_ebitda", "ttm_ebit", "ttm_last_quarter_date",
+        "ttm_revenue", "ttm_ebitda", "ttm_ebit", "ttm_fcf", "ttm_last_quarter_date",
         "beta", "week_52_high", "week_52_low", "ma_50", "ma_200",
         "dividend_yield", "forward_annual_dividend_rate",
         "forward_annual_dividend_yield", "payout_ratio",

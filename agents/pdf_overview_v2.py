@@ -310,8 +310,6 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     ttm_ebitda   = getattr(company, 'ttm_ebitda', None)
     ttm_ebit_val = getattr(company, 'ttm_ebit', None)
     ttm_ni_ifrs  = getattr(company, 'ttm_net_income', None)
-    ttm_ni_adj   = (company.eps_ttm * company.shares_outstanding
-                    if company.eps_ttm and company.shares_outstanding else None)
 
     # EV/Sales TTM: compute from actual EV + TTM revenue (avoids stale cached
     # yfinance enterpriseToRevenue scalar which can be wildly wrong for TSE stocks)
@@ -344,14 +342,12 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     add_row("EBITDA", lambda a: a.ebitda,
             ttm_val=ttm_ebitda)
 
-    add_row("Net Profit (IFRS)", lambda a: a.net_income,
-            ttm_val=ttm_ni_ifrs)
-    _fe_ni_underlying = None
+    _fe_ni = None
     if fe and fe.eps_diluted and company.shares_outstanding:
-        _fe_ni_underlying = fe.eps_diluted * company.shares_outstanding
-    add_row("Net Profit (Adj.)", lambda a: a.net_income_underlying,
-            ttm_val=ttm_ni_adj,
-            est_val=_fe_ni_underlying)
+        _fe_ni = fe.eps_diluted * company.shares_outstanding
+    add_row("Net Income", lambda a: a.net_income,
+            ttm_val=ttm_ni_ifrs,
+            est_val=_fe_ni)
 
     add_row("Net Fin. Debt", lambda a: a.net_debt,
             ttm_val=company.net_debt)
@@ -371,6 +367,9 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
             ttm_val=company.roe)
     add_row("Div. Yield", lambda a: a.div_yield, "%",
             ttm_val=company.dividend_yield)
+    _ttm_fcf = getattr(company, 'ttm_fcf', None)
+    add_row(f"FCF ({cur}M)", lambda a: a.fcf, "M",
+            ttm_val=_ttm_fcf)
     add_row("FCF Yield", lambda a: a.fcf_yield, "%",
             ttm_val=company.fcf_yield)
 
@@ -458,9 +457,10 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         ('BOTTOMPADDING',(0,0),(-1,-1), 3),
         ('LEFTPADDING', (0,0), (-1,-1), cell_pad),
         ('RIGHTPADDING',(0,0), (-1,-1), cell_pad),
-        # Row separators (row indices: 0=header,1=Sales,…,4=Net Profit Adj,5=Net Fin.Debt,…,8=EPS)
-        ('LINEBELOW',   (0,4), (-1,4), 0.6, BLUE),   # after Net Profit (Adj.)
-        ('LINEBELOW',   (0,7), (-1,7), 0.6, BLUE),   # after EBIT Margin
+        # Row separators: 0=header,1=Sales,2=EBITDA,3=Net Income,4=Net Fin.Debt,
+        # 5=Net Margin,6=EBIT Margin,7=EPS,8=P/E,9=ROE,10=Div.Yield,11=FCF,12=FCF Yield
+        ('LINEBELOW',   (0,3), (-1,3), 0.6, BLUE),   # after Net Income
+        ('LINEBELOW',   (0,6), (-1,6), 0.6, BLUE),   # after EBIT Margin
     ]
     t.setStyle(TableStyle(ts))
     return t
