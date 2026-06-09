@@ -338,7 +338,7 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         if candidates:
             target_year, entry = candidates[0]
             fe = ForwardEstimates(year=target_year, source="eodhd")
-            fe.revenue     = _f(entry.get("revenueEstimateAvg"))
+            fe.revenue     = _to_m(entry.get("revenueEstimateAvg"))  # full units → millions
             fe.eps_diluted = _f(entry.get("earningsEstimateAvg"))
             fe.revenue_growth_yoy = _f(entry.get("revenueEstimateGrowth"))
             fe.eps_growth_yoy     = _f(entry.get("earningsEstimateGrowth"))
@@ -564,29 +564,15 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         if company.annual_financials[latest_yr].dividends_per_share is None:
             company.annual_financials[latest_yr].dividends_per_share = fwd_div
 
-    # ── Retroactive split-adjustment for historical EPS ─────────────────────
-    # EODHD Income_Statement and Earnings.Annual store EPS as originally
-    # reported (pre-split). The only figure that is split-adjusted is
-    # Highlights.EarningsShare (TTM EPS, confirmed correct by testing).
-    # Apply LastSplitFactor retroactively to all years before the split so
-    # the table displays consistent split-adjusted EPS across all columns.
-    _last_sf  = sd.get("LastSplitFactor") or ""   # e.g. "3:1"
-    _last_sdt = sd.get("LastSplitDate")   or ""   # e.g. "2023-06-28"
-    _split_factor = 1.0
-    _split_year   = None
-    if _last_sf and ":" in str(_last_sf):
-        try:
-            _sn, _sd2 = str(_last_sf).split(":", 1)
-            _split_factor = float(_sn.strip()) / float(_sd2.strip())
-            _split_year   = int(str(_last_sdt)[:4]) if _last_sdt else None
-        except (ValueError, ZeroDivisionError):
-            pass
-    if _split_factor != 1.0 and _split_year:
-        for _yr, _af in company.annual_financials.items():
-            if _yr < _split_year and _af.eps_diluted is not None:
-                _af.eps_diluted = _af.eps_diluted / _split_factor
-
-    # ── Recompute market_cap / EV / margins / ratios on every annual row ─────
+    # ── Recompute market_cap / EV / EPS / ratios on every annual row ─────────
+    # EPS strategy: EODHD's outstandingShares.annual provides retroactively
+    # split-adjusted share counts (e.g. 967M for 2022 even after a 3:1 split).
+    # The Income_Statement stores as-reported (pre-split) EPS which is wrong
+    # for years before a stock split. Computing EPS = net_income / shares is
+    # the most reliable method — both figures are in millions and already on
+    # the same post-split-adjusted basis, so the result is split-adjusted EPS
+    # consistent with what a data provider like Bloomberg/FactSet would show.
+    # Fall back to the income-statement eps only when NI or shares are absent.
     for af in company.annual_financials.values():
         if (af.market_cap is None and af.price_year_end
                 and af.shares_outstanding):
@@ -594,6 +580,12 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
                         if af.shares_outstanding > 1_000_000
                         else af.shares_outstanding)
             af.market_cap = af.price_year_end * shares_m
+        # Recompute EPS from NI / shares (split-adjusted, consistent units)
+        shares_m = (af.shares_outstanding / 1_000_000
+                    if af.shares_outstanding and af.shares_outstanding > 1_000_000
+                    else af.shares_outstanding)
+        if af.net_income is not None and shares_m:
+            af.eps_diluted = af.net_income / shares_m
         af.calculate_derived()
 
     # ── Final touch: mark which scalar fields are EODHD-sourced ──────────────
