@@ -2073,8 +2073,32 @@ if generate_clicked and ticker_input:
                     st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
                 else:
                     st.write("💎  Fetching EODHD bundle (fundamentals + /eod)…")
-                    company, _v2_bundle = fetch_company_data_eodhd_only(ticker_input)
-                    st.write(f"✓  EODHD endpoints used: {_v2_bundle.get('endpoints_used',0)}/9")
+                    _eodhd_company, _v2_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    # Check whether EODHD actually returned usable data.
+                    # If not (e.g. Indian .NS/.BO, Singapore .SI — exchanges EODHD
+                    # does not cover), the returned object is an almost-empty shell.
+                    # In that case keep the yfinance `company` that dm.get() already
+                    # populated above, and use an empty bundle (same pattern as Japan).
+                    _eodhd_usable = bool(
+                        _eodhd_company.name
+                        and (_eodhd_company.market_cap or _eodhd_company.annual_financials)
+                    )
+                    if _eodhd_usable:
+                        company = _eodhd_company
+                        st.write(f"✓  EODHD endpoints used: {_v2_bundle.get('endpoints_used',0)}/9")
+                    else:
+                        # EODHD has no data — fall back gracefully to yfinance
+                        _v2_bundle = {
+                            "endpoints_used": 0,
+                            "errors": [f"EODHD returned no data for {ticker_input}. Using yfinance."],
+                            "fundamentals": {}, "news": [], "insider_trades": [],
+                            "sentiment": None, "eod": [], "events": [],
+                            "financials_annual": {}, "financials_quarterly": {},
+                        }
+                        st.write(
+                            f"⚠  EODHD has no data for **{ticker_input}**. "
+                            "Falling back to yfinance — report will be less detailed."
+                        )
 
                 # Build the LLM prompt with EODHD context only — no news,
                 # no macro blocks (they would be sourced outside EODHD).
