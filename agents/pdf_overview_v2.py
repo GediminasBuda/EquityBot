@@ -272,7 +272,7 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         if v is None:
             return Paragraph(f'<font color="{MGRAY_HEX}">— n/a</font>', tc_style)
         if fmt == "M":
-            s = f"{v/1000:.1f}B" if abs(v) >= 1000 else f"{v:,.1f}M"
+            s = f"{v/1000:.2f}B" if abs(v) >= 1000 else f"{v:,.2f}M"
         elif fmt == "%":
             s = f"{v*100:.1f}%"
         elif fmt == "x":
@@ -288,7 +288,7 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         if v is None:
             return Paragraph(f'<font color="{MGRAY_HEX}">{dash}</font>', tc_style)
         if fmt == "M":
-            s = f"{v/1000:.1f}B" if abs(v) >= 1000 else f"{v:,.1f}M"
+            s = f"{v/1000:.2f}B" if abs(v) >= 1000 else f"{v:,.2f}M"
         elif fmt == "%":
             s = f"{v*100:.1f}%"
         elif fmt == "x":
@@ -1249,8 +1249,8 @@ def _split_paragraphs(text: str) -> list[str]:
 
 def _fmt_b(v) -> str:
     if v is None: return "n/a"
-    if abs(v) >= 1000: return f"{v/1000:.1f}B"
-    return f"{v:,.1f}M"
+    if abs(v) >= 1000: return f"{v/1000:.2f}B"
+    return f"{v:,.2f}M"
 
 def _fmt_pct(v) -> str:
     return f"{v*100:.1f}%" if v is not None else "n/a"

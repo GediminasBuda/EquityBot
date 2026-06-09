@@ -236,6 +236,22 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
             if _ebi_n:
                 company.ttm_ebitda = _ebi_sum * 4 / _ebi_n
 
+    # ── TTM Net Income ───────────────────────────────────────────────────────
+    # Primary: derive from ProfitMargin (decimal) × RevenueTTM (both already
+    # loaded from Highlights). Fallback: sum last 4 quarterly net income rows.
+    if company.ttm_revenue and company.net_margin is not None:
+        company.ttm_net_income = company.ttm_revenue * company.net_margin
+    elif _q_inc:
+        _ni_sum, _ni_n = 0.0, 0
+        for _qd in _sorted_q[:4]:
+            _row = _q_inc[_qd]
+            _ni = (_to_m(_row.get("netIncomeApplicableToCommonShares"))
+                   or _to_m(_row.get("netIncome")))
+            if _ni is not None:
+                _ni_sum += _ni; _ni_n += 1
+        if _ni_n:
+            company.ttm_net_income = _ni_sum * 4 / _ni_n
+
     # ── TTM FCF from quarterly cash flow ────────────────────────────────────
     _q_cf = ((fund.get("Financials") or {})
              .get("Cash_Flow", {})
@@ -546,6 +562,28 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         latest_yr = max(company.annual_financials.keys())
         if company.annual_financials[latest_yr].dividends_per_share is None:
             company.annual_financials[latest_yr].dividends_per_share = fwd_div
+
+    # ── Retroactive split-adjustment for historical EPS ─────────────────────
+    # EODHD Income_Statement and Earnings.Annual store EPS as originally
+    # reported (pre-split). The only figure that is split-adjusted is
+    # Highlights.EarningsShare (TTM EPS, confirmed correct by testing).
+    # Apply LastSplitFactor retroactively to all years before the split so
+    # the table displays consistent split-adjusted EPS across all columns.
+    _last_sf  = sd.get("LastSplitFactor") or ""   # e.g. "3:1"
+    _last_sdt = sd.get("LastSplitDate")   or ""   # e.g. "2023-06-28"
+    _split_factor = 1.0
+    _split_year   = None
+    if _last_sf and ":" in str(_last_sf):
+        try:
+            _sn, _sd2 = str(_last_sf).split(":", 1)
+            _split_factor = float(_sn.strip()) / float(_sd2.strip())
+            _split_year   = int(str(_last_sdt)[:4]) if _last_sdt else None
+        except (ValueError, ZeroDivisionError):
+            pass
+    if _split_factor != 1.0 and _split_year:
+        for _yr, _af in company.annual_financials.items():
+            if _yr < _split_year and _af.eps_diluted is not None:
+                _af.eps_diluted = _af.eps_diluted / _split_factor
 
     # ── Recompute market_cap / EV / margins / ratios on every annual row ─────
     for af in company.annual_financials.values():
