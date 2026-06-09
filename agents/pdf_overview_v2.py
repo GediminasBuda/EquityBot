@@ -177,22 +177,21 @@ def _draw_header(canvas, doc, company: CompanyData, report_date: str):
     name = company.name or company.ticker
     canvas.drawString(ML, H - 12*mm, name)
 
-    # Subtitle line: sector | country | exchange
+    # Subtitle line: sector | country | exchange | ticker | date
     subtitle = " | ".join(filter(None, [
         company.sector, company.country,
-        company.exchange, company.ticker
+        company.exchange, company.ticker, report_date
     ]))
     canvas.setFont(BASE_FONT, 8)
     canvas.setFillColor(MGRAY)
     canvas.drawString(ML, H - 18.5*mm, subtitle)
 
-    # Right side: price | mkt cap | date
+    # Right side: price | mkt cap
     cur = company.currency_price or company.currency or ""
     price_str  = (f"Price: {company.current_price:,.2f} {cur}"
                   if company.current_price else "Price n/a")
     mcap_str   = (f"MCap: {_fmt_b(company.market_cap)} {company.currency or ''}"
                   if company.market_cap else "")
-    date_str   = f"Report: {report_date}"
 
     canvas.setFont(BOLD_FONT, 8.5)
     canvas.setFillColor(NAVY)
@@ -201,9 +200,6 @@ def _draw_header(canvas, doc, company: CompanyData, report_date: str):
     canvas.setFont(BASE_FONT, 8)
     canvas.setFillColor(NAVY)
     canvas.drawRightString(right_x, H - 15.5*mm, mcap_str)
-    canvas.setFont(BASE_FONT, 7.5)
-    canvas.setFillColor(MGRAY)
-    canvas.drawRightString(right_x, H - 20.5*mm, date_str)
 
     # Thin separator line below header
     canvas.setStrokeColor(BLUE)
@@ -649,11 +645,8 @@ def _build_recommendation_box(
 # ── Section title helper ──────────────────────────────────────────────────────
 
 def section_title(text: str, styles: dict):
-    """Returns a section heading with a blue underline."""
-    return KeepTogether([
-        Paragraph(f"<b>{text}</b>", styles["section_title"]),
-        HRFlowable(width=CW, thickness=1.2, color=BLUE, spaceAfter=4),
-    ])
+    """Returns a section heading (no underline)."""
+    return Paragraph(f"<b>{text}</b>", styles["section_title"])
 
 
 # ── Main generator ────────────────────────────────────────────────────────────
@@ -1035,31 +1028,11 @@ class OverviewV2PDFGenerator:
     def _page1(self, company: CompanyData, analysis: dict, styles: dict) -> list:
         el = []
 
-        # V2 banner — data source indicator (EODHD or yfinance)
         _uses_eodhd = (
             any(getattr(af, "source", "") == "eodhd"
                 for af in company.annual_financials.values())
             or "eodhd" in (company.data_sources or [])
         )
-        if _uses_eodhd:
-            _src_text = (
-                'Data source: <b>EODHD All-In-One API</b>. '
-                'Fields marked <font name="ZapfDingbats" color="#2E7D32" size="6">4</font>'
-                ' = EODHD verified.'
-            )
-        else:
-            _src_text = (
-                'Data source: <b>yfinance (Yahoo Finance)</b> — '
-                'EODHD does not cover this exchange. '
-                'Depth typically 3–5 years; some fields may be unavailable.'
-            )
-        el.append(Paragraph(
-            f'<font color="{NAVY_HEX}"><b>Investment Memo V2</b></font>'
-            f'  ·  <font color="{MGRAY_HEX}">{_src_text}</font>',
-            ParagraphStyle("v2_banner", fontName=BASE_FONT, fontSize=7.5,
-                           leading=10, spaceAfter=4, borderPadding=4,
-                           borderColor=NAVY, borderWidth=0.4)))
-        el.append(Spacer(1, 2))
 
         # ── 5-Year price chart (top of page 1) ────────────────────────────────
         # V2: data exclusively from EODHD /eod (All-In-One). If the EODHD
@@ -1092,14 +1065,30 @@ class OverviewV2PDFGenerator:
         except Exception as e:
             logger.error(f"[PDF] Financial table error: {e}")
             el.append(Paragraph(f"Financial table unavailable: {e}", styles["body_small"]))
-        # EODHD legend — only show if at least one year has EODHD data
-        if any(getattr(af, "source", "") == "eodhd"
-               for af in company.annual_financials.values()):
+        # Small footnotes under Financial Summary (no border)
+        _note_style = ParagraphStyle("tbl_note", fontName=BASE_FONT, fontSize=6,
+                                     textColor=MGRAY, spaceBefore=2, leading=8)
+        # Data source line
+        if _uses_eodhd:
+            _src_note = (
+                'Investment Memo V2  ·  Data source: EODHD All-In-One API  ·  '
+                'Fields marked <font name="ZapfDingbats" color="#2E7D32" size="6">4</font>'
+                ' = EODHD verified.'
+            )
+        else:
+            _src_note = (
+                'Investment Memo V2  ·  Data source: yfinance (Yahoo Finance) — '
+                'EODHD does not cover this exchange. Depth typically 3–5 years.'
+            )
+        el.append(Paragraph(_src_note, _note_style))
+
+        # TTM date footnote
+        _ttm_date = getattr(company, 'ttm_last_quarter_date', None)
+        if _ttm_date:
             el.append(Paragraph(
-                '<font name="ZapfDingbats" color="#2E7D32" size="6">4</font>'
-                " = verified EODHD data",
-                ParagraphStyle("eo_legend", fontName=BASE_FONT, fontSize=6,
-                               textColor=MGRAY, spaceBefore=2, leading=8),
+                f"TTM — last quarterly earnings report: {_ttm_date}  ·  "
+                "Italic values in TTM column are trailing twelve months.",
+                _note_style,
             ))
 
         # Estimate footnote

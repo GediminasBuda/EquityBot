@@ -315,6 +315,10 @@ class EODHDAdapter:
         # TTM figures — store for EV ratio derivation below
         _rev_ttm    = self._to_m(highlights.get("RevenueTTM"))
         _ebitda_ttm = self._to_m(highlights.get("EBITDA"))
+        if _rev_ttm is not None:
+            company.ttm_revenue = _rev_ttm
+        if _ebitda_ttm is not None:
+            company.ttm_ebitda = _ebitda_ttm
 
         # Forward analyst EPS estimates
         _eps_est_cy = self._parse_float(highlights.get("EPSEstimateCurrentYear"))
@@ -465,6 +469,8 @@ class EODHDAdapter:
         try:
             financials_block = raw.get("Financials") or {}
             self._parse_annual_history(company, financials_block, fields_filled)
+            # Extract last quarterly date and compute TTM from quarters as fallback
+            self._parse_quarterly_ttm(company, financials_block)
         except Exception as e:
             logger.warning(f"[eodhd] Could not parse annual financials for {ticker}: {e}")
 
@@ -707,6 +713,59 @@ class EODHDAdapter:
             logger.debug(
                 f"[eodhd] Annual data years: {list(company.annual_financials.keys())}"
             )
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Quarterly TTM helper
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _parse_quarterly_ttm(self, company: "CompanyData", financials_block: dict) -> None:
+        """Set ttm_last_quarter_date and fill ttm_revenue/ttm_ebitda from quarters
+        if the Highlights block did not provide them."""
+        def _quarterly(block_key: str) -> dict:
+            blk = financials_block.get(block_key) or {}
+            return blk.get("quarterly") or blk.get("quarter") or {}
+
+        income_q = _quarterly("Income_Statement")
+        if not income_q:
+            return
+
+        # Sort quarterly dates descending to find the most recent 4 quarters
+        sorted_dates = sorted(income_q.keys(), reverse=True)
+        if sorted_dates:
+            # Store as "YYYY-MM" (trim day)
+            latest = sorted_dates[0]
+            company.ttm_last_quarter_date = latest[:7] if len(latest) >= 7 else latest
+
+        # Fallback: compute TTM revenue/EBITDA by summing last 4 quarters
+        recent_4 = sorted_dates[:4]
+        if company.ttm_revenue is None and recent_4:
+            total = 0.0
+            count = 0
+            for d in recent_4:
+                v = self._to_m(income_q[d].get("totalRevenue") or income_q[d].get("revenue"))
+                if v is not None:
+                    total += v
+                    count += 1
+            if count > 0:
+                company.ttm_revenue = total * 4 / count  # annualise if partial
+
+        if company.ttm_ebitda is None and recent_4:
+            total = 0.0
+            count = 0
+            for d in recent_4:
+                row = income_q[d]
+                v = self._to_m(row.get("ebitda") or row.get("EBITDA"))
+                if v is None:
+                    # derive: EBIT + D&A
+                    ebit = self._to_m(row.get("ebit") or row.get("operatingIncome"))
+                    da   = self._to_m(row.get("depreciationAndAmortization") or row.get("dAndA"))
+                    if ebit is not None and da is not None:
+                        v = ebit + da
+                if v is not None:
+                    total += v
+                    count += 1
+            if count > 0:
+                company.ttm_ebitda = total * 4 / count
 
     # ──────────────────────────────────────────────────────────────────────────
     # Actual EPS from Earnings.Annual

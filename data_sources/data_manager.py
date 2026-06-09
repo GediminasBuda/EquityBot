@@ -234,6 +234,8 @@ class DataManager:
                         "ebit_margin", "ebitda_margin", "gross_margin",
                         "quarterly_revenue_growth_yoy", "quarterly_earnings_growth_yoy",
                         "eps_estimate_next_year",
+                        # TTM P&L scalars
+                        "ttm_revenue", "ttm_ebitda", "ttm_last_quarter_date",
                     ],
                     override_financials=True,
                     full_override=True,       # EODHD paid: trust all statement types

@@ -346,6 +346,7 @@ class CompanyData:
     ttm_ebitda: Optional[float] = None       # millions
     ttm_ebit: Optional[float] = None         # millions (operating income)
     ttm_net_income: Optional[float] = None   # millions (IFRS attributable)
+    ttm_last_quarter_date: Optional[str] = None  # "YYYY-MM" of most recent quarter
 
     # ── 10-Year Annual History ────────────────────────────────────────────────
     # Keys are fiscal year integers: {2024: AnnualFinancials(...), 2023: ...}
