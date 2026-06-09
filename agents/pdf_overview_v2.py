@@ -152,6 +152,18 @@ def _styles(company_name: str = "") -> dict:
             fontName=BASE_FONT, fontSize=8, textColor=NAVY,
             leading=11, leftIndent=8,
         ),
+        "news_sub": S("news_sub",
+            fontName=BOLD_FONT, fontSize=8, textColor=NAVY,
+            spaceBefore=5, spaceAfter=2, leading=10,
+        ),
+        "news_item": S("news_item",
+            fontName=BASE_FONT, fontSize=8, textColor=HexColor('#222222'),
+            leading=11, leftIndent=8, spaceAfter=1,
+        ),
+        "news_meta": S("news_meta",
+            fontName=OBLIQUE_FONT, fontSize=6.5, textColor=MGRAY,
+            leading=9, leftIndent=8, spaceAfter=3,
+        ),
         "checklist_pass": S("ck_pass",
             fontName=BASE_FONT, fontSize=8, textColor=GREEN, leading=10,
         ),
@@ -668,7 +680,8 @@ class OverviewV2PDFGenerator:
         peers: dict[str, CompanyData],
         checklist: list[dict],
         output_path: str,
-        adv_result=None,  # Optional[AdversarialResult]
+        adv_result=None,       # Optional[AdversarialResult]
+        news_summary=None,     # Optional[dict] — structured news from LLM
     ) -> None:
         report_date = datetime.utcnow().strftime("%Y-%m-%d")
         styles = _styles(company.name or "")
@@ -693,8 +706,8 @@ class OverviewV2PDFGenerator:
         story += self._page1(company, analysis, styles)
         story.append(PageBreak())
 
-        # ── PAGE 2: Bull / Bear + Recommendation ─────────────────────────────
-        story += self._page2(analysis, styles)
+        # ── PAGE 2: Bull / Bear + Recommendation + Current News ─────────────
+        story += self._page2(analysis, styles, news_summary=news_summary)
         story.append(PageBreak())
 
         # ── PAGE 3: Peer Table + Checklist ───────────────────────────────────
@@ -1131,7 +1144,7 @@ class OverviewV2PDFGenerator:
 
         return el
 
-    def _page2(self, analysis: dict, styles: dict) -> list:
+    def _page2(self, analysis: dict, styles: dict, news_summary=None) -> list:
         el = []
 
         # Bull case
@@ -1166,6 +1179,37 @@ class OverviewV2PDFGenerator:
             analysis.get("recommendation_rationale", ""),
             styles,
         ))
+
+        # ── Current News ──────────────────────────────────────────────────────
+        sections = (news_summary or {}).get("sections") or []
+        if sections:
+            el.append(Spacer(1, 10))
+            el.append(section_title("Current News", styles))
+            for sec in sections:
+                title = (sec.get("title") or "").strip()
+                items = sec.get("items") or []
+                if not items:
+                    continue
+                if title:
+                    el.append(Paragraph(title, styles["news_sub"]))
+                for item in items:
+                    text = (item.get("text") or "").strip()
+                    if not text:
+                        continue
+                    el.append(Paragraph(f"• {text}", styles["news_item"]))
+                    # Date · Source · URL on a small italic line
+                    meta_parts = []
+                    if item.get("date"):
+                        meta_parts.append(item["date"])
+                    if item.get("source"):
+                        meta_parts.append(item["source"])
+                    if item.get("url"):
+                        meta_parts.append(item["url"])
+                    if meta_parts:
+                        el.append(Paragraph(
+                            "  " + "  ·  ".join(meta_parts),
+                            styles["news_meta"],
+                        ))
 
         return el
 

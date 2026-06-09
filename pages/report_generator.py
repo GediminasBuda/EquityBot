@@ -2160,6 +2160,32 @@ if generate_clicked and ticker_input:
                 st.write(f"✓  Checklist: {passed}/{len(checklist)} criteria met")
                 _prog.progress(84)
 
+                # ── Current News — lightweight separate LLM call ──────────────
+                _news_summary = {}
+                if _news_articles:
+                    _prog.progress(86, text="📰  Summarising news…")
+                    st.write("📰  Summarising news for Current News section…")
+                    _cn_prompt = (
+                        f"You are a financial news editor. Summarise the following recent "
+                        f"news articles about {company.name or ticker_input} into a structured "
+                        f"Current News section for an investment research report.\n\n"
+                        f"Group into 2-4 logical categories (e.g. 'Key Updates & Milestones', "
+                        f"'Product & Technology', 'Corporate News'). "
+                        f"Each item should be 1-2 concise sentences. "
+                        f"Preserve the date (YYYY-MM-DD) and source name from each article.\n\n"
+                        f"Return ONLY valid JSON — no markdown, no code fences:\n"
+                        f'{{"sections":[{{"title":"Category Name","items":['
+                        f'{{"text":"...","date":"YYYY-MM-DD","source":"Source Name","url":"https://..."}}]}}'
+                        f"]}}\n\n"
+                        f"NEWS ARTICLES:\n{_news_block}"
+                    )
+                    try:
+                        _news_summary = llm.generate_json(_cn_prompt, max_tokens=1500)
+                        _nsec = len((_news_summary or {}).get("sections") or [])
+                        st.write(f"✓  News summary: {_nsec} section(s)")
+                    except Exception as _ne:
+                        st.write(f"⚠  News summary skipped: {_ne}")
+
                 _prog.progress(88, text="📄  Rendering V2 PDF…")
                 st.write("📄  Rendering V2 PDF…")
                 import importlib, agents.pdf_overview_v2 as _v2mod
@@ -2174,7 +2200,8 @@ if generate_clicked and ticker_input:
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_overview_v2_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
                 OverviewV2PDFGenerator().render(company, analysis, peers,
-                                                 checklist, pdf_path)
+                                                 checklist, pdf_path,
+                                                 news_summary=_news_summary)
                 extra = {"checklist": checklist, "passed": passed}
 
             elif report_type == "fisher":
