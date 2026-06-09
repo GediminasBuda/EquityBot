@@ -334,8 +334,8 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         for y in show_years:
             a = af(y)
             vals.append(cell(getter(a) if a else None, fmt))
-        vals.append(italic_cell(ttm_val, fmt))       # TTM column
-        vals.append(italic_cell(est_val, fmt))        # Estimate column
+        vals.append(cell(ttm_val, fmt))              # TTM — factual, not italic
+        vals.append(italic_cell(est_val, fmt))        # Estimate column (forecast → italic)
         rows_data.append(vals)
 
     add_row(f"Sales ({cur}M)", lambda a: a.revenue,
@@ -1093,8 +1093,7 @@ class OverviewV2PDFGenerator:
         _ttm_date = getattr(company, 'ttm_last_quarter_date', None)
         if _ttm_date:
             el.append(Paragraph(
-                f"TTM — last quarterly earnings report: {_ttm_date}  ·  "
-                "Italic values in TTM column are trailing twelve months.",
+                f"TTM — last quarterly earnings report: {_ttm_date}",
                 _note_style,
             ))
 

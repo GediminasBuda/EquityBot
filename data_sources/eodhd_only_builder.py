@@ -188,6 +188,54 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     company.roe           = _f(h.get("ReturnOnEquityTTM"))
     company.roa           = _f(h.get("ReturnOnAssetsTTM"))
 
+    # ── TTM absolute P&L figures ─────────────────────────────────────────────
+    # RevenueTTM is in full units (not millions) — convert with _to_m().
+    # EBITDA from Highlights is also full units.
+    company.ttm_revenue = _to_m(h.get("RevenueTTM"))
+    company.ttm_ebitda  = _to_m(h.get("EBITDA"))
+    # EBIT TTM: derive from EBITDA margin × revenue when direct field absent
+    _ebit_margin_ttm = _f(h.get("OperatingMarginTTM"))
+    if company.ttm_revenue and _ebit_margin_ttm is not None:
+        company.ttm_ebit = company.ttm_revenue * _ebit_margin_ttm
+
+    # ── TTM date from quarterly income statement ─────────────────────────────
+    _q_inc = ((fund.get("Financials") or {})
+              .get("Income_Statement", {})
+              .get("quarterly") or
+              (fund.get("Financials") or {})
+              .get("Income_Statement", {})
+              .get("quarter") or {})
+    if _q_inc:
+        _sorted_q = sorted(_q_inc.keys(), reverse=True)
+        if _sorted_q:
+            _latest_q = _sorted_q[0]
+            company.ttm_last_quarter_date = (
+                _latest_q[:7] if len(_latest_q) >= 7 else _latest_q
+            )
+        # Fallback: sum last 4 quarters when Highlights TTM is missing
+        if company.ttm_revenue is None:
+            _rev_sum, _rev_n = 0.0, 0
+            for _qd in _sorted_q[:4]:
+                _rv = _to_m(_q_inc[_qd].get("totalRevenue") or _q_inc[_qd].get("revenue"))
+                if _rv is not None:
+                    _rev_sum += _rv; _rev_n += 1
+            if _rev_n:
+                company.ttm_revenue = _rev_sum * 4 / _rev_n
+        if company.ttm_ebitda is None:
+            _ebi_sum, _ebi_n = 0.0, 0
+            for _qd in _sorted_q[:4]:
+                _row = _q_inc[_qd]
+                _eb = _to_m(_row.get("ebitda") or _row.get("EBITDA"))
+                if _eb is None:
+                    _ebit = _to_m(_row.get("ebit") or _row.get("operatingIncome"))
+                    _da   = _to_m(_row.get("depreciationAndAmortization"))
+                    if _ebit is not None and _da is not None:
+                        _eb = _ebit + _da
+                if _eb is not None:
+                    _ebi_sum += _eb; _ebi_n += 1
+            if _ebi_n:
+                company.ttm_ebitda = _ebi_sum * 4 / _ebi_n
+
     company.book_value_per_share = _f(h.get("BookValue"))
     company.revenue_per_share    = _f(h.get("RevenuePerShareTTM"))
     company.eps_ttm              = _f(h.get("EarningsShare")) or _f(h.get("DilutedEpsTTM"))
@@ -491,6 +539,7 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         "net_margin", "ebit_margin", "roe", "roa",
         "book_value_per_share", "revenue_per_share", "eps_ttm",
         "quarterly_revenue_growth_yoy", "quarterly_earnings_growth_yoy",
+        "ttm_revenue", "ttm_ebitda", "ttm_ebit", "ttm_last_quarter_date",
         "beta", "week_52_high", "week_52_low", "ma_50", "ma_200",
         "dividend_yield", "forward_annual_dividend_rate",
         "forward_annual_dividend_yield", "payout_ratio",
