@@ -183,13 +183,14 @@ class LLMClient:
         """
         prompt = (
             f'Search the web for recent news about {company_name} ({ticker}). '
-            f'Write a senior equity analyst narrative overview — organised by themes '
-            f'(e.g. "Corporate developments", "Financial performance", "Strategic moves", '
-            f'"Insider activity"). '
-            f'Each theme is a bold header (**Theme name**) followed by 2-4 sentences of '
-            f'substance: specific numbers, dates, business context. '
-            f'Do NOT just list headlines. Synthesise and interpret. '
-            f'Aim for the depth of a Bloomberg brief. Plain text only — no JSON.'
+            f'Write a senior equity analyst narrative overview — organised into 3-5 themes '
+            f'(e.g. "Financial performance", "Strategic moves & M&A", "Insider activity"). '
+            f'Format: each theme as **Theme name** on its own line, then 2-4 continuous '
+            f'prose sentences — NO bullet points, NO numbered lists, NO citation brackets like [1]. '
+            f'Include specific dates (e.g. "In March 2026...") and numbers inline in the prose. '
+            f'Write each theme as ONE flowing paragraph, not fragmented lines. '
+            f'Do NOT include a document title or heading at the top. '
+            f'Plain text with **bold** theme headers only — no other markdown, no JSON.'
         )
         try:
             if self.provider == "openai":

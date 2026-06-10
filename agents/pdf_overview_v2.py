@@ -1122,25 +1122,10 @@ class OverviewV2PDFGenerator:
                 _note_bold_style,
             ))
 
-        # Estimate footnote
-        fe = company.forward_estimates
-        if fe is not None:
-            analysts = fe.analyst_count or "?"
-            note = (
-                f"<i>{fe.year}E column: analyst consensus estimates "
-                f"({analysts} analyst{'s' if analysts != 1 else ''})  ·  "
-                f"Source: {fe.source}  ·  Italic values = forecast, not historical.</i>"
-            )
-            el.append(Paragraph(note, styles["body_small"]))
         el.append(Spacer(1, 6))
 
-        # Investment Snapshot (LLM-generated, EODHD-only context)
+        # Investment Snapshot
         el.append(section_title("Investment Snapshot", styles))
-        el.append(Paragraph(
-            '<i><font color="' + AMBER_HEX + '">ⓘ AI-generated narrative '
-            '— context limited to EODHD All-In-One data only.</font></i>',
-            ParagraphStyle("llm_note", fontName=BASE_FONT, fontSize=6.5,
-                           textColor=AMBER, leading=8, spaceAfter=3)))
         snapshot = analysis.get("snapshot", "Analysis not available.")
         for para_text in _split_paragraphs(snapshot):
             el.append(Paragraph(para_text, styles["body"]))
@@ -1159,20 +1144,59 @@ class OverviewV2PDFGenerator:
         if _narrative:
             el.append(Spacer(1, 6))
             el.append(section_title("Current News", styles))
-            for block in _narrative.split("\n\n"):
-                block = block.strip()
-                if not block:
+            # ── Clean the web-search response ────────────────────────────────
+            # 1. Strip citation markers like [1], [2], [1,2] etc.
+            import re as _re
+            _clean = _re.sub(r'\[\d+(?:,\s*\d+)*\]', '', _narrative)
+            # 2. Remove markdown document-level headings (## ... or # ...)
+            _clean = _re.sub(r'^#+\s+.*$', '', _clean, flags=_re.MULTILINE)
+            # 3. Split into lines and join continuation fragments:
+            #    a line is a continuation if it starts with lowercase, a comma,
+            #    a conjunction word, or is just punctuation/whitespace.
+            _lines = _clean.split('\n')
+            _merged_lines = []
+            _buf = ""
+            _CONT = _re.compile(
+                r'^(\s*[,;]|and |or |but |while |with |as |that |which |'
+                r'including |building |translating |making |noting |\.\s*$|\s*$)'
+            )
+            for _ln in _lines:
+                _ln = _ln.strip()
+                if not _ln:
+                    if _buf:
+                        _merged_lines.append(_buf)
+                        _buf = ""
                     continue
-                # Bold section header: **Title** or **Title** on its own line
-                if block.startswith("**") and block.count("**") >= 2:
-                    header = block.replace("**", "").strip().rstrip("—- ").strip()
-                    el.append(Spacer(1, 4))
-                    el.append(Paragraph(header, styles["news_sub"]))
+                # Section header — flush buffer first
+                if _ln.startswith("**") and _ln.count("**") >= 2:
+                    if _buf:
+                        _merged_lines.append(_buf)
+                        _buf = ""
+                    _merged_lines.append(_ln)
+                    continue
+                # Continuation fragment — attach to previous line
+                if _buf and (_CONT.match(_ln) or (_ln[0].islower() and not _ln.startswith("**"))):
+                    _buf = _buf.rstrip(" ") + " " + _ln
                 else:
-                    # Body paragraph — strip any residual markdown bold markers
-                    clean = block.replace("**", "")
-                    el.append(Paragraph(clean, styles["news_item"]))
-                    el.append(Spacer(1, 1))
+                    if _buf:
+                        _merged_lines.append(_buf)
+                    _buf = _ln
+            if _buf:
+                _merged_lines.append(_buf)
+            # ── Render ────────────────────────────────────────────────────────
+            for _block in _merged_lines:
+                _block = _block.strip()
+                if not _block or _block in (".", ",", ";"):
+                    continue
+                if _block.startswith("**") and _block.count("**") >= 2:
+                    _hdr = _block.replace("**", "").strip().rstrip(";:—- ")
+                    el.append(Spacer(1, 4))
+                    el.append(Paragraph(_hdr, styles["news_sub"]))
+                else:
+                    _text = _block.replace("**", "").strip()
+                    if _text:
+                        el.append(Paragraph(_text, styles["news_item"]))
+                        el.append(Spacer(1, 1))
 
         return el
 
@@ -1181,11 +1205,6 @@ class OverviewV2PDFGenerator:
 
         # Bull case
         el.append(section_title("Bull Case — Why Invest", styles))
-        el.append(Paragraph(
-            '<i><font color="' + AMBER_HEX + '">ⓘ AI-generated narrative '
-            '— context limited to EODHD data only.</font></i>',
-            ParagraphStyle("llm_note", fontName=BASE_FONT, fontSize=6.5,
-                           textColor=AMBER, leading=8, spaceAfter=3)))
         bull = analysis.get("bull_case", "Bull case not available.")
         for para in _split_paragraphs(bull):
             el.append(Paragraph(para, styles["body"]))
@@ -1194,11 +1213,6 @@ class OverviewV2PDFGenerator:
 
         # Bear case
         el.append(section_title("Bear Case — Devil's Advocate", styles))
-        el.append(Paragraph(
-            '<i><font color="' + AMBER_HEX + '">ⓘ AI-generated narrative '
-            '— context limited to EODHD data only.</font></i>',
-            ParagraphStyle("llm_note", fontName=BASE_FONT, fontSize=6.5,
-                           textColor=AMBER, leading=8, spaceAfter=3)))
         bear = analysis.get("bear_case", "Bear case not available.")
         for para in _split_paragraphs(bear):
             el.append(Paragraph(para, styles["body"]))
