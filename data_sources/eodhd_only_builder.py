@@ -173,19 +173,8 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     company.pct_insiders = _f(ss.get("PercentInsiders"))
     company.pct_institutions = _f(ss.get("PercentInstitutions"))
 
-    # Short interest — EODHD stores ShortPercent* as a plain percentage (e.g. 0.19),
-    # but CompanyData stores short_percent_of_float as a decimal (0.0019) so that
-    # the existing pct_d renderer (× 100) shows the correct "0.19%".
-    _ss_short = _f(ss.get("SharesShort"))
-    if _ss_short is not None:
-        company.shares_short = _ss_short / 1_000_000   # full units → millions
-    _ss_short_pm = _f(ss.get("SharesShortPriorMonth"))
-    if _ss_short_pm is not None:
-        company.shares_short_prior_month = _ss_short_pm / 1_000_000
-    company.short_ratio = _f(ss.get("ShortRatio"))
-    _spf = _f(ss.get("ShortPercentFloat") or ss.get("ShortPercentOutstanding"))
-    if _spf is not None:
-        company.short_percent_of_float = _spf / 100    # percent → decimal
+    # Note: short interest fields (SharesShort, ShortRatio, ShortPercent) are read
+    # from the Technicals block below — SharesStats.SharesShort is null for most tickers.
 
     # ── Valuation multiples ──────────────────────────────────────────────────
     company.pe_ratio       = _f(h.get("PERatio")) or _f(v.get("TrailingPE"))
@@ -320,6 +309,18 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     company.week_52_low  = _f(tech.get("52WeekLow"))
     company.ma_50        = _f(tech.get("50DayMA"))
     company.ma_200       = _f(tech.get("200DayMA"))
+    # Short interest lives in Technicals, NOT SharesStats (SharesStats.SharesShort is null)
+    _t_short = _f(tech.get("SharesShort"))
+    if _t_short is not None:
+        company.shares_short = _t_short / 1_000_000           # full units → millions
+    _t_short_pm = _f(tech.get("SharesShortPriorMonth"))
+    if _t_short_pm is not None:
+        company.shares_short_prior_month = _t_short_pm / 1_000_000
+    company.short_ratio = _f(tech.get("ShortRatio"))
+    # Technicals.ShortPercent is a decimal (0.0019 = 0.19%) — store as-is for pct_d renderer
+    _t_spct = _f(tech.get("ShortPercent"))
+    if _t_spct is not None:
+        company.short_percent_of_float = _t_spct
 
     # ── Dividends ────────────────────────────────────────────────────────────
     company.dividend_yield = _f(h.get("DividendYield"))
