@@ -173,6 +173,20 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     company.pct_insiders = _f(ss.get("PercentInsiders"))
     company.pct_institutions = _f(ss.get("PercentInstitutions"))
 
+    # Short interest — EODHD stores ShortPercent* as a plain percentage (e.g. 0.19),
+    # but CompanyData stores short_percent_of_float as a decimal (0.0019) so that
+    # the existing pct_d renderer (× 100) shows the correct "0.19%".
+    _ss_short = _f(ss.get("SharesShort"))
+    if _ss_short is not None:
+        company.shares_short = _ss_short / 1_000_000   # full units → millions
+    _ss_short_pm = _f(ss.get("SharesShortPriorMonth"))
+    if _ss_short_pm is not None:
+        company.shares_short_prior_month = _ss_short_pm / 1_000_000
+    company.short_ratio = _f(ss.get("ShortRatio"))
+    _spf = _f(ss.get("ShortPercentFloat") or ss.get("ShortPercentOutstanding"))
+    if _spf is not None:
+        company.short_percent_of_float = _spf / 100    # percent → decimal
+
     # ── Valuation multiples ──────────────────────────────────────────────────
     company.pe_ratio       = _f(h.get("PERatio")) or _f(v.get("TrailingPE"))
     company.forward_pe     = _f(v.get("ForwardPE"))
@@ -620,6 +634,7 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         "book_value_per_share", "revenue_per_share", "eps_ttm",
         "quarterly_revenue_growth_yoy", "quarterly_earnings_growth_yoy",
         "ttm_revenue", "ttm_ebitda", "ttm_ebit", "ttm_fcf", "ttm_last_quarter_date",
+        "shares_short", "shares_short_prior_month", "short_ratio", "short_percent_of_float",
         "beta", "week_52_high", "week_52_low", "ma_50", "ma_200",
         "dividend_yield", "forward_annual_dividend_rate",
         "forward_annual_dividend_yield", "payout_ratio",
