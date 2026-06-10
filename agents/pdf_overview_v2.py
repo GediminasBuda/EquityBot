@@ -459,8 +459,9 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         ('FONTSIZE',    (0,0), (-1,0), hdr_fs),
         ('ALIGN',       (0,0), (-1,0), 'CENTER'),
         ('VALIGN',      (0,0), (-1,-1), 'MIDDLE'),
-        # Header underline only — no other borders
-        ('LINEBELOW',   (0,0), (-1,0), 1.4, NAVY),
+        # Header underline (thinner than before) + row separators matching EODHD data table
+        ('LINEBELOW',   (0,0), (-1,0),  0.8, NAVY),
+        ('LINEBELOW',   (0,1), (-1,-1), 0.3, HexColor("#DDDDDD")),
         # TTM and estimate column headers — navy text, no special background
         ('TEXTCOLOR',   (ttm_col,0), (ttm_col,0), NAVY),
         ('TEXTCOLOR',   (est_col,0), (est_col,0), NAVY),
