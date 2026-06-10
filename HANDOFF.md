@@ -1,6 +1,6 @@
 # HANDOFF — Session Continuation Document
 
-**Last updated:** 2026-06-07 (session 8)  
+**Last updated:** 2026-06-10 (session 9)  
 **Author:** Claude session, written for the next one.
 
 If you're a Claude agent that just opened this repo on a fresh machine, **read this file end-to-end before touching anything**. Then read `CLAUDE.md` for broader project documentation.
@@ -437,6 +437,62 @@ p = adj if adj not in (None, "", "NA", 0) else raw
 - Chart footnote updated: "split-adjusted close" so reader knows prices are adjusted.
 
 **Commit:** `894eb54` on `Final-design-V3`
+
+---
+
+---
+
+## 17 · Session 9 changes (2026-06-10) — Investment Memo formatting & data improvements
+
+### Files changed
+| File | Change |
+|---|---|
+| `data_sources/base.py` | Added `next_earnings_date: Optional[str] = None` |
+| `data_sources/eodhd_only_builder.py` | Next earnings date, short interest from Technicals block, various data fixes |
+| `data_sources/data_manager.py` | Added new fields to EODHD merge whitelist |
+| `agents/llm_client.py` | Added `generate_web_news()` — LLM-native web search for Current News |
+| `pages/report_generator.py` | Current News now calls `llm.generate_web_news()` instead of NewsAPI |
+| `agents/pdf_overview_v2.py` | Major formatting and layout changes (see below) |
+
+### Next earnings date
+- Added `company.next_earnings_date` field to `CompanyData`.
+- `eodhd_only_builder.py` populates it: try `Highlights.NextEarningsDate` first; if null/`0000-00-00`, fall back to first entry in `Earnings.History` where `epsActual is None`.
+- Displayed in Financial Summary footnotes in **bold**, immediately below the TTM last-quarter date line.
+
+### Short interest data fix
+- **Wrong source:** `SharesStats.SharesShort` is null for most EODHD tickers.
+- **Correct source:** `Technicals` block — `SharesShort`, `ShortRatio`, `ShortPercent`.
+- `ShortPercent` is stored as decimal (e.g. 0.0019 = 0.19%) — PDF uses `pct_d` formatter (× 100).
+- Short interest now correctly shows on EODHD Market Data Technical Levels section.
+
+### Current News — LLM web search
+- Replaced EODHD NewsAPI headline summarization.
+- `generate_web_news(company_name, ticker)` added to `llm_client.py`:
+  - OpenAI: `client.responses.create()` with `web_search_preview` tool.
+  - Claude: `messages.create()` with `web_search_20250305` tool.
+  - Returns narrative prose with `**bold**` theme headers (no bullet points, no citation markers).
+- PDF renderer uses `re.split(r'(\*\*[^*\n]+\*\*)', text)` to split on headers; body paragraphs collapse `\n` to spaces, strip `[1]` citations and leading punctuation.
+- Moved from page 2 (after recommendation) to **page 1 (after "Did You Know?")**.
+
+### Financial Summary table redesign
+- **No borders, no grid, no column separators.**
+- Alternating row stripes: `#FFFFFF` / `#F6F8FA` (matching EODHD Market Data table).
+- TTM column: same background as all other cells (no special formatting).
+- Header row: `LINEBELOW` 0.8pt NAVY (thinned from 1.4pt).
+- Data rows: `LINEBELOW` 0.3pt `#DDDDDD` — matching EODHD Market Data style.
+
+### AI banners removed
+- Removed "2026E column: analyst consensus estimates…" footnote from Financial Summary.
+- Removed "An AI-generated narrative — context limited to EODHD…" banner from Investment Snapshot, Bull Case, Bear Case sections.
+
+### Text alignment fixes
+- `fun_fact`, `news_sub`, `news_item` styles: `leftIndent=0`, `alignment=TA_JUSTIFY`.
+- Did You Know? and Current News text now flush-left and justified, matching all other body text.
+
+### Architecture reminder (CRITICAL)
+- Investment Memo V2 uses `eodhd_only_builder.py` — NOT `DataManager` / `eodhd_adapter.py`.
+- For V2 data issues, always look in `eodhd_only_builder.py` first.
+- The old `overview` report (pdf_overview.py / models/overview.py) is obsolete. Ignore it.
 
 ---
 
