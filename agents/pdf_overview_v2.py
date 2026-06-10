@@ -437,23 +437,33 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     hdr_fs   = 7.0 if n_data_cols >= 9 else 7.5
     cell_pad = 2   if n_data_cols >= 9 else 5
 
+    # Alternating row stripe colors (same palette as EODHD data table on page 6)
+    ROW_WHITE = HexColor("#FFFFFF")
+    ROW_STRIPE = HexColor("#F6F8FA")
+    # Header row is white; data rows alternate starting with stripe on row index 1
+    row_bgs = []
+    for i in range(len(all_rows)):
+        if i == 0:
+            row_bgs.append(ROW_WHITE)           # header
+        elif i % 2 == 1:
+            row_bgs.append(ROW_STRIPE)          # odd data rows → stripe
+        else:
+            row_bgs.append(ROW_WHITE)           # even data rows → white
+
     ts = [
-        ('BACKGROUND',  (0,0), (-1,0), white),
+        # Row stripe backgrounds (covers entire table including label column)
+        ('ROWBACKGROUNDS', (0,0), (-1,-1), row_bgs),
+        # Header row overrides
         ('TEXTCOLOR',   (0,0), (-1,0), NAVY),
         ('FONTNAME',    (0,0), (-1,0), BOLD_FONT),
         ('FONTSIZE',    (0,0), (-1,0), hdr_fs),
         ('ALIGN',       (0,0), (-1,0), 'CENTER'),
         ('VALIGN',      (0,0), (-1,-1), 'MIDDLE'),
-        ('BACKGROUND',  (0,1), (-1,-1), white),
-        # TTM column — light blue tint to distinguish from historical
-        ('BACKGROUND',  (ttm_col,0), (ttm_col,-1), HexColor('#EEF6FB')),
-        ('TEXTCOLOR',   (ttm_col,0), (ttm_col,0),  BLUE),
-        ('LINEBEFORE',  (ttm_col,0), (ttm_col,-1), 1.2, BLUE),
-        ('LINEAFTER',   (ttm_col,0), (ttm_col,-1), 1.2, BLUE),
-        # Estimate column header
-        ('BACKGROUND',  (est_col,0), (est_col,0), white),
-        ('TEXTCOLOR',   (est_col,0), (est_col,0), BLUE),
-        ('LINEBEFORE',  (est_col,0), (est_col,-1), 1.2, BLUE),
+        # Header underline only — no other borders
+        ('LINEBELOW',   (0,0), (-1,0), 1.4, NAVY),
+        # TTM and estimate column headers — navy text, no special background
+        ('TEXTCOLOR',   (ttm_col,0), (ttm_col,0), NAVY),
+        ('TEXTCOLOR',   (est_col,0), (est_col,0), NAVY),
         # Label column
         ('FONTNAME',    (0,1), (0,-1), BOLD_FONT),
         ('FONTSIZE',    (0,1), (0,-1), body_fs),
@@ -461,18 +471,11 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         # Data columns
         ('ALIGN',       (1,1), (-1,-1), 'RIGHT'),
         ('FONTSIZE',    (1,1), (-1,-1), body_fs),
-        # Grid
-        ('GRID',        (0,0), (-1,-1), 0.3, BORDER),
-        ('LINEBELOW',   (0,0), (-1,0),  1.4, NAVY),
         # Padding
         ('TOPPADDING',  (0,0), (-1,-1), 3),
         ('BOTTOMPADDING',(0,0),(-1,-1), 3),
         ('LEFTPADDING', (0,0), (-1,-1), cell_pad),
         ('RIGHTPADDING',(0,0), (-1,-1), cell_pad),
-        # Row separators: 0=header,1=Sales,2=EBITDA,3=Net Income,4=Net Fin.Debt,
-        # 5=Net Margin,6=EBIT Margin,7=EPS,8=P/E,9=ROE,10=Div.Yield,11=FCF,12=FCF Yield
-        ('LINEBELOW',   (0,3), (-1,3), 0.6, BLUE),   # after Net Income
-        ('LINEBELOW',   (0,6), (-1,6), 0.6, BLUE),   # after EBIT Margin
     ]
     t.setStyle(TableStyle(ts))
     return t
