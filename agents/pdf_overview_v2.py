@@ -702,12 +702,12 @@ class OverviewV2PDFGenerator:
 
         story = []
 
-        # ── PAGE 1: Financial Table + Snapshot ───────────────────────────────
-        story += self._page1(company, analysis, styles)
+        # ── PAGE 1: Financial Table + Snapshot + Current News ────────────────
+        story += self._page1(company, analysis, styles, news_summary=news_summary)
         story.append(PageBreak())
 
-        # ── PAGE 2: Bull / Bear + Recommendation + Current News ─────────────
-        story += self._page2(analysis, styles, news_summary=news_summary)
+        # ── PAGE 2: Bull / Bear + Recommendation ─────────────────────────────
+        story += self._page2(analysis, styles)
         story.append(PageBreak())
 
         # ── PAGE 3: Peer Table + Checklist ───────────────────────────────────
@@ -1045,7 +1045,7 @@ class OverviewV2PDFGenerator:
 
     # ── Page builders ─────────────────────────────────────────────────────────
 
-    def _page1(self, company: CompanyData, analysis: dict, styles: dict) -> list:
+    def _page1(self, company: CompanyData, analysis: dict, styles: dict, news_summary=None) -> list:
         el = []
 
         _uses_eodhd = (
@@ -1109,6 +1109,15 @@ class OverviewV2PDFGenerator:
                 f"TTM — last quarterly earnings report: {_ttm_date}",
                 _note_style,
             ))
+        _next_ed = getattr(company, 'next_earnings_date', None)
+        if _next_ed:
+            _note_bold_style = ParagraphStyle(
+                "tbl_note_bold", parent=_note_style, fontName=BOLD_FONT,
+            )
+            el.append(Paragraph(
+                f"Next earnings report: {_next_ed}",
+                _note_bold_style,
+            ))
 
         # Estimate footnote
         fe = company.forward_estimates
@@ -1142,9 +1151,31 @@ class OverviewV2PDFGenerator:
                 el.append(Paragraph(f"<b>{i}.</b> {fact}", styles["fun_fact"]))
                 el.append(Spacer(1, 2))
 
+        # Current News — synthesised narrative
+        _ns_intro = (news_summary or {}).get("intro", "").strip()
+        _ns_sections = (news_summary or {}).get("sections") or []
+        if _ns_intro or _ns_sections:
+            el.append(Spacer(1, 6))
+            el.append(section_title("Current News", styles))
+            if _ns_intro:
+                el.append(Paragraph(_ns_intro, styles["body"]))
+                el.append(Spacer(1, 4))
+            for sec in _ns_sections:
+                title = (sec.get("title") or "").strip()
+                bullets = sec.get("bullets") or []
+                if not bullets:
+                    continue
+                if title:
+                    el.append(Paragraph(title, styles["news_sub"]))
+                for bullet in bullets:
+                    text = (bullet or "").strip()
+                    if text:
+                        el.append(Paragraph(f"• {text}", styles["news_item"]))
+                el.append(Spacer(1, 2))
+
         return el
 
-    def _page2(self, analysis: dict, styles: dict, news_summary=None) -> list:
+    def _page2(self, analysis: dict, styles: dict) -> list:
         el = []
 
         # Bull case
@@ -1179,37 +1210,6 @@ class OverviewV2PDFGenerator:
             analysis.get("recommendation_rationale", ""),
             styles,
         ))
-
-        # ── Current News ──────────────────────────────────────────────────────
-        sections = (news_summary or {}).get("sections") or []
-        if sections:
-            el.append(Spacer(1, 10))
-            el.append(section_title("Current News", styles))
-            for sec in sections:
-                title = (sec.get("title") or "").strip()
-                items = sec.get("items") or []
-                if not items:
-                    continue
-                if title:
-                    el.append(Paragraph(title, styles["news_sub"]))
-                for item in items:
-                    text = (item.get("text") or "").strip()
-                    if not text:
-                        continue
-                    el.append(Paragraph(f"• {text}", styles["news_item"]))
-                    # Date · Source · URL on a small italic line
-                    meta_parts = []
-                    if item.get("date"):
-                        meta_parts.append(item["date"])
-                    if item.get("source"):
-                        meta_parts.append(item["source"])
-                    if item.get("url"):
-                        meta_parts.append(item["url"])
-                    if meta_parts:
-                        el.append(Paragraph(
-                            "  " + "  ·  ".join(meta_parts),
-                            styles["news_meta"],
-                        ))
 
         return el
 

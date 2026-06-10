@@ -348,6 +348,7 @@ class CompanyData:
     ttm_net_income: Optional[float] = None   # millions (IFRS attributable)
     ttm_fcf: Optional[float] = None          # millions (free cash flow)
     ttm_last_quarter_date: Optional[str] = None  # "YYYY-MM" of most recent quarter
+    next_earnings_date: Optional[str] = None     # "YYYY-MM-DD" from EODHD Highlights
 
     # ── 10-Year Annual History ────────────────────────────────────────────────
     # Keys are fiscal year integers: {2024: AnnualFinancials(...), 2023: ...}

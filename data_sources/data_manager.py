@@ -236,6 +236,7 @@ class DataManager:
                         "eps_estimate_next_year",
                         # TTM P&L scalars
                         "ttm_revenue", "ttm_ebitda", "ttm_net_income", "ttm_fcf", "ttm_last_quarter_date",
+                        "next_earnings_date",
                     ],
                     override_financials=True,
                     full_override=True,       # EODHD paid: trust all statement types

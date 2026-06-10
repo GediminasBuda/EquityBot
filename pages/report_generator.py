@@ -2160,23 +2160,24 @@ if generate_clicked and ticker_input:
                 st.write(f"✓  Checklist: {passed}/{len(checklist)} criteria met")
                 _prog.progress(84)
 
-                # ── Current News — lightweight separate LLM call ──────────────
+                # ── Current News — synthesised narrative LLM call ─────────────
                 _news_summary = {}
                 if _news_articles:
                     _prog.progress(86, text="📰  Summarising news…")
                     st.write("📰  Summarising news for Current News section…")
                     _cn_prompt = (
-                        f"You are a financial news editor. Summarise the following recent "
-                        f"news articles about {company.name or ticker_input} into a structured "
-                        f"Current News section for an investment research report.\n\n"
-                        f"Group into 2-4 logical categories (e.g. 'Key Updates & Milestones', "
-                        f"'Product & Technology', 'Corporate News'). "
-                        f"Each item should be 1-2 concise sentences. "
-                        f"Preserve the date (YYYY-MM-DD) and source name from each article.\n\n"
+                        f"You are a senior equity analyst writing the Current News section "
+                        f"of an investment research report on {company.name or ticker_input}.\n\n"
+                        f"Based on the news articles below, write a synthesised narrative overview "
+                        f"— similar to how a financial AI search would summarise the situation. "
+                        f"Do NOT just list headlines. Synthesise the key themes into a coherent picture.\n\n"
+                        f"Structure:\n"
+                        f"1. 'intro': One or two sentences capturing the overall situation / headline story.\n"
+                        f"2. 'sections': 2-4 themed sections (e.g. 'Stock & Financial Performance', "
+                        f"'Strategic Initiatives & Partnerships', 'Corporate News'). "
+                        f"Each section has 2-4 bullet points of 1-2 sentences each.\n\n"
                         f"Return ONLY valid JSON — no markdown, no code fences:\n"
-                        f'{{"sections":[{{"title":"Category Name","items":['
-                        f'{{"text":"...","date":"YYYY-MM-DD","source":"Source Name","url":"https://..."}}]}}'
-                        f"]}}\n\n"
+                        f'{{"intro":"...","sections":[{{"title":"Theme Name","bullets":["...","..."]}}]}}\n\n'
                         f"NEWS ARTICLES:\n{_news_block}"
                     )
                     try:
