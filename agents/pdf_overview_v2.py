@@ -1109,8 +1109,8 @@ class OverviewV2PDFGenerator:
                 f"TTM — last quarterly earnings report: {_ttm_date}",
                 _note_style,
             ))
-        _next_ed = getattr(company, 'next_earnings_date', None)
-        if _next_ed:
+        _next_ed = getattr(company, 'next_earnings_date', None) or "—"
+        if _ttm_date:  # only show if TTM line is shown (i.e. we have EODHD data)
             _note_bold_style = ParagraphStyle(
                 "tbl_note_bold", parent=_note_style, fontName=BOLD_FONT,
             )

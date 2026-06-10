@@ -193,10 +193,24 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     # EBITDA from Highlights is also full units.
     company.ttm_revenue = _to_m(h.get("RevenueTTM"))
     company.ttm_ebitda  = _to_m(h.get("EBITDA"))
-    # Next earnings date from Highlights (stored as-is, e.g. "2026-08-05")
+    # Next earnings date: try Highlights first, fall back to Earnings.History
     _ned = h.get("NextEarningsDate")
     if _ned and str(_ned).strip() not in ("", "0000-00-00", "None"):
         company.next_earnings_date = str(_ned).strip()
+    else:
+        # Scan Earnings.History for the first future date where epsActual is null
+        from datetime import date as _date_cls
+        _today_str = str(_date_cls.today())
+        _earn_hist = (fund.get("Earnings") or {}).get("History") or {}
+        if isinstance(_earn_hist, dict):
+            _future = sorted(
+                [k for k, v in _earn_hist.items()
+                 if isinstance(v, dict)
+                 and v.get("epsActual") is None
+                 and k > _today_str],
+            )
+            if _future:
+                company.next_earnings_date = _future[0]
     # EBIT TTM: derive from EBITDA margin × revenue when direct field absent
     _ebit_margin_ttm = _f(h.get("OperatingMarginTTM"))
     if company.ttm_revenue and _ebit_margin_ttm is not None:
