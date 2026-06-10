@@ -169,6 +169,68 @@ class LLMClient:
             )
             return {}
 
+    def generate_web_news(self, company_name: str, ticker: str) -> str:
+        """
+        Search the web for recent news about the company and return a
+        narrative analyst-style overview (plain markdown text).
+
+        Uses provider-native web search:
+          - OpenAI: Responses API with web_search_preview tool
+          - Claude: messages API with web_search_20250305 tool
+
+        Returns plain text (markdown with **bold** section headers).
+        Falls back to empty string on any error.
+        """
+        prompt = (
+            f'Search the web for recent news about {company_name} ({ticker}). '
+            f'Write a senior equity analyst narrative overview — organised by themes '
+            f'(e.g. "Corporate developments", "Financial performance", "Strategic moves", '
+            f'"Insider activity"). '
+            f'Each theme is a bold header (**Theme name**) followed by 2-4 sentences of '
+            f'substance: specific numbers, dates, business context. '
+            f'Do NOT just list headlines. Synthesise and interpret. '
+            f'Aim for the depth of a Bloomberg brief. Plain text only — no JSON.'
+        )
+        try:
+            if self.provider == "openai":
+                return self._openai_web_search(prompt)
+            elif self.provider == "claude":
+                return self._claude_web_search(prompt)
+        except Exception as e:
+            logger.warning(f"[LLMClient] Web news search failed: {e}")
+        return ""
+
+    def _openai_web_search(self, prompt: str) -> str:
+        """Call OpenAI Responses API with web_search_preview tool."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("Run: pip install openai")
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        resp = client.responses.create(
+            model=self.model,
+            tools=[{"type": "web_search_preview"}],
+            input=prompt,
+        )
+        return resp.output_text or ""
+
+    def _claude_web_search(self, prompt: str) -> str:
+        """Call Claude messages API with built-in web_search tool."""
+        try:
+            import anthropic
+        except ImportError:
+            raise ImportError("Run: pip install anthropic")
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model=self.model,
+            max_tokens=2048,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": prompt}],
+        )
+        # Collect all text blocks from the response
+        parts = [b.text for b in msg.content if hasattr(b, "text") and b.text]
+        return "\n\n".join(parts)
+
     def check_configured(self) -> tuple[bool, str]:
         """
         Returns (is_ready, message) to show users in the UI.

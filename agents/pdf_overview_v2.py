@@ -1151,27 +1151,25 @@ class OverviewV2PDFGenerator:
                 el.append(Paragraph(f"<b>{i}.</b> {fact}", styles["fun_fact"]))
                 el.append(Spacer(1, 2))
 
-        # Current News — synthesised narrative
-        _ns_intro = (news_summary or {}).get("intro", "").strip()
-        _ns_sections = (news_summary or {}).get("sections") or []
-        if _ns_intro or _ns_sections:
+        # Current News — web-search narrative (markdown with **bold** headers)
+        _narrative = (news_summary or {}).get("narrative", "").strip()
+        if _narrative:
             el.append(Spacer(1, 6))
             el.append(section_title("Current News", styles))
-            if _ns_intro:
-                el.append(Paragraph(_ns_intro, styles["body"]))
-                el.append(Spacer(1, 4))
-            for sec in _ns_sections:
-                title = (sec.get("title") or "").strip()
-                bullets = sec.get("bullets") or []
-                if not bullets:
+            for block in _narrative.split("\n\n"):
+                block = block.strip()
+                if not block:
                     continue
-                if title:
-                    el.append(Paragraph(title, styles["news_sub"]))
-                for bullet in bullets:
-                    text = (bullet or "").strip()
-                    if text:
-                        el.append(Paragraph(f"• {text}", styles["news_item"]))
-                el.append(Spacer(1, 2))
+                # Bold section header: **Title** or **Title** on its own line
+                if block.startswith("**") and block.count("**") >= 2:
+                    header = block.replace("**", "").strip().rstrip("—- ").strip()
+                    el.append(Spacer(1, 4))
+                    el.append(Paragraph(header, styles["news_sub"]))
+                else:
+                    # Body paragraph — strip any residual markdown bold markers
+                    clean = block.replace("**", "")
+                    el.append(Paragraph(clean, styles["news_item"]))
+                    el.append(Spacer(1, 1))
 
         return el
 

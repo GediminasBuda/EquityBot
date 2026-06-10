@@ -2160,32 +2160,21 @@ if generate_clicked and ticker_input:
                 st.write(f"✓  Checklist: {passed}/{len(checklist)} criteria met")
                 _prog.progress(84)
 
-                # ── Current News — synthesised narrative LLM call ─────────────
+                # ── Current News — web-search narrative via LLM ───────────────
                 _news_summary = {}
-                if _news_articles:
-                    _prog.progress(86, text="📰  Summarising news…")
-                    st.write("📰  Summarising news for Current News section…")
-                    _cn_prompt = (
-                        f"You are a senior equity analyst writing the Current News section "
-                        f"of an investment research report on {company.name or ticker_input}.\n\n"
-                        f"Based on the news articles below, write a synthesised narrative overview "
-                        f"— similar to how a financial AI search would summarise the situation. "
-                        f"Do NOT just list headlines. Synthesise the key themes into a coherent picture.\n\n"
-                        f"Structure:\n"
-                        f"1. 'intro': One or two sentences capturing the overall situation / headline story.\n"
-                        f"2. 'sections': 2-4 themed sections (e.g. 'Stock & Financial Performance', "
-                        f"'Strategic Initiatives & Partnerships', 'Corporate News'). "
-                        f"Each section has 2-4 bullet points of 1-2 sentences each.\n\n"
-                        f"Return ONLY valid JSON — no markdown, no code fences:\n"
-                        f'{{"intro":"...","sections":[{{"title":"Theme Name","bullets":["...","..."]}}]}}\n\n'
-                        f"NEWS ARTICLES:\n{_news_block}"
+                _prog.progress(86, text="📰  Searching web for news…")
+                st.write("📰  Searching web for current news…")
+                try:
+                    _news_narrative = llm.generate_web_news(
+                        company.name or ticker_input, ticker_input
                     )
-                    try:
-                        _news_summary = llm.generate_json(_cn_prompt, max_tokens=1500)
-                        _nsec = len((_news_summary or {}).get("sections") or [])
-                        st.write(f"✓  News summary: {_nsec} section(s)")
-                    except Exception as _ne:
-                        st.write(f"⚠  News summary skipped: {_ne}")
+                    if _news_narrative:
+                        _news_summary = {"narrative": _news_narrative}
+                        st.write("✓  Current News: web search complete")
+                    else:
+                        st.write("⚠  Current News: no results returned")
+                except Exception as _ne:
+                    st.write(f"⚠  Current News skipped: {_ne}")
 
                 _prog.progress(88, text="📄  Rendering V2 PDF…")
                 st.write("📄  Rendering V2 PDF…")
