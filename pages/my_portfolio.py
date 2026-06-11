@@ -1028,7 +1028,7 @@ if "portfolio_periods" not in st.session_state:
 st.markdown("<div style='margin-top:18px'></div>", unsafe_allow_html=True)
 selected_ticker = st_searchbox(
     search_function=_ticker_search,
-    placeholder="",
+    placeholder="add item",
     label=None,
     clear_on_submit=True,
     key="ticker_searchbox",
