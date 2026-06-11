@@ -1446,13 +1446,6 @@ st.markdown(
         padding: 0 !important;
       }
 
-      /* ── Tighter inter-card gap (the wrapping st.container has its
-            own gap; pull it down a bit so cards don't feel sparse) ─── */
-      div[data-testid="stVerticalBlock"] > div[data-testid="element-container"]
-        + div[data-testid="element-container"] {
-        margin-top: 6px;
-      }
-
       /* ── Detail panel internal flex strips (sector / rec, low / high) ── */
       .pf-strip {
         display: flex;
@@ -1901,10 +1894,6 @@ else:
                                             unsafe_allow_html=True)
 
 
-        # Small vertical gap between cards (the card itself now carries
-        # the visual separation via its border + rounded corners).
-        st.markdown("<div style='height:6px;'></div>",
-                    unsafe_allow_html=True)
 
 st.markdown("&nbsp;", unsafe_allow_html=True)
 # ── Footer ────────────────────────────────────────────────────────────────────
