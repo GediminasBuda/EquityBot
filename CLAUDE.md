@@ -307,8 +307,31 @@ Two new metrics appended after YTD on every portfolio card:
 **Data source:** `fund["Technicals"]["52WeekHigh"]` / `["52WeekLow"]` from the EODHD fundamentals endpoint (already fetched in `_fetch_snapshot`). Japan/Baltic (yfinance path): `info["fiftyTwoWeekHigh"]` / `["fiftyTwoWeekLow"]`.
 
 **Layout:**
-- Desktop: CSS grid widened from `repeat(7, …)` to `repeat(9, …)` metric columns. Gap reduced 10px → 8px to keep everything on one row.
+- Desktop: CSS grid `grid-template-columns: minmax(0, 2fr) repeat(11, minmax(0, 0.9fr))` — 11 metric columns (EARNINGS · PRICE · MKT CAP · P/E · F P/E · ROE · EBIT M. · Q REV YoY · YTD · 52WH · 52WL).
 - Mobile: the two new cells carry `order: 7` / `order: 8` in the 2-col mobile grid, forming a new 4th row (52WH | 52WL) below the existing ROE | YTD row.
+
+---
+
+### My Portfolio — additional metrics, UX and layout polish (2026-06-11)
+
+**New metrics added to snapshot:**
+- **F P/E** (Forward P/E): between P/E and ROE. Source: `fund["Valuation"]["ForwardPE"]` (EODHD), fallback `highlights["ForwardPE"]`. Note: `Highlights.ForwardPE` is empty for most tickers — always read from `Valuation.ForwardPE` first.
+- **Q REV YoY** (Quarterly Revenue Growth YoY): between EBIT M. and YTD. Source: `highlights["QuarterlyRevenueGrowthYOY"]`.
+- Earnings date format changed from `YYYY-MM-DD` to `YY/MM/DD` on desktop cards.
+- Chart periods: removed 1m and 6m; added 1y. Available: `["1d", "YTD", "1y", "5y", "All"]`, default `"5y"`.
+
+**Name cell as expand/collapse target (replaces "Chart ▾/▴" button):**
+- Chart button column removed. Company name cell (`pf-name-cell`) is the click target.
+- A small flip arrow (`▼`) sits inline after the name; rotates 180° when card is expanded (`pf-name-active` class).
+- Trash icon (🗑) sits inline at the right of the name row, always visible. Uses `event.stopPropagation()` so it doesn't trigger expand. On mobile: `position: absolute; top: 8px; right: 8px`.
+- JS forwarder in `st.iframe` binds click handlers every 500ms via `setInterval`. Clicks `.pf-name-cell` → fires hidden toggle button; clicks `.pf-trash-icon` → fires hidden delete button.
+- Hidden buttons use `display: none` — removes them from flex flow (no phantom gap). JS `.click()` fires on `display:none` elements.
+
+**Card layout / spacing (final values 2026-06-11):**
+- Card padding: `6px 12px 11px` (top / sides / bottom)
+- Internal grid row gap: `6px 4px` (row / column)
+- Inter-card gap: `9px` on the `stVerticalBlock` flex container
+- Card hover: `border-color: #FFA028`, `position: relative`, `z-index: 1`, `overflow: hidden` — lifts card above neighbor so all 4 border sides light up; `overflow: hidden` prevents content bleeding.
 
 ---
 
