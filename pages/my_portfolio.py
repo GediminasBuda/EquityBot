@@ -1169,7 +1169,7 @@ st.markdown(
         background: #000000;
         border: 1px solid #2a1f10;
         border-radius: 2px;
-        padding: 7px 12px;
+        padding: 9px 12px;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
       .pf-card:hover {
@@ -1183,7 +1183,7 @@ st.markdown(
         grid-template-columns:
           minmax(0, 2fr)     /* name + ticker */
           repeat(11, minmax(0, 0.9fr));   /* earnings · price · mcap · pe · fpe · roe · ebit · qrev · ytd · 52wh · 52wl */
-        gap: 3px 4px;
+        gap: 6px 4px;
         align-items: center;
       }
 
