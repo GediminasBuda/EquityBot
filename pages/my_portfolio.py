@@ -316,9 +316,15 @@ def _snapshot_yf(yf_ticker: str) -> dict:
         price = (_to_float(info.get("currentPrice"))
                  or _to_float(info.get("regularMarketPrice"))
                  or _to_float(info.get("previousClose")))
+        _yf_ts = info.get("regularMarketTime")
+        _yf_date = (datetime.utcfromtimestamp(int(_yf_ts)).date()
+                    if _yf_ts else None)
         _yf_chg = _to_float(info.get("regularMarketChangePercent"))
-        change_pct: Optional[float] = (_yf_chg / 100 if _yf_chg is not None
-                                       else None)
+        change_pct: Optional[float] = (
+            _yf_chg / 100
+            if (_yf_chg is not None and _yf_date == datetime.utcnow().date())
+            else None
+        )
         name     = _jp_correct_name(yf_ticker,
                        info.get("longName") or info.get("shortName") or "")
         sector   = info.get("sector") or ""
@@ -418,8 +424,17 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
         price = _to_float(rt.get("previousClose"))
     prev_close = _to_float(rt.get("previousClose"))
     change_pct: Optional[float] = None
-    if price and prev_close and prev_close > 0 and price != prev_close:
-        change_pct = price / prev_close - 1
+    rt_ts = rt.get("timestamp")
+    _today_utc = datetime.utcnow().date()
+    _rt_date = (datetime.utcfromtimestamp(int(rt_ts)).date()
+                if rt_ts else None)
+    if _rt_date == _today_utc:
+        # Market traded today — colour the price
+        chg_p = _to_float(rt.get("change_p"))
+        if chg_p is not None:
+            change_pct = chg_p / 100
+        elif price and prev_close and prev_close > 0:
+            change_pct = price / prev_close - 1
 
     # ── Fundamentals (may be missing for indices/forex) ──────────────────────
     time.sleep(0.2)
