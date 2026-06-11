@@ -1448,8 +1448,8 @@ st.markdown(
          set its flex gap to 0. Scope via :has(.pf-card) so we only
          affect the portfolio list, not every stVerticalBlock on the page. */
       div[data-testid="stVerticalBlock"]:has(.pf-card) {
-        gap: 7px !important;
-        row-gap: 7px !important;
+        gap: 9px !important;
+        row-gap: 9px !important;
       }
       div[data-testid="stVerticalBlock"]:has(.pf-card)
         > div[data-testid="stElementContainer"],
