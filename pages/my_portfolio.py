@@ -1446,6 +1446,20 @@ st.markdown(
         padding: 0 !important;
       }
 
+      /* ── Zero out Streamlit's default inter-element spacing ────────── */
+      div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"],
+      div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] {
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+      }
+      /* Also target the inner wrapper Streamlit adds around markdown */
+      div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] > div,
+      div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div {
+        margin: 0 !important;
+      }
+
       /* ── Detail panel internal flex strips (sector / rec, low / high) ── */
       .pf-strip {
         display: flex;
