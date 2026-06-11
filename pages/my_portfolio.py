@@ -1181,9 +1181,9 @@ st.markdown(
       .pf-summary {
         display: grid;
         grid-template-columns:
-          minmax(0, 1.6fr)   /* name + ticker */
-          repeat(11, minmax(0, 1fr));  /* earnings · price · mcap · pe · fpe · roe · ebit · qrev · ytd · 52wh · 52wl */
-        gap: 6px 6px;
+          minmax(0, 3fr)     /* name + ticker — wider so full name fits */
+          repeat(11, minmax(0, 0.85fr));  /* earnings · price · mcap · pe · fpe · roe · ebit · qrev · ytd · 52wh · 52wl */
+        gap: 6px 4px;
         align-items: center;
       }
 
@@ -1201,6 +1201,8 @@ st.markdown(
         text-transform: uppercase;
         font-size: 14px;
         line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
       }
       .pf-sub {
         font-size: 11px;
