@@ -288,6 +288,17 @@ Multiple formatting fixes applied to `agents/pdf_overview_v2.py` and `agents/pri
 - New **"FCF (M)"** row added between Div. Yield and FCF Yield, showing `a.fcf` from EODHD cashflow statement for historical years and `company.ttm_fcf` (quarterly sum) for the TTM column.
 - Row separator `LINEBELOW` indices updated to match new row layout.
 
+### My Portfolio — company name as expand/collapse click target (2026-06-11)
+Removed the "Chart ▾/▴" button column from each portfolio card. The company name cell is now the click/tap target to expand or collapse the detail panel (chart, news, Remove button).
+
+**Hover behaviour:** name turns white on hover (cursor: pointer); expanded state shows name in lighter amber (`#FFD080`) so open cards are visually distinct.
+
+**Mechanism:** the name cell HTML carries `data-ticker="{ticker}"` and optional `pf-name-active` class (when expanded). A hidden zero-height Streamlit toggle button still drives Streamlit's state — a same-origin `st.iframe` script (same pattern as the searchbox styling) uses `setInterval(500ms)` to bind click handlers on `.pf-name-cell[data-ticker]` elements and forward them to the hidden button via JS `.click()`. Re-binds automatically after every `st.rerun()` as Streamlit rebuilds the DOM.
+
+**CSS rules added:** `.pf-name-cell { cursor: pointer }` + `:hover` and `.pf-name-active` colour overrides; anchor container and adjacent button container collapsed to `display:none` / `height:0` (JS `.click()` still fires on `display:none` elements).
+
+---
+
 ### My Portfolio — 52WH and 52WL metrics added (2026-06-11)
 Two new metrics appended after YTD on every portfolio card:
 - **52WH**: `(price / 52_week_high) − 1` — how far the current price sits below (or above) the 52-week high. Usually negative (red). Positive (blue) only if at a new high.
