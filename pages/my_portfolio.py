@@ -1025,6 +1025,7 @@ if "portfolio_periods" not in st.session_state:
 # st_searchbox calls _ticker_search() on every keystroke (debounced) and
 # shows the returned suggestions in a dropdown beneath the input. Picking
 # one adds it to the portfolio immediately — no extra confirm click.
+st.markdown("<div style='margin-top:18px'></div>", unsafe_allow_html=True)
 selected_ticker = st_searchbox(
     search_function=_ticker_search,
     placeholder="",
