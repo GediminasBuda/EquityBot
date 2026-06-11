@@ -335,6 +335,25 @@ Two new metrics appended after YTD on every portfolio card:
 
 ---
 
+### My Portfolio — price color + sortable columns (2026-06-11)
+
+**Price color by daily change:**
+- Blue (`#4D9FFF`) — price up today vs previous close
+- Red (`#FF3030`) — price down today
+- Amber (default) — market closed or no data
+
+**Market-closed detection (critical):** Uses `rt["timestamp"]` from EODHD real-time endpoint (or `info["regularMarketTime"]` from yfinance). If that timestamp's UTC date ≠ today → market did not trade today → `change_pct = None` → amber. Without this check, EODHD always returns a `close`/`previousClose` even when closed, causing the previous session's move to incorrectly colorize the price. Uses EODHD's own `change_p` field directly (more accurate than computing from close/previousClose).
+
+**Sortable column headers:**
+- A muted header row (`pf-sort-header`) sits above the cards, matching the card grid columns exactly.
+- Clicking a label sorts all cards by that column descending; clicking again flips to ascending. Active column shows ▼/▲ and lights amber.
+- Sort state: `st.session_state.pf_sort_col` (None = original order), `st.session_state.pf_sort_asc`.
+- Each column has a hidden `pf-sort-anchor` button; JS in the existing `st.iframe` forwarder binds `.pf-sort-header-cell[data-sortcol]` clicks to fire them.
+- Sorting uses already-cached snapshots — no extra API calls.
+- Column label "F P/E" renamed to "Forward P/E".
+
+---
+
 ## 8. Report Types
 
 ### Built-in Reports (hardcoded Python renderers)
