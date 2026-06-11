@@ -1387,10 +1387,7 @@ st.markdown(
         + div[data-testid="element-container"],
       div.stElementContainer:has(.pf-del-anchor) + div.stElementContainer,
       div.element-container:has(.pf-del-anchor) + div.element-container {
-        height: 0 !important;
-        overflow: hidden !important;
-        margin: 0 !important;
-        padding: 0 !important;
+        display: none !important;
       }
 
       /* ── Name cell is the click target for expand/collapse ─────── */
@@ -1440,10 +1437,7 @@ st.markdown(
         + div[data-testid="element-container"],
       div.stElementContainer:has(.pf-toggle-anchor) + div.stElementContainer,
       div.element-container:has(.pf-toggle-anchor) + div.element-container {
-        height: 0 !important;
-        overflow: hidden !important;
-        margin: 0 !important;
-        padding: 0 !important;
+        display: none !important;
       }
 
       /* ── Zero out Streamlit's inter-element gap on the portfolio list ─ */
