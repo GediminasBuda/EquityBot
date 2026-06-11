@@ -1554,7 +1554,7 @@ st.markdown(
       }
       .pf-sort-name-cell { /* empty spacer */ }
       .pf-sort-header-cell {
-        font-size: 9px;
+        font-size: 11px;
         color: #5a4020;
         font-family: monospace;
         text-transform: uppercase;
