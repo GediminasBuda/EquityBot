@@ -357,8 +357,7 @@ def _history_yf(yf_ticker: str, period: str) -> Optional[pd.DataFrame]:
     """yfinance price history for a Japanese (TSE) ticker."""
     _YF_MAP = {
         "1d": ("1d",  "5m"),
-        "1m": ("1mo", "1d"),
-        "6m": ("6mo", "1d"),
+        "1y": ("1y",  "1d"),
         "YTD": ("ytd", "1d"),
         "5y": ("5y",  "1wk"),
         "All": ("max", "1mo"),
@@ -491,7 +490,7 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
 
 
 # ── History (cached, period-aware) ────────────────────────────────────────────
-PERIODS = ["1d", "1m", "6m", "YTD", "5y", "All"]
+PERIODS = ["1d", "YTD", "1y", "5y", "All"]
 DEFAULT_PERIOD = "5y"
 
 
@@ -501,10 +500,8 @@ def _period_range(period: str) -> tuple[Optional[datetime.date], datetime.date]:
     if period == "1d":
         # Last 5 trading days — we'll filter to 1 day's worth in fetch
         return (today - timedelta(days=7), today)
-    if period == "1m":
-        return (today - timedelta(days=35), today)
-    if period == "6m":
-        return (today - timedelta(days=185), today)
+    if period == "1y":
+        return (today - timedelta(days=365 + 3), today)
     if period == "YTD":
         return (datetime(today.year, 1, 1).date(), today)
     if period == "5y":
@@ -1760,7 +1757,7 @@ else:
                         # For multi-year periods show year labels; shorter periods use Altair defaults
                         if sel_period in ("5y", "All"):
                             x_axis = alt.Axis(format="%Y", tickCount="year")
-                        elif sel_period in ("6m", "YTD", "1m"):
+                        elif sel_period in ("1y", "YTD"):
                             x_axis = alt.Axis(format="%b %Y", tickCount="month")
                         else:
                             x_axis = alt.Axis()
