@@ -1169,7 +1169,7 @@ st.markdown(
         background: #000000;
         border: 1px solid #2a1f10;
         border-radius: 2px;
-        padding: 6px 12px;
+        padding: 9px 12px;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
       .pf-card:hover {
