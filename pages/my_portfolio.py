@@ -1567,7 +1567,7 @@ st.markdown(
         padding: 0 12px 3px;
         align-items: center;
       }
-      .pf-sort-name-cell { /* empty spacer */ }
+      .pf-sort-header-cell[data-sortcol="name"] { text-align: left; }
       .pf-sort-header-cell {
         font-size: 11px;
         color: #5a4020;
@@ -1705,6 +1705,7 @@ else:
 
     # ── Column definitions for header + sort ─────────────────────────────────
     _SORT_COLS = [
+        ("name",      "Name",      "name"),
         ("earnings",  "Earnings",  "next_earnings"),
         ("price",     "Price",     "price"),
         ("mcap",      "Mkt Cap",   "market_cap"),
@@ -1721,7 +1722,7 @@ else:
     # ── Sort header row ───────────────────────────────────────────────────────
     sort_col = st.session_state.pf_sort_col
     sort_asc = st.session_state.pf_sort_asc
-    header_cells = "<div class='pf-sort-name-cell'></div>"
+    header_cells = ""
     for col_id, col_label, _ in _SORT_COLS:
         arrow = ""
         if sort_col == col_id:
@@ -1756,6 +1757,8 @@ else:
             if snap_key == "next_earnings":
                 v = _fetch_next_earnings(t)
                 return v or "9999"
+            if snap_key == "name":
+                return (s.get("name") or t).upper()
             v = s.get(snap_key)
             if v is None:
                 return float("-inf") if sort_asc else float("inf")
