@@ -1170,11 +1170,15 @@ st.markdown(
         border: 1px solid #2a1f10;
         border-radius: 2px;
         padding: 9px 12px;
+        position: relative;
+        z-index: 0;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
       .pf-card:hover {
         border-color: #FFA028;
         box-shadow: 0 0 6px rgba(255, 160, 40, 0.20);
+        position: relative;
+        z-index: 1;
       }
 
       /* ── Summary grid: name + 11 metrics ─────────────────────────── */
