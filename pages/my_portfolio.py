@@ -338,6 +338,8 @@ def _snapshot_yf(yf_ticker: str) -> dict:
 
         week_52_high = _to_float(info.get("fiftyTwoWeekHigh"))
         week_52_low  = _to_float(info.get("fiftyTwoWeekLow"))
+        forward_pe   = _to_float(info.get("forwardPE"))
+        q_rev_growth = _to_float(info.get("revenueGrowth"))
 
         return {
             "eodhd_ticker": yf_ticker,
@@ -345,6 +347,7 @@ def _snapshot_yf(yf_ticker: str) -> dict:
             "price": price, "market_cap": mkt_cap,
             "pe": pe, "roe": roe, "ebit_margin": ebit_mg, "ytd_pct": ytd_pct,
             "week_52_high": week_52_high, "week_52_low": week_52_low,
+            "forward_pe": forward_pe, "q_rev_growth": q_rev_growth,
         }
     except Exception:
         return _empty
@@ -437,6 +440,8 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
     technicals   = fund.get("Technicals") or {}
     week_52_high = _to_float(technicals.get("52WeekHigh"))
     week_52_low  = _to_float(technicals.get("52WeekLow"))
+    forward_pe   = _to_float(highlights.get("ForwardPE"))
+    q_rev_growth = _to_float(highlights.get("QuarterlyRevenueGrowthYOY"))
 
     # ── YTD: pull the first trading day of the current year close ────────────
     ytd_pct: Optional[float] = None
@@ -479,6 +484,8 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
         "ytd_pct":      ytd_pct,
         "week_52_high": week_52_high,
         "week_52_low":  week_52_low,
+        "forward_pe":   forward_pe,
+        "q_rev_growth": q_rev_growth,
     }
 
 
@@ -1172,13 +1179,13 @@ st.markdown(
         box-shadow: 0 0 6px rgba(255, 160, 40, 0.20);
       }
 
-      /* ── Summary grid: name + 9 metrics ──────────────────────────── */
+      /* ── Summary grid: name + 11 metrics ─────────────────────────── */
       .pf-summary {
         display: grid;
         grid-template-columns:
-          minmax(0, 1.8fr)   /* name + ticker */
-          repeat(9, minmax(0, 1fr));   /* earnings · price · mcap · pe · roe · ebit · ytd · 52wh · 52wl */
-        gap: 6px 8px;
+          minmax(0, 1.6fr)   /* name + ticker */
+          repeat(11, minmax(0, 1fr));  /* earnings · price · mcap · pe · fpe · roe · ebit · qrev · ytd · 52wh · 52wl */
+        gap: 6px 6px;
         align-items: center;
       }
 
@@ -1297,11 +1304,13 @@ st.markdown(
         .pf-m-price { order: 1; }
         .pf-m-mcap  { order: 2; }
         .pf-m-pe    { order: 3; }
-        .pf-m-ebit  { order: 4; }
+        .pf-m-fpe   { order: 4; }
         .pf-m-roe   { order: 5; }
-        .pf-m-ytd   { order: 6; }
-        .pf-m-52wh  { order: 7; }
-        .pf-m-52wl  { order: 8; }
+        .pf-m-ebit  { order: 6; }
+        .pf-m-qrev  { order: 7; }
+        .pf-m-ytd   { order: 8; }
+        .pf-m-52wh  { order: 9; }
+        .pf-m-52wl  { order: 10; }
       }
 
       /* ── Phone (≤380px): keep the 2-col metric grid (so the 6 lower
@@ -1503,6 +1512,18 @@ else:
         is_expanded = ticker in st.session_state.portfolio_expanded
         ytd_text, ytd_color = _fmt_signed_pct(snap.get("ytd_pct"))
 
+        # Forward P/E
+        fpe_raw = snap.get("forward_pe")
+        fpe_text = _fmt_ratio(fpe_raw) if fpe_raw else "—"
+
+        # Quarterly revenue growth YoY
+        qrev_raw = snap.get("q_rev_growth")
+        if qrev_raw is not None:
+            qrev_text  = f"{qrev_raw*100:+.1f}%"
+            qrev_color = "#4D9FFF" if qrev_raw >= 0 else "#FF3030"
+        else:
+            qrev_text, qrev_color = "—", "#8a6a30"
+
         # 52-week high/low relative to current price
         price_val   = snap.get("price")
         wk52h       = snap.get("week_52_high")
@@ -1563,8 +1584,10 @@ else:
                 f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']), extra_cls='pf-m-price')}"
                 f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']), extra_cls='pf-m-mcap')}"
                 f"{_metric_html('P/E', _fmt_ratio(snap['pe']), extra_cls='pf-m-pe')}"
+                f"{_metric_html('F P/E', fpe_text, extra_cls='pf-m-fpe')}"
                 f"{_metric_html('ROE', _fmt_pct(snap['roe']), extra_cls='pf-m-roe')}"
                 f"{_metric_html('EBIT M.', _fmt_pct(snap['ebit_margin']), extra_cls='pf-m-ebit')}"
+                f"{_metric_html('Q REV YoY', qrev_text, color=qrev_color, extra_cls='pf-m-qrev')}"
                 f"{_metric_html('YTD', ytd_text, color=ytd_color, bold=True, extra_cls='pf-m-ytd')}"
                 f"{_metric_html('52WH', wk52h_text, color=wk52h_color, extra_cls='pf-m-52wh')}"
                 f"{_metric_html('52WL', wk52l_text, color=wk52l_color, extra_cls='pf-m-52wl')}"
