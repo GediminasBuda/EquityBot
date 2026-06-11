@@ -1694,7 +1694,7 @@ else:
         ("price",     "Price",     "price"),
         ("mcap",      "Mkt Cap",   "market_cap"),
         ("pe",        "P/E",       "pe"),
-        ("fpe",       "F P/E",     "forward_pe"),
+        ("fpe",       "Forward P/E",     "forward_pe"),
         ("roe",       "ROE",       "roe"),
         ("ebit",      "EBIT M.",   "ebit_margin"),
         ("qrev",      "Q REV YoY", "q_rev_growth"),
@@ -1824,7 +1824,7 @@ else:
             f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']), color='#4D9FFF' if (snap.get('change_pct') or 0) > 0 else ('#FF3030' if (snap.get('change_pct') or 0) < 0 else '#FFA028'), extra_cls='pf-m-price')}"
             f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']), extra_cls='pf-m-mcap')}"
             f"{_metric_html('P/E', _fmt_ratio(snap['pe']), extra_cls='pf-m-pe')}"
-            f"{_metric_html('F P/E', fpe_text, extra_cls='pf-m-fpe')}"
+            f"{_metric_html('Forward P/E', fpe_text, extra_cls='pf-m-fpe')}"
             f"{_metric_html('ROE', _fmt_pct(snap['roe']), extra_cls='pf-m-roe')}"
             f"{_metric_html('EBIT M.', _fmt_pct(snap['ebit_margin']), extra_cls='pf-m-ebit')}"
             f"{_metric_html('Q REV YoY', qrev_text, color=qrev_color, extra_cls='pf-m-qrev')}"
