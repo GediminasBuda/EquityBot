@@ -1176,7 +1176,7 @@ st.markdown(
       }
       .pf-card:hover {
         border-color: #FFA028;
-        box-shadow: 0 0 6px rgba(255, 160, 40, 0.20);
+        box-shadow: 0 4px 0 2px #000000, 0 0 8px rgba(255, 160, 40, 0.25);
         position: relative;
         z-index: 1;
       }
