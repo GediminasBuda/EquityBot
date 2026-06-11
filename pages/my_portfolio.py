@@ -336,11 +336,15 @@ def _snapshot_yf(yf_ticker: str) -> dict:
             except Exception:
                 pass
 
+        week_52_high = _to_float(info.get("fiftyTwoWeekHigh"))
+        week_52_low  = _to_float(info.get("fiftyTwoWeekLow"))
+
         return {
             "eodhd_ticker": yf_ticker,
             "name": name, "currency": currency, "sector": sector,
             "price": price, "market_cap": mkt_cap,
             "pe": pe, "roe": roe, "ebit_margin": ebit_mg, "ytd_pct": ytd_pct,
+            "week_52_high": week_52_high, "week_52_low": week_52_low,
         }
     except Exception:
         return _empty
@@ -430,6 +434,10 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
     roe         = _to_float(highlights.get("ReturnOnEquityTTM"))
     ebit_margin = _to_float(highlights.get("OperatingMarginTTM"))
 
+    technicals   = fund.get("Technicals") or {}
+    week_52_high = _to_float(technicals.get("52WeekHigh"))
+    week_52_low  = _to_float(technicals.get("52WeekLow"))
+
     # ── YTD: pull the first trading day of the current year close ────────────
     ytd_pct: Optional[float] = None
     if price is not None:
@@ -469,6 +477,8 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
         "roe":          roe,
         "ebit_margin":  ebit_margin,
         "ytd_pct":      ytd_pct,
+        "week_52_high": week_52_high,
+        "week_52_low":  week_52_low,
     }
 
 
@@ -1162,13 +1172,13 @@ st.markdown(
         box-shadow: 0 0 6px rgba(255, 160, 40, 0.20);
       }
 
-      /* ── Summary grid: name + 7 metrics ──────────────────────────── */
+      /* ── Summary grid: name + 9 metrics ──────────────────────────── */
       .pf-summary {
         display: grid;
         grid-template-columns:
           minmax(0, 1.8fr)   /* name + ticker */
-          repeat(7, minmax(0, 1fr));   /* earnings · price · mcap · pe · roe · ebit · ytd */
-        gap: 6px 10px;
+          repeat(9, minmax(0, 1fr));   /* earnings · price · mcap · pe · roe · ebit · ytd · 52wh · 52wl */
+        gap: 6px 8px;
         align-items: center;
       }
 
@@ -1290,6 +1300,8 @@ st.markdown(
         .pf-m-ebit  { order: 4; }
         .pf-m-roe   { order: 5; }
         .pf-m-ytd   { order: 6; }
+        .pf-m-52wh  { order: 7; }
+        .pf-m-52wl  { order: 8; }
       }
 
       /* ── Phone (≤380px): keep the 2-col metric grid (so the 6 lower
@@ -1490,6 +1502,23 @@ else:
         rec_label, rec_color = _recommendation(snap)
         is_expanded = ticker in st.session_state.portfolio_expanded
         ytd_text, ytd_color = _fmt_signed_pct(snap.get("ytd_pct"))
+
+        # 52-week high/low relative to current price
+        price_val   = snap.get("price")
+        wk52h       = snap.get("week_52_high")
+        wk52l       = snap.get("week_52_low")
+        if price_val and wk52h and wk52h > 0:
+            wk52h_pct   = price_val / wk52h - 1
+            wk52h_text  = f"{wk52h_pct*100:+.1f}%"
+            wk52h_color = "#4D9FFF" if wk52h_pct >= 0 else "#FF3030"
+        else:
+            wk52h_text, wk52h_color = "—", "#8a6a30"
+        if price_val and wk52l and wk52l > 0:
+            wk52l_pct   = price_val / wk52l - 1
+            wk52l_text  = f"{wk52l_pct*100:+.1f}%"
+            wk52l_color = "#4D9FFF" if wk52l_pct >= 0 else "#FF3030"
+        else:
+            wk52l_text, wk52l_color = "—", "#8a6a30"
         next_earnings = _fetch_next_earnings(ticker)
 
         # Name + ticker + (sector if available) at left
@@ -1531,6 +1560,8 @@ else:
                 f"{_metric_html('ROE', _fmt_pct(snap['roe']), extra_cls='pf-m-roe')}"
                 f"{_metric_html('EBIT M.', _fmt_pct(snap['ebit_margin']), extra_cls='pf-m-ebit')}"
                 f"{_metric_html('YTD', ytd_text, color=ytd_color, bold=True, extra_cls='pf-m-ytd')}"
+                f"{_metric_html('52WH', wk52h_text, color=wk52h_color, extra_cls='pf-m-52wh')}"
+                f"{_metric_html('52WL', wk52l_text, color=wk52l_color, extra_cls='pf-m-52wl')}"
                 "</div></div>"
             )
             st.markdown(card_html, unsafe_allow_html=True)
