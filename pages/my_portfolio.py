@@ -1451,21 +1451,24 @@ st.markdown(
          set its flex gap to 0. Scope via :has(.pf-card) so we only
          affect the portfolio list, not every stVerticalBlock on the page. */
       div[data-testid="stVerticalBlock"]:has(.pf-card) {
-        gap: 1px !important;
+        gap: 3px !important;
+        row-gap: 3px !important;
       }
       div[data-testid="stVerticalBlock"]:has(.pf-card)
         > div[data-testid="stElementContainer"],
       div[data-testid="stVerticalBlock"]:has(.pf-card)
         > div[data-testid="element-container"] {
-        margin: 0 !important;
-        padding: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
       }
       div[data-testid="stVerticalBlock"]:has(.pf-card)
         > div[data-testid="stElementContainer"] > div,
       div[data-testid="stVerticalBlock"]:has(.pf-card)
         > div[data-testid="element-container"] > div {
-        margin: 0 !important;
-        padding: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
       }
 
       /* ── Detail panel internal flex strips (sector / rec, low / high) ── */
