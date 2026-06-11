@@ -1331,60 +1331,49 @@ st.markdown(
       /* Anchor markers collapse to zero so they don't affect layout. */
       .pf-remove-anchor { display: none; }
 
-      /* ── Red destructive style for the "🗑️ Remove from My
-         Portfolio" button at the bottom of the expanded chart panel.
-         Both element-container testid spellings are listed so the
-         rule works across Streamlit versions. */
-      div[data-testid="element-container"]:has(.pf-remove-anchor)
-        + div[data-testid="element-container"]
-        div[data-testid="stButton"] > button,
-      div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
-        + div[data-testid="stElementContainer"]
-        div[data-testid="stButton"] > button {
-        color: #FF3030 !important;
-        border-color: #5a1010 !important;
+
+      /* ── Name row: company name + arrow left, trash icon right ──── */
+      .pf-name-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px;
+        min-width: 0;
       }
-      div[data-testid="element-container"]:has(.pf-remove-anchor)
-        + div[data-testid="element-container"]
-        div[data-testid="stButton"] > button:hover,
-      div[data-testid="stElementContainer"]:has(.pf-remove-anchor)
-        + div[data-testid="stElementContainer"]
-        div[data-testid="stButton"] > button:hover {
-        background: #200505 !important;
-        border-color: #FF3030 !important;
+      .pf-name-top .pf-name { flex: 1; min-width: 0; }
+      .pf-trash-icon {
+        font-size: 13px;
+        color: #5a4a25;
+        cursor: pointer;
+        flex-shrink: 0;
+        padding: 2px 4px;
+        border-radius: 3px;
+        line-height: 1;
+        transition: color 0.15s ease, background 0.15s ease;
+      }
+      .pf-trash-icon:hover {
         color: #FF3030 !important;
+        background: #200505 !important;
       }
 
-      /* ── Desktop-only: Remove button spans full width, slimmer
-         vertical padding. Mobile keeps its original right-aligned
-         narrow layout (locked-in design). */
-      @media (min-width: 769px) {
-        /* Hide the empty placeholder column to the left of the
-           remove button's column (the [0.55, 0.45] split). */
-        div[data-testid="stHorizontalBlock"]:has(.pf-remove-anchor)
-          > div[data-testid="column"]:first-child,
-        div[data-testid="stHorizontalBlock"]:has(.pf-remove-anchor)
-          > div[data-testid="stColumn"]:first-child {
-          display: none !important;
-        }
-        /* The remove-anchor column takes the entire row width. */
-        div[data-testid="column"]:has(.pf-remove-anchor),
-        div[data-testid="stColumn"]:has(.pf-remove-anchor) {
-          width: 100% !important;
-          max-width: 100% !important;
-          flex: 1 1 100% !important;
-        }
-        /* Slimmer button — less vertical padding, no inflated
-           min-height. Target the actual button via its emotion-cache
-           class scoped to the remove-anchor's column, so the rule
-           outranks the global .st-emotion-cache-1yu3o6t padding set
-           in app.py. */
-        .stColumn:has(.pf-remove-anchor) button.st-emotion-cache-1yu3o6t,
-        div[data-testid="stColumn"]:has(.pf-remove-anchor) button.st-emotion-cache-1yu3o6t,
-        div[data-testid="column"]:has(.pf-remove-anchor) button.st-emotion-cache-1yu3o6t {
-          padding: 0.45rem 0.75rem !important;
-          min-height: 30px !important;
-        }
+      /* Hidden delete button (same pattern as toggle button) */
+      .pf-del-anchor { display: none; }
+      div.element-container:has(.pf-del-anchor),
+      div.stElementContainer:has(.pf-del-anchor),
+      div[data-testid="element-container"]:has(.pf-del-anchor),
+      div[data-testid="stElementContainer"]:has(.pf-del-anchor) {
+        display: none !important;
+      }
+      div[data-testid="stElementContainer"]:has(.pf-del-anchor)
+        + div[data-testid="stElementContainer"],
+      div[data-testid="element-container"]:has(.pf-del-anchor)
+        + div[data-testid="element-container"],
+      div.stElementContainer:has(.pf-del-anchor) + div.stElementContainer,
+      div.element-container:has(.pf-del-anchor) + div.element-container {
+        height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
 
       /* ── Name cell is the click target for expand/collapse ─────── */
@@ -1518,29 +1507,43 @@ else:
         """
         <script>
         (function () {
+          function findAndClick(anchorClass, ticker) {
+            try {
+              var doc = window.parent.document;
+              var anchor = doc.querySelector(
+                '.' + anchorClass + '[data-ticker="' + CSS.escape(ticker) + '"]'
+              );
+              if (!anchor) return;
+              var wrap = anchor.parentElement;
+              while (wrap && !wrap.matches(
+                '[data-testid="stElementContainer"],[data-testid="element-container"]'
+              )) { wrap = wrap.parentElement; }
+              if (!wrap) return;
+              var btnWrap = wrap.nextElementSibling;
+              if (!btnWrap) return;
+              var btn = btnWrap.querySelector('button');
+              if (btn) btn.click();
+            } catch(e) {}
+          }
+
           function bind() {
             try {
               var doc = window.parent.document;
+              // Name cell → expand/collapse toggle
               doc.querySelectorAll('.pf-name-cell[data-ticker]').forEach(function(cell) {
                 if (cell._pfClickBound) return;
                 cell._pfClickBound = true;
                 cell.addEventListener('click', function () {
-                  var ticker = this.dataset.ticker;
-                  var anchor = doc.querySelector(
-                    '.pf-toggle-anchor[data-ticker="' + CSS.escape(ticker) + '"]'
-                  );
-                  if (!anchor) return;
-                  // Walk up from anchor to its stElementContainer wrapper
-                  var wrap = anchor.parentElement;
-                  while (wrap && !wrap.matches(
-                    '[data-testid="stElementContainer"],[data-testid="element-container"]'
-                  )) { wrap = wrap.parentElement; }
-                  if (!wrap) return;
-                  // The next sibling container holds the hidden button
-                  var btnWrap = wrap.nextElementSibling;
-                  if (!btnWrap) return;
-                  var btn = btnWrap.querySelector('button');
-                  if (btn) btn.click();
+                  findAndClick('pf-toggle-anchor', this.dataset.ticker);
+                });
+              });
+              // Trash icon → delete (stopPropagation so expand doesn't also fire)
+              doc.querySelectorAll('.pf-trash-icon[data-ticker]').forEach(function(icon) {
+                if (icon._pfTrashBound) return;
+                icon._pfTrashBound = true;
+                icon.addEventListener('click', function(e) {
+                  e.stopPropagation();
+                  findAndClick('pf-del-anchor', this.dataset.ticker);
                 });
               });
             } catch(e) {}
@@ -1633,9 +1636,12 @@ else:
             # Name cell — carries data-ticker so the JS click forwarder
             # can find it and route the click to the hidden toggle button.
             f"<div class='pf-name-cell{active_cls}' data-ticker='{ticker_attr}'>"
+            f"<div class='pf-name-top'>"
             f"<div class='pf-name' title='{_html.escape(name_full)}'>"
             f"{_html.escape(name_full)}"
             f"<span class='pf-toggle-arrow'>&#9660;</span></div>"
+            f"<span class='pf-trash-icon' data-ticker='{ticker_attr}'>&#128465;</span>"
+            f"</div>"
             f"<div class='pf-sub'>{_html.escape(sub_line)}</div>"
             "</div>"
             f"{_metric_html('Earnings', earn_value, extra_cls='pf-m-earnings', **earn_kw)}"
@@ -1653,8 +1659,7 @@ else:
         )
         st.markdown(card_html, unsafe_allow_html=True)
 
-        # Hidden toggle button — zero-height via CSS, but JS can still
-        # call .click() on it to trigger the expand/collapse state change.
+        # Hidden toggle button — zero-height via CSS, JS-clickable.
         st.markdown(f"<div class='pf-toggle-anchor' data-ticker='{ticker_attr}'></div>",
                     unsafe_allow_html=True)
         if st.button("·", key=f"toggle_{ticker}", use_container_width=False):
@@ -1662,6 +1667,15 @@ else:
                 st.session_state.portfolio_expanded.discard(ticker)
             else:
                 st.session_state.portfolio_expanded.add(ticker)
+            st.rerun()
+
+        # Hidden delete button — zero-height via CSS, JS-clickable via trash icon.
+        st.markdown(f"<div class='pf-del-anchor' data-ticker='{ticker_attr}'></div>",
+                    unsafe_allow_html=True)
+        if st.button("x", key=f"del_{ticker}", use_container_width=False):
+            st.session_state.portfolio_tickers.remove(ticker)
+            st.session_state.portfolio_expanded.discard(ticker)
+            _save_portfolio(st.session_state.portfolio_tickers)
             st.rerun()
 
         # ── Expanded detail section ──────────────────────────────────────────
@@ -1869,21 +1883,6 @@ else:
                                 st.markdown("<div style='margin-bottom:12px;'></div>",
                                             unsafe_allow_html=True)
 
-                # ── Remove from My Portfolio button (inside detail panel) ──
-                # Lives at the very bottom of the expanded chart panel.
-                # Hidden when the card is collapsed.
-                _, rem_col = st.columns([0.55, 0.45])
-                with rem_col:
-                    st.markdown("<div class='pf-remove-anchor'></div>",
-                                unsafe_allow_html=True)
-                    if st.button("🗑️ Remove from My Portfolio",
-                                 key=f"del_{ticker}",
-                                 help="Permanently remove this holding",
-                                 use_container_width=True):
-                        st.session_state.portfolio_tickers.remove(ticker)
-                        st.session_state.portfolio_expanded.discard(ticker)
-                        _save_portfolio(st.session_state.portfolio_tickers)
-                        st.rerun()
 
         # Small vertical gap between cards (the card itself now carries
         # the visual separation via its border + rounded corners).
