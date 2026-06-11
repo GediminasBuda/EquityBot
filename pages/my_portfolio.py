@@ -1028,7 +1028,7 @@ if "portfolio_periods" not in st.session_state:
 st.markdown("<div style='margin-top:18px'></div>", unsafe_allow_html=True)
 selected_ticker = st_searchbox(
     search_function=_ticker_search,
-    placeholder="add item",
+    placeholder="add ticker",
     label=None,
     clear_on_submit=True,
     key="ticker_searchbox",
@@ -1054,6 +1054,15 @@ st.iframe(
           caret-color: #FF3030 !important;
           -webkit-text-fill-color: #FF3030 !important;
           font-family: monospace !important;
+        }
+        input::placeholder, [class*="placeholder"] {
+          color: #804020 !important;
+          -webkit-text-fill-color: #804020 !important;
+          opacity: 1 !important;
+          font-family: monospace !important;
+        }
+        [class*="placeholder"] {
+          color: #804020 !important;
         }
         [class*="control"], [class*="-control"] {
           background-color: #000000 !important;
@@ -1101,11 +1110,14 @@ st.iframe(
       function paint(doc) {
         try {
           if (!doc) return;
-          if (doc.getElementById(STYLE_ID)) return;
-          const s = doc.createElement('style');
-          s.id = STYLE_ID;
-          s.textContent = CSS;
-          doc.head.appendChild(s);
+          if (!doc.getElementById(STYLE_ID)) {
+            const s = doc.createElement('style');
+            s.id = STYLE_ID;
+            s.textContent = CSS;
+            doc.head.appendChild(s);
+          }
+          const inp = doc.querySelector('input');
+          if (inp && !inp.value) inp.setAttribute('placeholder', 'add ticker');
         } catch (e) { /* same-origin race / not ready */ }
       }
 
