@@ -1,6 +1,6 @@
 # Your Humble EquityBot — Agent Handoff Documentation
 
-**Last updated:** 2026-06-09  
+**Last updated:** 2026-06-11  
 **Stack:** Python 3.11 · Streamlit · ReportLab · Claude / GPT-4o · EODHD · yfinance  
 **Deployment:** Streamlit Community Cloud (auto-deploys on push to `Final-design-V3`)  
 **Repo:** https://github.com/GediminasBuda/EquityBot
@@ -287,6 +287,17 @@ Multiple formatting fixes applied to `agents/pdf_overview_v2.py` and `agents/pri
 - "Net Profit (Adj.)" row removed — `net_income_underlying` (EPS × shares) was computed and displayed alongside reported net income, causing confusion. Forward estimate now uses `fe.eps_diluted × shares` as the Net Income estimate directly.
 - New **"FCF (M)"** row added between Div. Yield and FCF Yield, showing `a.fcf` from EODHD cashflow statement for historical years and `company.ttm_fcf` (quarterly sum) for the TTM column.
 - Row separator `LINEBELOW` indices updated to match new row layout.
+
+### My Portfolio — 52WH and 52WL metrics added (2026-06-11)
+Two new metrics appended after YTD on every portfolio card:
+- **52WH**: `(price / 52_week_high) − 1` — how far the current price sits below (or above) the 52-week high. Usually negative (red). Positive (blue) only if at a new high.
+- **52WL**: `(price / 52_week_low) − 1` — how far the current price is above the 52-week low. Always positive (blue).
+
+**Data source:** `fund["Technicals"]["52WeekHigh"]` / `["52WeekLow"]` from the EODHD fundamentals endpoint (already fetched in `_fetch_snapshot`). Japan/Baltic (yfinance path): `info["fiftyTwoWeekHigh"]` / `["fiftyTwoWeekLow"]`.
+
+**Layout:**
+- Desktop: CSS grid widened from `repeat(7, …)` to `repeat(9, …)` metric columns. Gap reduced 10px → 8px to keep everything on one row.
+- Mobile: the two new cells carry `order: 7` / `order: 8` in the 2-col mobile grid, forming a new 4th row (52WH | 52WL) below the existing ROE | YTD row.
 
 ---
 
