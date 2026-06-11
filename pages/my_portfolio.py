@@ -1404,6 +1404,22 @@ st.markdown(
       .pf-name-cell.pf-name-active .pf-name { color: #FFD080 !important; }
       .pf-name-cell.pf-name-active .pf-sub  { color: #FFA028 !important; }
 
+      /* ── Expand/collapse arrow indicator ────────────────────────── */
+      .pf-toggle-arrow {
+        font-size: 9px;
+        color: #8a6a30;
+        margin-left: 5px;
+        display: inline-block;
+        transition: transform 0.2s ease, color 0.15s ease;
+        vertical-align: middle;
+        line-height: 1;
+      }
+      .pf-name-cell:hover .pf-toggle-arrow { color: #FFFFFF; }
+      .pf-name-cell.pf-name-active .pf-toggle-arrow {
+        transform: rotate(180deg);
+        color: #FFD080;
+      }
+
       /* ── Hidden toggle button + its anchor marker ────────────────
          Both the anchor div's container and the adjacent button
          container are collapsed to zero. CSS display:none still
@@ -1621,7 +1637,8 @@ else:
             # can find it and route the click to the hidden toggle button.
             f"<div class='pf-name-cell{active_cls}' data-ticker='{ticker_attr}'>"
             f"<div class='pf-name' title='{_html.escape(name_full)}'>"
-            f"{_html.escape(name_full)}</div>"
+            f"{_html.escape(name_full)}"
+            f"<span class='pf-toggle-arrow'>&#9660;</span></div>"
             f"<div class='pf-sub'>{_html.escape(sub_line)}</div>"
             "</div>"
             f"{_metric_html('Earnings', earn_value, extra_cls='pf-m-earnings', **earn_kw)}"
