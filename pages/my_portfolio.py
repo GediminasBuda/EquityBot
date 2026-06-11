@@ -316,6 +316,9 @@ def _snapshot_yf(yf_ticker: str) -> dict:
         price = (_to_float(info.get("currentPrice"))
                  or _to_float(info.get("regularMarketPrice"))
                  or _to_float(info.get("previousClose")))
+        _yf_chg = _to_float(info.get("regularMarketChangePercent"))
+        change_pct: Optional[float] = (_yf_chg / 100 if _yf_chg is not None
+                                       else None)
         name     = _jp_correct_name(yf_ticker,
                        info.get("longName") or info.get("shortName") or "")
         sector   = info.get("sector") or ""
@@ -344,7 +347,7 @@ def _snapshot_yf(yf_ticker: str) -> dict:
         return {
             "eodhd_ticker": yf_ticker,
             "name": name, "currency": currency, "sector": sector,
-            "price": price, "market_cap": mkt_cap,
+            "price": price, "change_pct": change_pct, "market_cap": mkt_cap,
             "pe": pe, "roe": roe, "ebit_margin": ebit_mg, "ytd_pct": ytd_pct,
             "week_52_high": week_52_high, "week_52_low": week_52_low,
             "forward_pe": forward_pe, "q_rev_growth": q_rev_growth,
@@ -413,6 +416,10 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
     price = _to_float(rt.get("close"))
     if price is None or price < 0:
         price = _to_float(rt.get("previousClose"))
+    prev_close = _to_float(rt.get("previousClose"))
+    change_pct: Optional[float] = None
+    if price and prev_close and prev_close > 0 and price != prev_close:
+        change_pct = price / prev_close - 1
 
     # ── Fundamentals (may be missing for indices/forex) ──────────────────────
     time.sleep(0.2)
@@ -477,6 +484,7 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
         "currency":     currency,
         "sector":       sector,
         "price":        price,
+        "change_pct":   change_pct,
         "market_cap":   market_cap,
         "pe":           pe,
         "roe":          roe,
@@ -1020,6 +1028,10 @@ if "portfolio_expanded" not in st.session_state:
     st.session_state.portfolio_expanded = set()        # tickers currently expanded
 if "portfolio_periods" not in st.session_state:
     st.session_state.portfolio_periods = {}            # ticker -> selected period
+if "pf_sort_col" not in st.session_state:
+    st.session_state.pf_sort_col = None               # None = original order
+if "pf_sort_asc" not in st.session_state:
+    st.session_state.pf_sort_asc = False
 
 # ── Add-ticker searchbox (type-as-you-go, EODHD /search) ──────────────────────
 # st_searchbox calls _ticker_search() on every keystroke (debounced) and
@@ -1529,6 +1541,41 @@ st.markdown(
         text-transform: uppercase;
       }
       .pf-lowhigh b { color: #FFA028; }
+
+      /* ── Sort header row ──────────────────────────────────────────── */
+      .pf-sort-header {
+        display: grid;
+        grid-template-columns:
+          minmax(0, 2fr)
+          repeat(11, minmax(0, 0.9fr));
+        gap: 0 4px;
+        padding: 0 12px 3px;
+        align-items: center;
+      }
+      .pf-sort-name-cell { /* empty spacer */ }
+      .pf-sort-header-cell {
+        font-size: 9px;
+        color: #5a4020;
+        font-family: monospace;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 2px 0;
+        transition: color 0.15s;
+      }
+      .pf-sort-header-cell:hover { color: #FFA028; }
+      .pf-sort-header-cell.pf-sort-active { color: #FFA028; }
+
+      /* ── Hide sort anchor + button wrappers ───────────────────────── */
+      div[data-testid="stElementContainer"]:has(.pf-sort-anchor),
+      div[data-testid="stElementContainer"]:has(.pf-sort-anchor) + div[data-testid="stElementContainer"] {
+        display: none !important;
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1571,6 +1618,23 @@ else:
             } catch(e) {}
           }
 
+          function findAndClickSort(colId) {
+            try {
+              var doc = window.parent.document;
+              var anchor = doc.querySelector('.pf-sort-anchor[data-sortcol="' + colId + '"]');
+              if (!anchor) return;
+              var wrap = anchor.parentElement;
+              while (wrap && !wrap.matches(
+                '[data-testid="stElementContainer"],[data-testid="element-container"]'
+              )) { wrap = wrap.parentElement; }
+              if (!wrap) return;
+              var btnWrap = wrap.nextElementSibling;
+              if (!btnWrap) return;
+              var btn = btnWrap.querySelector('button');
+              if (btn) btn.click();
+            } catch(e) {}
+          }
+
           function bind() {
             try {
               var doc = window.parent.document;
@@ -1589,6 +1653,14 @@ else:
                 icon.addEventListener('click', function(e) {
                   e.stopPropagation();
                   findAndClick('pf-del-anchor', this.dataset.ticker);
+                });
+              });
+              // Sort header cells
+              doc.querySelectorAll('.pf-sort-header-cell[data-sortcol]').forEach(function(cell) {
+                if (cell._pfSortBound) return;
+                cell._pfSortBound = true;
+                cell.addEventListener('click', function() {
+                  findAndClickSort(this.dataset.sortcol);
                 });
               });
             } catch(e) {}
@@ -1616,7 +1688,66 @@ else:
             f"</div>"
         )
 
-    for ticker in list(st.session_state.portfolio_tickers):
+    # ── Column definitions for header + sort ─────────────────────────────────
+    _SORT_COLS = [
+        ("earnings",  "Earnings",  "next_earnings"),
+        ("price",     "Price",     "price"),
+        ("mcap",      "Mkt Cap",   "market_cap"),
+        ("pe",        "P/E",       "pe"),
+        ("fpe",       "F P/E",     "forward_pe"),
+        ("roe",       "ROE",       "roe"),
+        ("ebit",      "EBIT M.",   "ebit_margin"),
+        ("qrev",      "Q REV YoY", "q_rev_growth"),
+        ("ytd",       "YTD",       "ytd_pct"),
+        ("52wh",      "52WH",      "week_52_high"),
+        ("52wl",      "52WL",      "week_52_low"),
+    ]
+
+    # ── Sort header row ───────────────────────────────────────────────────────
+    sort_col = st.session_state.pf_sort_col
+    sort_asc = st.session_state.pf_sort_asc
+    header_cells = "<div class='pf-sort-name-cell'></div>"
+    for col_id, col_label, _ in _SORT_COLS:
+        arrow = ""
+        if sort_col == col_id:
+            arrow = " ▲" if sort_asc else " ▼"
+        header_cells += (
+            f"<div class='pf-sort-header-cell' data-sortcol='{col_id}'>"
+            f"{col_label}{arrow}</div>"
+        )
+    st.markdown(
+        f"<div class='pf-sort-header'>{header_cells}</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Hidden sort buttons (one per column)
+    for col_id, _, _ in _SORT_COLS:
+        st.markdown(f"<div class='pf-sort-anchor' data-sortcol='{col_id}'></div>",
+                    unsafe_allow_html=True)
+        if st.button("·", key=f"sort_{col_id}", use_container_width=False):
+            if st.session_state.pf_sort_col == col_id:
+                st.session_state.pf_sort_asc = not st.session_state.pf_sort_asc
+            else:
+                st.session_state.pf_sort_col = col_id
+                st.session_state.pf_sort_asc = False
+            st.rerun()
+
+    # ── Build sorted ticker list (uses already-cached snapshots) ─────────────
+    tickers_to_render = list(st.session_state.portfolio_tickers)
+    if sort_col:
+        snap_key = next((s for c, _, s in _SORT_COLS if c == sort_col), None)
+        def _sort_key(t):
+            s = _fetch_snapshot(t)
+            if snap_key == "next_earnings":
+                v = _fetch_next_earnings(t)
+                return v or "9999"
+            v = s.get(snap_key)
+            if v is None:
+                return float("-inf") if sort_asc else float("inf")
+            return v
+        tickers_to_render.sort(key=_sort_key, reverse=not sort_asc)
+
+    for ticker in tickers_to_render:
         snap = _fetch_snapshot(ticker)
         rec_label, rec_color = _recommendation(snap)
         is_expanded = ticker in st.session_state.portfolio_expanded
@@ -1690,7 +1821,7 @@ else:
             f"<div class='pf-sub'>{_html.escape(sub_line)}</div>"
             "</div>"
             f"{_metric_html('Earnings', earn_value, extra_cls='pf-m-earnings', **earn_kw)}"
-            f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']), extra_cls='pf-m-price')}"
+            f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']), color='#4D9FFF' if (snap.get('change_pct') or 0) > 0 else ('#FF3030' if (snap.get('change_pct') or 0) < 0 else '#FFA028'), extra_cls='pf-m-price')}"
             f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']), extra_cls='pf-m-mcap')}"
             f"{_metric_html('P/E', _fmt_ratio(snap['pe']), extra_cls='pf-m-pe')}"
             f"{_metric_html('F P/E', fpe_text, extra_cls='pf-m-fpe')}"
