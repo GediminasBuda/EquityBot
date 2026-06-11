@@ -1390,36 +1390,41 @@ st.markdown(
         }
       }
 
-      .pf-toggle-anchor { display: none; }
-
-      /* ── Desktop-only: collapse the toggle anchor's wrapping
-         element-container so the "Chart" button isn't pushed down
-         by an empty ~1rem-tall markdown wrapper. Streamlit versions
-         differ in whether the wrapper carries data-testid
-         "element-container" or "stElementContainer" — match either
-         via the stable .element-container / .stElementContainer
-         class names. Mobile keeps the element-container intact
-         because the locked-in mobile gap between card and Chart
-         button (5px row-gap) accounts for it visually. */
-      @media (min-width: 769px) {
-        div.element-container:has(.pf-toggle-anchor),
-        div.stElementContainer:has(.pf-toggle-anchor),
-        div[data-testid="element-container"]:has(.pf-toggle-anchor),
-        div[data-testid="stElementContainer"]:has(.pf-toggle-anchor) {
-          display: none !important;
-        }
+      /* ── Name cell is the click target for expand/collapse ─────── */
+      .pf-name-cell { cursor: pointer; }
+      .pf-name-cell:hover .pf-name {
+        color: #FFFFFF !important;
+        transition: color 0.15s ease;
       }
+      .pf-name-cell:hover .pf-sub {
+        color: #FFA028 !important;
+        transition: color 0.15s ease;
+      }
+      /* Active (expanded) state: slightly lighter amber */
+      .pf-name-cell.pf-name-active .pf-name { color: #FFD080 !important; }
+      .pf-name-cell.pf-name-active .pf-sub  { color: #FFA028 !important; }
 
-      /* ── Tight gap between card and Chart button on mobile ───────
-         When the card row's columns wrap (mobile), Streamlit's
-         default vertical gap (~1rem) leaves a chunky space between
-         the ticker card and the wrapped-below "Chart ▾" toggle.
-         Scope a 5px row-gap to the card row only via :has() on the
-         toggle anchor — desktop's horizontal gap is unchanged. */
-      @media (max-width: 768px) {
-        div[data-testid="stHorizontalBlock"]:has(.pf-toggle-anchor) {
-          row-gap: 5px !important;
-        }
+      /* ── Hidden toggle button + its anchor marker ────────────────
+         Both the anchor div's container and the adjacent button
+         container are collapsed to zero. CSS display:none still
+         allows document.querySelector and JS .click() to work. */
+      .pf-toggle-anchor { display: none; }
+      div.element-container:has(.pf-toggle-anchor),
+      div.stElementContainer:has(.pf-toggle-anchor),
+      div[data-testid="element-container"]:has(.pf-toggle-anchor),
+      div[data-testid="stElementContainer"]:has(.pf-toggle-anchor) {
+        display: none !important;
+      }
+      div[data-testid="stElementContainer"]:has(.pf-toggle-anchor)
+        + div[data-testid="stElementContainer"],
+      div[data-testid="element-container"]:has(.pf-toggle-anchor)
+        + div[data-testid="element-container"],
+      div.stElementContainer:has(.pf-toggle-anchor) + div.stElementContainer,
+      div.element-container:has(.pf-toggle-anchor) + div.element-container {
+        height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
 
       /* ── Tighter inter-card gap (the wrapping st.container has its
@@ -1492,6 +1497,49 @@ if not st.session_state.portfolio_tickers:
 else:
     import html as _html
 
+    # ── Name-cell → hidden-button click forwarder ─────────────────────────────
+    # An iframe script (same-origin, window.parent access) scans for name
+    # cells carrying data-ticker and wires each to the matching hidden
+    # Streamlit toggle button. setInterval re-binds after every st.rerun().
+    st.iframe(
+        """
+        <script>
+        (function () {
+          function bind() {
+            try {
+              var doc = window.parent.document;
+              doc.querySelectorAll('.pf-name-cell[data-ticker]').forEach(function(cell) {
+                if (cell._pfClickBound) return;
+                cell._pfClickBound = true;
+                cell.addEventListener('click', function () {
+                  var ticker = this.dataset.ticker;
+                  var anchor = doc.querySelector(
+                    '.pf-toggle-anchor[data-ticker="' + CSS.escape(ticker) + '"]'
+                  );
+                  if (!anchor) return;
+                  // Walk up from anchor to its stElementContainer wrapper
+                  var wrap = anchor.parentElement;
+                  while (wrap && !wrap.matches(
+                    '[data-testid="stElementContainer"],[data-testid="element-container"]'
+                  )) { wrap = wrap.parentElement; }
+                  if (!wrap) return;
+                  // The next sibling container holds the hidden button
+                  var btnWrap = wrap.nextElementSibling;
+                  if (!btnWrap) return;
+                  var btn = btnWrap.querySelector('button');
+                  if (btn) btn.click();
+                });
+              });
+            } catch(e) {}
+          }
+          bind();
+          setInterval(bind, 500);
+        })();
+        </script>
+        """,
+        height=1,
+    )
+
     def _metric_html(label: str, value: str, *,
                      color: str = "#222", bold: bool = False,
                      muted: bool = False, extra_cls: str = "") -> str:
@@ -1563,54 +1611,44 @@ else:
             earn_value = "—"
             earn_kw = {"muted": True}
 
-        # ── Card row: main HTML block + Chart toggle column ──────────────
-        # The actions column hosts only the ▾/▴ "Chart" toggle now;
-        # the "Remove from My Portfolio" button has moved inside the
-        # expanded chart panel so the row stays compact.
-        main_col, action_col = st.columns([1, 0.14], gap="small")
+        # ── Card row (full-width): clicking the name cell expands/collapses ──
+        active_cls = " pf-name-active" if is_expanded else ""
+        ticker_attr = _html.escape(ticker)
+        card_html = (
+            "<div class='pf-card'>"
+            "<div class='pf-summary'>"
+            # Name cell — carries data-ticker so the JS click forwarder
+            # can find it and route the click to the hidden toggle button.
+            f"<div class='pf-name-cell{active_cls}' data-ticker='{ticker_attr}'>"
+            f"<div class='pf-name' title='{_html.escape(name_full)}'>"
+            f"{_html.escape(name_full)}</div>"
+            f"<div class='pf-sub'>{_html.escape(sub_line)}</div>"
+            "</div>"
+            f"{_metric_html('Earnings', earn_value, extra_cls='pf-m-earnings', **earn_kw)}"
+            f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']), extra_cls='pf-m-price')}"
+            f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']), extra_cls='pf-m-mcap')}"
+            f"{_metric_html('P/E', _fmt_ratio(snap['pe']), extra_cls='pf-m-pe')}"
+            f"{_metric_html('F P/E', fpe_text, extra_cls='pf-m-fpe')}"
+            f"{_metric_html('ROE', _fmt_pct(snap['roe']), extra_cls='pf-m-roe')}"
+            f"{_metric_html('EBIT M.', _fmt_pct(snap['ebit_margin']), extra_cls='pf-m-ebit')}"
+            f"{_metric_html('Q REV YoY', qrev_text, color=qrev_color, extra_cls='pf-m-qrev')}"
+            f"{_metric_html('YTD', ytd_text, color=ytd_color, bold=True, extra_cls='pf-m-ytd')}"
+            f"{_metric_html('52WH', wk52h_text, color=wk52h_color, extra_cls='pf-m-52wh')}"
+            f"{_metric_html('52WL', wk52l_text, color=wk52l_color, extra_cls='pf-m-52wl')}"
+            "</div></div>"
+        )
+        st.markdown(card_html, unsafe_allow_html=True)
 
-        with main_col:
-            card_html = (
-                "<div class='pf-card'>"
-                "<div class='pf-summary'>"
-                # Name cell
-                f"<div class='pf-name-cell'>"
-                f"<div class='pf-name' title='{_html.escape(name_full)}'>"
-                f"{_html.escape(name_full)}</div>"
-                f"<div class='pf-sub'>{_html.escape(sub_line)}</div>"
-                "</div>"
-                # 7 metrics — each carries a unique class so mobile CSS
-                # can re-order them via `order:` and span Earnings full-width.
-                f"{_metric_html('Earnings', earn_value, extra_cls='pf-m-earnings', **earn_kw)}"
-                f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']), extra_cls='pf-m-price')}"
-                f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']), extra_cls='pf-m-mcap')}"
-                f"{_metric_html('P/E', _fmt_ratio(snap['pe']), extra_cls='pf-m-pe')}"
-                f"{_metric_html('F P/E', fpe_text, extra_cls='pf-m-fpe')}"
-                f"{_metric_html('ROE', _fmt_pct(snap['roe']), extra_cls='pf-m-roe')}"
-                f"{_metric_html('EBIT M.', _fmt_pct(snap['ebit_margin']), extra_cls='pf-m-ebit')}"
-                f"{_metric_html('Q REV YoY', qrev_text, color=qrev_color, extra_cls='pf-m-qrev')}"
-                f"{_metric_html('YTD', ytd_text, color=ytd_color, bold=True, extra_cls='pf-m-ytd')}"
-                f"{_metric_html('52WH', wk52h_text, color=wk52h_color, extra_cls='pf-m-52wh')}"
-                f"{_metric_html('52WL', wk52l_text, color=wk52l_color, extra_cls='pf-m-52wl')}"
-                "</div></div>"
-            )
-            st.markdown(card_html, unsafe_allow_html=True)
-
-        with action_col:
-            # Only the ▾/▴ "Chart" toggle lives here. The Remove
-            # from My Portfolio button moves inside the expanded
-            # detail panel further below.
-            st.markdown("<div class='pf-toggle-anchor'></div>",
-                        unsafe_allow_html=True)
-            label = "Chart ▴" if is_expanded else "Chart ▾"
-            if st.button(label, key=f"toggle_{ticker}",
-                         help="Collapse" if is_expanded else "Expand",
-                         use_container_width=True):
-                if is_expanded:
-                    st.session_state.portfolio_expanded.discard(ticker)
-                else:
-                    st.session_state.portfolio_expanded.add(ticker)
-                st.rerun()
+        # Hidden toggle button — zero-height via CSS, but JS can still
+        # call .click() on it to trigger the expand/collapse state change.
+        st.markdown(f"<div class='pf-toggle-anchor' data-ticker='{ticker_attr}'></div>",
+                    unsafe_allow_html=True)
+        if st.button("·", key=f"toggle_{ticker}", use_container_width=False):
+            if is_expanded:
+                st.session_state.portfolio_expanded.discard(ticker)
+            else:
+                st.session_state.portfolio_expanded.add(ticker)
+            st.rerun()
 
         # ── Expanded detail section ──────────────────────────────────────────
         if is_expanded:
