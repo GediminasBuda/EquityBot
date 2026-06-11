@@ -1446,18 +1446,26 @@ st.markdown(
         padding: 0 !important;
       }
 
-      /* ── Zero out Streamlit's default inter-element spacing ────────── */
-      div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"],
-      div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] {
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
+      /* ── Zero out Streamlit's inter-element gap on the portfolio list ─ */
+      /* Target the stVerticalBlock that wraps the portfolio cards and
+         set its flex gap to 0. Scope via :has(.pf-card) so we only
+         affect the portfolio list, not every stVerticalBlock on the page. */
+      div[data-testid="stVerticalBlock"]:has(.pf-card) {
+        gap: 0 !important;
       }
-      /* Also target the inner wrapper Streamlit adds around markdown */
-      div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] > div,
-      div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div {
+      div[data-testid="stVerticalBlock"]:has(.pf-card)
+        > div[data-testid="stElementContainer"],
+      div[data-testid="stVerticalBlock"]:has(.pf-card)
+        > div[data-testid="element-container"] {
         margin: 0 !important;
+        padding: 0 !important;
+      }
+      div[data-testid="stVerticalBlock"]:has(.pf-card)
+        > div[data-testid="stElementContainer"] > div,
+      div[data-testid="stVerticalBlock"]:has(.pf-card)
+        > div[data-testid="element-container"] > div {
+        margin: 0 !important;
+        padding: 0 !important;
       }
 
       /* ── Detail panel internal flex strips (sector / rec, low / high) ── */
