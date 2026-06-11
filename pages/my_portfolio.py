@@ -440,7 +440,8 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
     technicals   = fund.get("Technicals") or {}
     week_52_high = _to_float(technicals.get("52WeekHigh"))
     week_52_low  = _to_float(technicals.get("52WeekLow"))
-    forward_pe   = _to_float(highlights.get("ForwardPE"))
+    valuation    = fund.get("Valuation") or {}
+    forward_pe   = _to_float(valuation.get("ForwardPE")) or _to_float(highlights.get("ForwardPE"))
     q_rev_growth = _to_float(highlights.get("QuarterlyRevenueGrowthYOY"))
 
     # ── YTD: pull the first trading day of the current year close ────────────
