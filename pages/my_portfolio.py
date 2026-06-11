@@ -1337,16 +1337,16 @@ st.markdown(
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 4px;
+        gap: 20px;
         min-width: 0;
       }
       .pf-name-top .pf-name { flex: 1; min-width: 0; }
       .pf-trash-icon {
-        font-size: 13px;
-        color: #5a4a25;
+        font-size: 15px;
+        color: #8a6a30;
         cursor: pointer;
         flex-shrink: 0;
-        padding: 2px 4px;
+        padding: 3px 5px;
         border-radius: 3px;
         line-height: 1;
         transition: color 0.15s ease, background 0.15s ease;
@@ -1354,6 +1354,19 @@ st.markdown(
       .pf-trash-icon:hover {
         color: #FF3030 !important;
         background: #200505 !important;
+      }
+
+      /* ── Mobile: float trash to top-right corner of the card ─────
+         Absolutely positioned so it never crowds the name text. */
+      @media (max-width: 768px) {
+        .pf-card { position: relative; }
+        .pf-trash-icon {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          font-size: 16px;
+          padding: 4px 6px;
+        }
       }
 
       /* Hidden delete button (same pattern as toggle button) */
