@@ -1181,8 +1181,8 @@ st.markdown(
       .pf-summary {
         display: grid;
         grid-template-columns:
-          minmax(0, 3fr)     /* name + ticker — wider so full name fits */
-          repeat(11, minmax(0, 0.85fr));  /* earnings · price · mcap · pe · fpe · roe · ebit · qrev · ytd · 52wh · 52wl */
+          minmax(0, 2fr)     /* name + ticker */
+          repeat(11, minmax(0, 0.9fr));   /* earnings · price · mcap · pe · fpe · roe · ebit · qrev · ytd · 52wh · 52wl */
         gap: 6px 4px;
         align-items: center;
       }
