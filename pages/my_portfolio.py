@@ -1201,9 +1201,6 @@ st.markdown(
         text-transform: uppercase;
         font-size: 14px;
         line-height: 1.2;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
       }
       .pf-sub {
         font-size: 11px;
@@ -1262,7 +1259,12 @@ st.markdown(
           align-items: center;
           text-align: center;
         }
-        .pf-name { font-size: 15px; }
+        .pf-name {
+          font-size: 15px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
         .pf-metric {
           flex-direction: row;
           align-items: baseline;
