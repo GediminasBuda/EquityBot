@@ -1529,7 +1529,13 @@ else:
 
         # Earnings text (slightly muted when no date scheduled)
         if next_earnings:
-            earn_value = f"📅 {next_earnings}"
+            # Compact date: YY/MM/DD saves ~2 chars vs YYYY-MM-DD
+            try:
+                _ed = datetime.strptime(next_earnings[:10], "%Y-%m-%d")
+                earn_fmt = _ed.strftime("%y/%m/%d")
+            except Exception:
+                earn_fmt = next_earnings[:10]
+            earn_value = f"📅 {earn_fmt}"
             earn_kw = {}
         else:
             earn_value = "—"
