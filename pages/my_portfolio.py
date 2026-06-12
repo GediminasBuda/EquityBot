@@ -1233,6 +1233,17 @@ st.iframe(
             if (e.key === 'Enter') { e.stopPropagation(); doCreate(doc); }
           });
         }
+
+        /* Inline portfolio delete icon */
+        doc.querySelectorAll('.pf-del-pf-icon').forEach(function(icon) {
+          if (icon._pfBound) return;
+          icon._pfBound = true;
+          icon.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var btn = anchorBtn('pf-del-pf-anchor');
+            if (btn) btn.click();
+          });
+        });
       }
 
       bind();
@@ -1374,28 +1385,33 @@ if selected_ticker:
         st.info(f"**{norm}** is already in your portfolio.")
 
 # ── Top bar ───────────────────────────────────────────────────────────────────
-top_l, top_del, top_r = st.columns([5, 0.6, 1])
+top_l, top_r = st.columns([6, 1])
 with top_l:
     _n = len(st.session_state.portfolio_tickers)
+    _ap_esc = _html_pf.escape(st.session_state.active_portfolio)
     st.markdown(
-        f"**{st.session_state.active_portfolio}** · "
-        f"**{_n}** ticker{'s' if _n != 1 else ''} tracked"
+        f"<span style='font-weight:700;color:#FFA028;font-family:monospace;'>{_ap_esc}</span>"
+        f"<span style='color:#8a6a30;font-family:monospace;'> · </span>"
+        f"<span style='font-weight:700;color:#FFA028;font-family:monospace;'>{_n}</span>"
+        f"<span style='color:#8a6a30;font-family:monospace;'> ticker{'s' if _n != 1 else ''} tracked</span>"
+        f"<span class='pf-del-pf-icon' title='Delete portfolio'> 🗑</span>",
+        unsafe_allow_html=True,
     )
-with top_del:
-    if st.button("🗑", key="pf_delete_current", use_container_width=True,
-                 help=f"Delete '{st.session_state.active_portfolio}'"):
-        _all = st.session_state.all_portfolios
-        if len(_all) > 1:
-            del _all[st.session_state.active_portfolio]
-            _save_portfolios(_all)
-            _first = list(_all.keys())[0]
-            st.session_state.active_portfolio = _first
-            st.session_state.portfolio_tickers = list(_all[_first])
-            st.session_state.portfolio_expanded = set()
-            st.session_state.pf_sort_col = None
-            st.rerun()
-        else:
-            st.toast("Cannot delete the last portfolio.", icon="⚠️")
+# Hidden delete-portfolio button (CSS-collapsed, JS-clickable via trash icon)
+st.markdown("<div class='pf-del-pf-anchor'></div>", unsafe_allow_html=True)
+if st.button("·", key="pf_delete_current"):
+    _all = st.session_state.all_portfolios
+    if len(_all) > 1:
+        del _all[st.session_state.active_portfolio]
+        _save_portfolios(_all)
+        _first = list(_all.keys())[0]
+        st.session_state.active_portfolio = _first
+        st.session_state.portfolio_tickers = list(_all[_first])
+        st.session_state.portfolio_expanded = set()
+        st.session_state.pf_sort_col = None
+        st.rerun()
+    else:
+        st.toast("Cannot delete the last portfolio.", icon="⚠️")
 with top_r:
     if st.button("🔄 Refresh", use_container_width=True):
         _fetch_snapshot.clear()
@@ -1806,8 +1822,28 @@ st.markdown(
       div[data-testid="stElementContainer"]:has(.pf-sw-anchor),
       div[data-testid="stElementContainer"]:has(.pf-sw-anchor) + div[data-testid="stElementContainer"],
       div[data-testid="stElementContainer"]:has(.pf-create-anchor),
-      div[data-testid="stElementContainer"]:has(.pf-create-anchor) + div[data-testid="stElementContainer"] {
+      div[data-testid="stElementContainer"]:has(.pf-create-anchor) + div[data-testid="stElementContainer"],
+      div[data-testid="stElementContainer"]:has(.pf-del-pf-anchor),
+      div[data-testid="stElementContainer"]:has(.pf-del-pf-anchor) + div[data-testid="stElementContainer"] {
         display: none !important;
+      }
+
+      /* ── Inline portfolio delete icon ──────────────────────────────── */
+      .pf-del-pf-icon {
+        font-size: 13px;
+        color: #5a4020;
+        cursor: pointer;
+        margin-left: 4px;
+        vertical-align: middle;
+        display: inline-block;
+        padding: 1px 4px;
+        border-radius: 2px;
+        transition: color 0.15s ease, background 0.15s ease;
+        line-height: 1;
+      }
+      .pf-del-pf-icon:hover {
+        color: #FF3030 !important;
+        background: #200505 !important;
       }
 
       /* ── Custom portfolio dropdown ─────────────────────────────────── */
