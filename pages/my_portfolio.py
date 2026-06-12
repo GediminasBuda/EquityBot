@@ -141,12 +141,15 @@ def _portfolio_gist_id(token: str) -> Optional[str]:
     return None
 
 
-def _load_portfolio() -> list[str]:
+def _load_portfolios() -> dict:
     """
-    Load portfolio tickers. Tries the GitHub Gist first (the
-    persistent source of truth across container restarts), then falls
-    back to the local file if the Gist is unreachable / unauthorised.
+    Load all portfolios. Returns {name: [tickers]}.
+    Migrates old single-portfolio format {"tickers": [...]} to
+    new multi-portfolio format {"portfolios": {"My Portfolio": [...]}}.
+    Tries the GitHub Gist first (durable across container restarts),
+    then falls back to the local file.
     """
+    raw_data = None
     token = _gist_token()
     if token:
         gist_id = _portfolio_gist_id(token)
@@ -163,37 +166,37 @@ def _load_portfolio() -> list[str]:
                     content = f.get("content") or ""
                     if content:
                         try:
-                            data = json.loads(content)
-                            tickers = list(data.get("tickers", []))
-                            # Mirror to local file so dev / offline reads work.
-                            try:
-                                _PORTFOLIO_FILE.write_text(
-                                    json.dumps({"tickers": tickers}, indent=2),
-                                    encoding="utf-8",
-                                )
-                            except Exception:
-                                pass
-                            return tickers
+                            raw_data = json.loads(content)
                         except Exception:
                             pass
             except Exception:
                 pass
 
-    # Fallback: local file (works in dev mode without a token,
-    # and as a last resort if the Gist API is unreachable).
-    if not _PORTFOLIO_FILE.exists():
-        return []
-    try:
-        raw = json.loads(_PORTFOLIO_FILE.read_text(encoding="utf-8"))
-        return list(raw.get("tickers", []))
-    except Exception:
-        return []
+    if raw_data is None and _PORTFOLIO_FILE.exists():
+        try:
+            raw_data = json.loads(_PORTFOLIO_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    if raw_data is None:
+        return {"My Portfolio": []}
+
+    # Migration: old format {"tickers": [...]} → new multi-portfolio format
+    if "tickers" in raw_data and "portfolios" not in raw_data:
+        migrated = {"My Portfolio": list(raw_data.get("tickers", []))}
+        _save_portfolios(migrated)
+        return migrated
+
+    portfolios = raw_data.get("portfolios") or {}
+    if not isinstance(portfolios, dict) or not portfolios:
+        return {"My Portfolio": []}
+    return {k: list(v) for k, v in portfolios.items() if isinstance(v, list)}
 
 
-def _save_portfolio(tickers: list[str]) -> None:
-    """Persist the portfolio to the GitHub Gist (primary, durable)
+def _save_portfolios(portfolios: dict) -> None:
+    """Persist all portfolios to the GitHub Gist (primary, durable)
     and mirror to the local file (in-session cache / dev fallback)."""
-    payload_json = json.dumps({"tickers": tickers}, indent=2)
+    payload_json = json.dumps({"portfolios": portfolios}, indent=2)
 
     # 1) Local file — always write so dev / fallback path stays warm.
     try:
@@ -212,15 +215,19 @@ def _save_portfolio(tickers: list[str]) -> None:
         requests.patch(
             f"{_GIST_API}/gists/{gist_id}",
             headers=_gist_headers(token),
-            json={
-                "files": {
-                    _GIST_FILENAME: {"content": payload_json},
-                },
-            },
+            json={"files": {_GIST_FILENAME: {"content": payload_json}}},
             timeout=_GIST_TIMEOUT,
         )
     except Exception:
         pass
+
+
+def _save_active_portfolio() -> None:
+    """Sync the active portfolio's tickers into all_portfolios and persist."""
+    st.session_state.all_portfolios[st.session_state.active_portfolio] = list(
+        st.session_state.portfolio_tickers
+    )
+    _save_portfolios(st.session_state.all_portfolios)
 
 
 # ── Ticker conversion (Yahoo → EODHD) ─────────────────────────────────────────
@@ -1024,7 +1031,7 @@ st.markdown(
     "<span style='font-size:20px;'>📁</span>"
     "<span style='font-size:16px;font-weight:700;color:#FFA028;"
     "font-family:monospace;letter-spacing:1px;text-transform:uppercase;'>"
-    "My Portfolio</span></div>",
+    "Portfolios</span></div>",
     unsafe_allow_html=True,
 )
 
@@ -1037,8 +1044,15 @@ if not EODHD_API_KEY:
     st.stop()
 
 # ── Session state ─────────────────────────────────────────────────────────────
+if "all_portfolios" not in st.session_state:
+    st.session_state.all_portfolios = _load_portfolios()
+if "active_portfolio" not in st.session_state:
+    _pf_names = list(st.session_state.all_portfolios.keys())
+    st.session_state.active_portfolio = _pf_names[0] if _pf_names else "My Portfolio"
 if "portfolio_tickers" not in st.session_state:
-    st.session_state.portfolio_tickers = _load_portfolio()
+    st.session_state.portfolio_tickers = list(
+        st.session_state.all_portfolios.get(st.session_state.active_portfolio, [])
+    )
 if "portfolio_expanded" not in st.session_state:
     st.session_state.portfolio_expanded = set()        # tickers currently expanded
 if "portfolio_periods" not in st.session_state:
@@ -1047,12 +1061,71 @@ if "pf_sort_col" not in st.session_state:
     st.session_state.pf_sort_col = None               # None = original order
 if "pf_sort_asc" not in st.session_state:
     st.session_state.pf_sort_asc = False
+if "pf_creating_new" not in st.session_state:
+    st.session_state.pf_creating_new = False
+
+# ── Portfolio selector row ────────────────────────────────────────────────────
+_pf_all_names = list(st.session_state.all_portfolios.keys())
+_active_idx = (
+    _pf_all_names.index(st.session_state.active_portfolio)
+    if st.session_state.active_portfolio in _pf_all_names else 0
+)
+
+_sel_col, _btn_col = st.columns([5, 1])
+with _sel_col:
+    _selected_pf = st.selectbox(
+        "Portfolio",
+        options=_pf_all_names,
+        index=_active_idx,
+        label_visibility="collapsed",
+        key="pf_selector",
+    )
+with _btn_col:
+    if st.button("＋ New", use_container_width=True, key="pf_create_btn"):
+        st.session_state.pf_creating_new = not st.session_state.pf_creating_new
+        st.rerun()
+
+# Switch active portfolio when selector changes
+if _selected_pf != st.session_state.active_portfolio:
+    st.session_state.active_portfolio = _selected_pf
+    st.session_state.portfolio_tickers = list(
+        st.session_state.all_portfolios.get(_selected_pf, [])
+    )
+    st.session_state.portfolio_expanded = set()
+    st.session_state.pf_sort_col = None
+    st.rerun()
+
+# New-portfolio creation form
+if st.session_state.pf_creating_new:
+    _ni_col, _nc_col = st.columns([5, 1])
+    with _ni_col:
+        _new_pf_name = st.text_input(
+            "Name",
+            placeholder="Portfolio name…",
+            label_visibility="collapsed",
+            key="pf_new_name_input",
+        )
+    with _nc_col:
+        if st.button("Create", use_container_width=True, key="pf_confirm_create"):
+            _name = (_new_pf_name or "").strip()
+            if _name:
+                if _name not in st.session_state.all_portfolios:
+                    st.session_state.all_portfolios[_name] = []
+                    _save_portfolios(st.session_state.all_portfolios)
+                st.session_state.active_portfolio = _name
+                st.session_state.portfolio_tickers = list(
+                    st.session_state.all_portfolios[_name]
+                )
+                st.session_state.pf_creating_new = False
+                st.session_state.portfolio_expanded = set()
+                st.session_state.pf_sort_col = None
+                st.rerun()
 
 # ── Add-ticker searchbox (type-as-you-go, EODHD /search) ──────────────────────
 # st_searchbox calls _ticker_search() on every keystroke (debounced) and
 # shows the returned suggestions in a dropdown beneath the input. Picking
 # one adds it to the portfolio immediately — no extra confirm click.
-st.markdown("<div style='margin-top:18px'></div>", unsafe_allow_html=True)
+st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 selected_ticker = st_searchbox(
     search_function=_ticker_search,
     placeholder="add ticker",
@@ -1172,7 +1245,7 @@ if selected_ticker:
     norm = _normalize_ticker(selected_ticker)
     if norm and norm not in st.session_state.portfolio_tickers:
         st.session_state.portfolio_tickers.append(norm)
-        _save_portfolio(st.session_state.portfolio_tickers)
+        _save_active_portfolio()
         st.success(f"Added **{norm}** to portfolio.")
         st.rerun()
     elif norm in st.session_state.portfolio_tickers:
@@ -1181,11 +1254,11 @@ if selected_ticker:
 # ── Top bar ───────────────────────────────────────────────────────────────────
 top_l, top_r = st.columns([6, 1])
 with top_l:
-    if st.session_state.portfolio_tickers:
-        st.markdown(
-            f"**{len(st.session_state.portfolio_tickers)}** ticker"
-            f"{'s' if len(st.session_state.portfolio_tickers) != 1 else ''} tracked"
-        )
+    _n = len(st.session_state.portfolio_tickers)
+    st.markdown(
+        f"**{st.session_state.active_portfolio}** · "
+        f"**{_n}** ticker{'s' if _n != 1 else ''} tracked"
+    )
 with top_r:
     if st.button("🔄 Refresh", use_container_width=True):
         _fetch_snapshot.clear()
@@ -1599,7 +1672,8 @@ st.markdown(
 # ── Portfolio rendering ───────────────────────────────────────────────────────
 if not st.session_state.portfolio_tickers:
     st.info(
-        "Your portfolio is empty. Add a ticker above to get started.\n\n"
+        f"**{st.session_state.active_portfolio}** is empty. "
+        "Add a ticker above to get started.\n\n"
         "Examples: `AAPL`, `MSFT`, `RHM.DE`, `^GSPC` (S&P 500), "
         "`SPY` (ETF), `EURUSD=X` (forex)."
     )
@@ -1869,7 +1943,7 @@ else:
         if st.button("x", key=f"del_{ticker}", use_container_width=False):
             st.session_state.portfolio_tickers.remove(ticker)
             st.session_state.portfolio_expanded.discard(ticker)
-            _save_portfolio(st.session_state.portfolio_tickers)
+            _save_active_portfolio()
             st.rerun()
 
         # ── Expanded detail section ──────────────────────────────────────────
@@ -2085,10 +2159,10 @@ st.markdown(
     "<div style='margin-top:24px;padding-top:8px;"
     "border-top:1px solid #2a1f10;color:#8a6a30;font-family:monospace;"
     "font-size:12px;line-height:1.5;text-align:center;'>"
-    "Personal watchlist powered by <b style='color:#FFA028;'>EODHD only</b>. "
+    "Multi-portfolio watchlist powered by <b style='color:#FFA028;'>EODHD only</b>. "
     "Add any ticker — stocks (AAPL, RHM.DE), indices (^GSPC, ^DJI), "
     "ETFs (SPY) or forex (EURUSD=X). Cards are collapsed by default — "
-    "click ▾ to expand."
+    "click the company name to expand."
     "<br><span style='font-size:11px;color:#5a4a25;'>"
     "Snapshot cached 15 min · History 30 min · News 30 min · "
     "Earnings dates 6 h · Recommendation is a rule-based heuristic on "
