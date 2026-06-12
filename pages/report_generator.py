@@ -1153,6 +1153,11 @@ with col_left:
               border-color: #FF3030 !important;
               box-shadow: 0 0 0 1px #FF3030 !important;
             }
+            input::placeholder {
+              color: #804020 !important;
+              -webkit-text-fill-color: #804020 !important;
+              opacity: 1 !important;
+            }
             [class*="placeholder"] { color: transparent !important; }
             /* Hide the entire indicators column (dropdown arrow,
                separator, loading spinner) — Ticker / Peers fields
