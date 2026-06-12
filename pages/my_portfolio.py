@@ -1608,11 +1608,11 @@ st.markdown(
       }
       .pf-name-top .pf-name { flex: 1; min-width: 0; }
       .pf-trash-icon {
-        font-size: 15px;
-        color: #8a6a30;
+        font-size: 17px;
+        color: #a07040;
         cursor: pointer;
         flex-shrink: 0;
-        padding: 3px 5px;
+        padding: 3px 6px;
         border-radius: 3px;
         line-height: 1;
         transition: color 0.15s ease, background 0.15s ease;
@@ -1823,13 +1823,13 @@ st.markdown(
 
       /* ── Inline portfolio delete icon ──────────────────────────────── */
       .pf-del-pf-icon {
-        font-size: 13px;
-        color: #5a4020;
+        font-size: 17px;
+        color: #a07040;
         cursor: pointer;
-        margin-left: 4px;
+        margin-left: 6px;
         vertical-align: middle;
         display: inline-block;
-        padding: 1px 4px;
+        padding: 1px 5px;
         border-radius: 2px;
         transition: color 0.15s ease, background 0.15s ease;
         line-height: 1;
@@ -1959,6 +1959,13 @@ st.markdown(
         flex-shrink: 0;
       }
       .pf-dd-ok:hover { background: #1a0e00; color: #FFD080; }
+
+      /* ── Searchbox — same max-width as the portfolio dropdown ─────── */
+      @media (min-width: 769px) {
+        div[data-testid="stElementContainer"]:has(iframe[title*="searchbox"]) {
+          max-width: 480px !important;
+        }
+      }
 
     </style>
     """,
