@@ -1586,8 +1586,8 @@ st.markdown(
           position: absolute;
           top: 8px;
           right: 8px;
-          font-size: 16px;
-          padding: 4px 6px;
+          font-size: 12px;
+          padding: 3px 5px;
         }
       }
 
