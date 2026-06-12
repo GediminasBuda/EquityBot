@@ -1143,16 +1143,14 @@ with col_left:
             }
             [class*="control"], [class*="-control"] {
               background-color: #000000 !important;
-              border: 2px solid #8B0000 !important;
-              border-bottom: 2px solid #8B0000 !important;
+              border: none !important;
+              box-shadow: inset 0 0 0 2px #8B0000 !important;
               border-radius: 0 !important;
-              box-shadow: none !important;
               min-height: 38px !important;
             }
             [class*="control"]:hover, [class*="-control"]:hover,
             [class*="control--is-focused"], [class*="-control--is-focused"] {
-              border-color: #8B0000 !important;
-              box-shadow: 0 0 0 1px #8B0000 !important;
+              box-shadow: inset 0 0 0 2px #8B0000 !important;
             }
             input::placeholder {
               color: #804020 !important;
