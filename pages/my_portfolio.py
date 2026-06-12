@@ -1065,6 +1065,7 @@ if "pf_creating_new" not in st.session_state:
     st.session_state.pf_creating_new = False
 
 # ── Portfolio selector row ────────────────────────────────────────────────────
+st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
 _pf_all_names = list(st.session_state.all_portfolios.keys())
 _active_idx = (
     _pf_all_names.index(st.session_state.active_portfolio)
