@@ -1374,13 +1374,28 @@ if selected_ticker:
         st.info(f"**{norm}** is already in your portfolio.")
 
 # ── Top bar ───────────────────────────────────────────────────────────────────
-top_l, top_r = st.columns([6, 1])
+top_l, top_del, top_r = st.columns([5, 0.6, 1])
 with top_l:
     _n = len(st.session_state.portfolio_tickers)
     st.markdown(
         f"**{st.session_state.active_portfolio}** · "
         f"**{_n}** ticker{'s' if _n != 1 else ''} tracked"
     )
+with top_del:
+    if st.button("🗑", key="pf_delete_current", use_container_width=True,
+                 help=f"Delete '{st.session_state.active_portfolio}'"):
+        _all = st.session_state.all_portfolios
+        if len(_all) > 1:
+            del _all[st.session_state.active_portfolio]
+            _save_portfolios(_all)
+            _first = list(_all.keys())[0]
+            st.session_state.active_portfolio = _first
+            st.session_state.portfolio_tickers = list(_all[_first])
+            st.session_state.portfolio_expanded = set()
+            st.session_state.pf_sort_col = None
+            st.rerun()
+        else:
+            st.toast("Cannot delete the last portfolio.", icon="⚠️")
 with top_r:
     if st.button("🔄 Refresh", use_container_width=True):
         _fetch_snapshot.clear()
@@ -1801,8 +1816,11 @@ st.markdown(
         font-family: monospace;
         z-index: 2000;
         margin-bottom: 2px;
-        max-width: 260px;
         width: 100%;
+        max-width: 380px;
+      }
+      @media (max-width: 768px) {
+        .pf-dd-wrapper { max-width: 100%; }
       }
       .pf-dd-display {
         display: flex;
