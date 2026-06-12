@@ -1209,14 +1209,20 @@ with col_left:
 
           function scan() {
             const parent = window.parent || window;
-            const iframes = parent.document.querySelectorAll('iframe');
-            iframes.forEach(f => {
+            // Collect matching iframes in DOM order. The ticker searchbox
+            // (key="rg_searchbox") is always rendered first in the Python
+            // script; all subsequent searchboxes are peer pickers.
+            const matches = [];
+            parent.document.querySelectorAll('iframe').forEach(f => {
               const title = (f.title || '').toLowerCase();
               const src   = (f.src   || '').toLowerCase();
               if (title.includes('searchbox') || src.includes('searchbox')) {
-                const ph = title.includes('rg_searchbox') ? 'find ticker' : 'add peer';
-                try { paint(f.contentDocument, ph); } catch (e) {}
+                matches.push(f);
               }
+            });
+            matches.forEach(function(f, idx) {
+              const ph = idx === 0 ? 'find ticker' : 'add peer';
+              try { paint(f.contentDocument, ph); } catch (e) {}
             });
           }
 
