@@ -595,7 +595,7 @@ def _render_peer_picker(scope: str) -> None:
     pick_key = f"peers_pick_{scope}"
     picked = st_searchbox(
         search_function=_peer_search,
-        placeholder="",
+        placeholder="add peer",
         label=None,
         clear_on_submit=True,
         key=pick_key,
@@ -1112,7 +1112,7 @@ with col_left:
     # ── Smart searchbar (autocomplete + NL prompt) ────────────────────────────
     selected = st_searchbox(
         search_function=_smart_search,
-        placeholder="",
+        placeholder="find ticker",
         label=None,
         clear_on_submit=False,
         key="rg_searchbox",
@@ -1191,14 +1191,19 @@ with col_left:
             body { background-color: #000000 !important; }
           `;
 
-          function paint(doc) {
+          function paint(doc, placeholder) {
             try {
               if (!doc) return;
-              if (doc.getElementById(STYLE_ID)) return;
-              const s = doc.createElement('style');
-              s.id = STYLE_ID;
-              s.textContent = CSS;
-              doc.head.appendChild(s);
+              if (!doc.getElementById(STYLE_ID)) {
+                const s = doc.createElement('style');
+                s.id = STYLE_ID;
+                s.textContent = CSS;
+                doc.head.appendChild(s);
+              }
+              if (placeholder) {
+                const inp = doc.querySelector('input');
+                if (inp && !inp.value) inp.setAttribute('placeholder', placeholder);
+              }
             } catch (e) { /* same-origin race / not ready */ }
           }
 
@@ -1209,7 +1214,8 @@ with col_left:
               const title = (f.title || '').toLowerCase();
               const src   = (f.src   || '').toLowerCase();
               if (title.includes('searchbox') || src.includes('searchbox')) {
-                try { paint(f.contentDocument); } catch (e) {}
+                const ph = title.includes('rg_searchbox') ? 'find ticker' : 'add peer';
+                try { paint(f.contentDocument, ph); } catch (e) {}
               }
             });
           }
