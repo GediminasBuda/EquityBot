@@ -1040,10 +1040,10 @@ if "all_portfolios" not in st.session_state:
 if "active_portfolio" not in st.session_state:
     _pf_names = list(st.session_state.all_portfolios.keys())
     st.session_state.active_portfolio = _pf_names[0] if _pf_names else "My Portfolio"
-if "portfolio_tickers" not in st.session_state:
-    st.session_state.portfolio_tickers = list(
-        st.session_state.all_portfolios.get(st.session_state.active_portfolio, [])
-    )
+# Always re-derive portfolio_tickers from all_portfolios each run to prevent aliasing bugs
+st.session_state.portfolio_tickers = list(
+    st.session_state.all_portfolios.get(st.session_state.active_portfolio, [])
+)
 if "portfolio_expanded" not in st.session_state:
     st.session_state.portfolio_expanded = set()        # tickers currently expanded
 if "portfolio_periods" not in st.session_state:
@@ -1066,9 +1066,6 @@ for _i, _pf_n in enumerate(_pf_all_names):
                 unsafe_allow_html=True)
     if st.button("·", key=f"pf_sw_{_i}"):
         st.session_state.active_portfolio = _pf_n
-        st.session_state.portfolio_tickers = list(
-            st.session_state.all_portfolios.get(_pf_n, [])
-        )
         st.session_state.portfolio_expanded = set()
         st.session_state.pf_sort_col = None
         st.rerun()
@@ -1083,9 +1080,6 @@ if st.button("·", key="pf_do_create"):
             st.session_state.all_portfolios[_cname_qp] = []
             _save_portfolios(st.session_state.all_portfolios)
         st.session_state.active_portfolio = _cname_qp
-        st.session_state.portfolio_tickers = list(
-            st.session_state.all_portfolios.get(_cname_qp, [])
-        )
         st.session_state.portfolio_expanded = set()
         st.session_state.pf_sort_col = None
         if "_pf_new" in st.query_params:
@@ -1399,7 +1393,6 @@ if st.button("·", key="pf_delete_current"):
         _save_portfolios(_all)
         _first = list(_all.keys())[0]
         st.session_state.active_portfolio = _first
-        st.session_state.portfolio_tickers = list(_all[_first])
         st.session_state.portfolio_expanded = set()
         st.session_state.pf_sort_col = None
         st.rerun()
