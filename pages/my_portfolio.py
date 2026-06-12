@@ -1362,13 +1362,13 @@ st.iframe(
 )
 
 if selected_ticker:
-    # Guard: only process each (ticker, portfolio) pair once.
-    # st_searchbox can return a stale value on reruns triggered by portfolio
-    # switches, so we track what we last processed and skip duplicates.
-    _sb_done = st.session_state.get("_pf_sb_done")
-    _sb_pair = (selected_ticker, st.session_state.active_portfolio)
-    if _sb_pair != _sb_done:
-        st.session_state["_pf_sb_done"] = _sb_pair
+    # Guard against stale searchbox values persisting across portfolio-switch
+    # reruns. Track by ticker value only; the flag is reset to None as soon as
+    # selected_ticker becomes None (searchbox cleared by clear_on_submit=True).
+    # This ensures each physical selection is processed exactly once, even if
+    # st_searchbox echoes the same value on several consecutive reruns.
+    if selected_ticker != st.session_state.get("_pf_sb_done"):
+        st.session_state["_pf_sb_done"] = selected_ticker
         norm = _normalize_ticker(selected_ticker)
         if norm and norm not in st.session_state.portfolio_tickers:
             st.session_state.portfolio_tickers.append(norm)
@@ -1378,6 +1378,8 @@ if selected_ticker:
         elif norm in st.session_state.portfolio_tickers:
             st.info(f"**{norm}** is already in your portfolio.")
 else:
+    # Searchbox cleared — reset so the same ticker can be intentionally
+    # added to another portfolio after switching.
     st.session_state["_pf_sb_done"] = None
 
 # ── Top bar ───────────────────────────────────────────────────────────────────
