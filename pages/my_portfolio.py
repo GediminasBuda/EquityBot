@@ -1234,7 +1234,7 @@ st.iframe(
       }
 
       bind();
-      setInterval(bind, 500);
+      setInterval(bind, 100);
     })();
     </script>
     """,
@@ -1363,6 +1363,10 @@ st.iframe(
 
 if selected_ticker:
     norm = _normalize_ticker(selected_ticker)
+    # Clear searchbox session state immediately so it cannot bleed into
+    # subsequent reruns (e.g. a portfolio switch rerun that fires after this one).
+    for _sb_k in [k for k in list(st.session_state.keys()) if "ticker_searchbox" in k]:
+        st.session_state[_sb_k] = None
     if norm and norm not in st.session_state.portfolio_tickers:
         st.session_state.portfolio_tickers.append(norm)
         _save_active_portfolio()
@@ -2051,7 +2055,7 @@ else:
             } catch(e) {}
           }
           bind();
-          setInterval(bind, 500);
+          setInterval(bind, 100);
         })();
         </script>
         """,
