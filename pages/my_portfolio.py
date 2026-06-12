@@ -1101,31 +1101,29 @@ if st.button("·", key="pf_do_create"):
             del st.query_params["_pf_new"]
         st.rerun()
 
-# Custom dropdown — width matches the Name column (2fr / 11.9fr of content)
-_dd_col, _ = st.columns([2, 9.9])
-with _dd_col:
-    _opts_html = "".join(
-        f"<div class='pf-dd-option{' pf-dd-active' if n == st.session_state.active_portfolio else ''}'"
-        f" data-pfidx='{i}'>{_html_pf.escape(n)}</div>"
-        for i, n in enumerate(_pf_all_names)
-    )
-    st.markdown(
-        f"""<div class='pf-dd-wrapper'>
-          <div class='pf-dd-display' id='pf-dd-display'>
-            <span class='pf-dd-cur'>{_html_pf.escape(st.session_state.active_portfolio)}</span>
-            <span class='pf-dd-arrow'>&#9660;</span>
-          </div>
-          <div class='pf-dd-list' id='pf-dd-list'>
-            {_opts_html}
-            <div class='pf-dd-new-btn' id='pf-dd-new-btn'>＋ New portfolio</div>
-          </div>
-          <div class='pf-dd-create' id='pf-dd-create'>
-            <input class='pf-dd-nameinput' id='pf-dd-nameinput'
-                   type='text' placeholder='Enter name' autocomplete='off' />
-            <button class='pf-dd-ok' id='pf-dd-ok'>Ok</button>
-          </div>
-        </div>""",
-        unsafe_allow_html=True,
+# Custom dropdown — rendered directly; width controlled via CSS max-width
+_opts_html = "".join(
+    f"<div class='pf-dd-option{' pf-dd-active' if n == st.session_state.active_portfolio else ''}'"
+    f" data-pfidx='{i}'>{_html_pf.escape(n)}</div>"
+    for i, n in enumerate(_pf_all_names)
+)
+st.markdown(
+    f"""<div class='pf-dd-wrapper'>
+      <div class='pf-dd-display' id='pf-dd-display'>
+        <span class='pf-dd-cur'>{_html_pf.escape(st.session_state.active_portfolio)}</span>
+        <span class='pf-dd-arrow'>&#9660;</span>
+      </div>
+      <div class='pf-dd-list' id='pf-dd-list'>
+        {_opts_html}
+        <div class='pf-dd-new-btn' id='pf-dd-new-btn'>＋ New portfolio</div>
+      </div>
+      <div class='pf-dd-create' id='pf-dd-create'>
+        <input class='pf-dd-nameinput' id='pf-dd-nameinput'
+               type='text' placeholder='Enter name' autocomplete='off' />
+        <button class='pf-dd-ok' id='pf-dd-ok'>Ok</button>
+      </div>
+    </div>""",
+    unsafe_allow_html=True,
     )
 
 # JS that wires the custom dropdown to the hidden Streamlit controls
@@ -1803,6 +1801,8 @@ st.markdown(
         font-family: monospace;
         z-index: 2000;
         margin-bottom: 2px;
+        max-width: 260px;
+        width: 100%;
       }
       .pf-dd-display {
         display: flex;
@@ -1876,7 +1876,11 @@ st.markdown(
         padding: 6px 10px;
         min-width: 0;
       }
-      .pf-dd-nameinput::placeholder { color: #804020; opacity: 1; }
+      .pf-dd-nameinput::placeholder {
+        color: #8a6a30 !important;
+        -webkit-text-fill-color: #8a6a30 !important;
+        opacity: 1 !important;
+      }
       .pf-dd-ok {
         background: #000000;
         border: none;
@@ -1891,16 +1895,6 @@ st.markdown(
       }
       .pf-dd-ok:hover { background: #1a0606; color: #FF3030; }
 
-      /* Collapse the Streamlit column gap so the dropdown column
-         sits flush left with no extra spacing */
-      div[data-testid="stHorizontalBlock"]:has(.pf-dd-wrapper) {
-        gap: 0 !important;
-        margin-bottom: 0 !important;
-      }
-      div[data-testid="stHorizontalBlock"]:has(.pf-dd-wrapper)
-        > div[data-testid="stColumn"]:nth-child(2) {
-        display: none !important;
-      }
     </style>
     """,
     unsafe_allow_html=True,
