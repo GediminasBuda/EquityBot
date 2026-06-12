@@ -1006,21 +1006,26 @@ st.markdown(
     ".st-emotion-cache-1dy2t46 h4 { font-size: 1rem !important; }"
     ".st-emotion-cache-1dy2t46 { margin-bottom: -10px; }"
     # ── Collapse the JS-injection iframe wrappers so they don't add
-    # an empty row between the searchbox and the first portfolio
-    # card. Hidden via display:none on both wrappers — the iframe's
-    # script still runs (display:none does not stop iframe scripts
-    # in Chrome/Firefox/Safari). Applies on every viewport because
-    # the user wants the styling consistent. */
+    # an empty row between the searchbox and the first portfolio card.
+    # The anchor div/container uses display:none (no JS, safe to hide).
+    # The STYLE IFRAME container uses height:0/overflow:hidden instead of
+    # display:none — display:none on a newly-inserted iframe container
+    # prevents the browser from loading it after a Streamlit rerun,
+    # breaking CSS injection into the searchbox. height:0 keeps it
+    # visually hidden but lets the script execute. */
     ".pf-style-iframe-anchor { display: none; }"
     "div[data-testid=\"stElementContainer\"]:has(.pf-style-iframe-anchor),"
     "div[data-testid=\"element-container\"]:has(.pf-style-iframe-anchor),"
     "div.stElementContainer:has(.pf-style-iframe-anchor),"
-    "div.element-container:has(.pf-style-iframe-anchor),"
+    "div.element-container:has(.pf-style-iframe-anchor) {"
+    "  display: none !important;"
+    "}"
     "div[data-testid=\"stElementContainer\"]:has(.pf-style-iframe-anchor) + div[data-testid=\"stElementContainer\"],"
     "div[data-testid=\"element-container\"]:has(.pf-style-iframe-anchor) + div[data-testid=\"element-container\"],"
     "div.stElementContainer:has(.pf-style-iframe-anchor) + div.stElementContainer,"
     "div.element-container:has(.pf-style-iframe-anchor) + div.element-container {"
-    "  display: none !important;"
+    "  height: 0 !important; min-height: 0 !important; max-height: 0 !important;"
+    "  overflow: hidden !important; padding: 0 !important; margin: 0 !important;"
     "}"
     "</style>",
     unsafe_allow_html=True,
