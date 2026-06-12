@@ -1158,16 +1158,6 @@ st.iframe(
         var list    = doc.getElementById('pf-dd-list');
         var create  = doc.getElementById('pf-dd-create');
 
-        /* If create form has stale inline display:flex (persisted across rerun),
-           reset it so it doesn't cover the searchbox or alter layout */
-        if (create && create.style.display === 'flex') {
-          /* Only reset if the list is closed — means no user action is pending */
-          if (!list || list.style.display === 'none' || list.style.display === '') {
-            create.style.display  = 'none';
-            if (display) display.style.display = '';
-          }
-        }
-
         /* toggle dropdown open/close */
         if (display && !display._pfBound) {
           display._pfBound = true;
