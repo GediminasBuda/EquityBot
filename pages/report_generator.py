@@ -1136,22 +1136,22 @@ with col_left:
           const CSS = `
             input, .css-1d391kg input, [class*="control"] input {
               background-color: #000000 !important;
-              color: #FF3030 !important;
-              caret-color: #FF3030 !important;
-              -webkit-text-fill-color: #FF3030 !important;
+              color: #8B0000 !important;
+              caret-color: #8B0000 !important;
+              -webkit-text-fill-color: #8B0000 !important;
               font-family: monospace !important;
             }
             [class*="control"], [class*="-control"] {
               background-color: #000000 !important;
-              border: 1px solid #FF3030 !important;
+              border: 1px solid #8B0000 !important;
               border-radius: 0 !important;
               box-shadow: none !important;
               min-height: 38px !important;
             }
             [class*="control"]:hover, [class*="-control"]:hover,
             [class*="control--is-focused"], [class*="-control--is-focused"] {
-              border-color: #FF3030 !important;
-              box-shadow: 0 0 0 1px #FF3030 !important;
+              border-color: #8B0000 !important;
+              box-shadow: 0 0 0 1px #8B0000 !important;
             }
             input::placeholder {
               color: #804020 !important;
@@ -1180,7 +1180,7 @@ with col_left:
             }
             [class*="menu"] {
               background-color: #000000 !important;
-              border: 1px solid #FF3030 !important;
+              border: 1px solid #8B0000 !important;
               border-radius: 0 !important;
             }
             [class*="option"] {
@@ -1189,10 +1189,10 @@ with col_left:
               font-family: monospace !important;
             }
             [class*="option--is-focused"], [class*="option"]:hover {
-              background-color: #1a0606 !important;
-              color: #FF3030 !important;
+              background-color: #0d0000 !important;
+              color: #8B0000 !important;
             }
-            [class*="singleValue"] { color: #FF3030 !important; }
+            [class*="singleValue"] { color: #8B0000 !important; }
             body { background-color: #000000 !important; }
           `;
 

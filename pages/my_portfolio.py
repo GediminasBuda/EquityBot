@@ -1243,24 +1243,24 @@ st.iframe(
       /* ── Inject red-border CSS into the st_searchbox iframe ── */
       var STYLE_ID = 'eqbot-searchbox-red';
       var SB_CSS = (
-        'input,[class*="control"] input{background:#000!important;color:#FF3030!important;' +
-        'caret-color:#FF3030!important;-webkit-text-fill-color:#FF3030!important;font-family:monospace!important}' +
+        'input,[class*="control"] input{background:#000!important;color:#8B0000!important;' +
+        'caret-color:#8B0000!important;-webkit-text-fill-color:#8B0000!important;font-family:monospace!important}' +
         'input::placeholder,[class*="placeholder"]{color:#804020!important;' +
         '-webkit-text-fill-color:#804020!important;opacity:1!important;font-family:monospace!important}' +
-        '[class*="control"],[class*="-control"]{background:#000!important;border:1px solid #FF3030!important;' +
+        '[class*="control"],[class*="-control"]{background:#000!important;border:1px solid #8B0000!important;' +
         'border-radius:0!important;box-shadow:none!important;min-height:38px!important}' +
         '[class*="control"]:hover,[class*="-control"]:hover,' +
         '[class*="control--is-focused"],[class*="-control--is-focused"]' +
-        '{border-color:#FF3030!important;box-shadow:0 0 0 1px #FF3030!important}' +
+        '{border-color:#8B0000!important;box-shadow:0 0 0 1px #8B0000!important}' +
         '[class*="placeholder"]{color:transparent!important}' +
         '.css-1wy0on6,[class*="indicatorContainer"],[class*="IndicatorsContainer"],' +
         '[class*="indicatorSeparator"],[class*="IndicatorSeparator"],' +
         '[class*="loadingIndicator"],[class*="LoadingIndicator"],[class*="dropdownIndicator"]' +
         '{display:none!important}' +
-        '[class*="menu"]{background:#000!important;border:1px solid #FF3030!important;border-radius:0!important}' +
+        '[class*="menu"]{background:#000!important;border:1px solid #8B0000!important;border-radius:0!important}' +
         '[class*="option"]{background:#000!important;color:#FFA028!important;font-family:monospace!important}' +
-        '[class*="option--is-focused"],[class*="option"]:hover{background:#1a0606!important;color:#FF3030!important}' +
-        '[class*="singleValue"]{color:#FF3030!important}' +
+        '[class*="option--is-focused"],[class*="option"]:hover{background:#0d0000!important;color:#8B0000!important}' +
+        '[class*="singleValue"]{color:#8B0000!important}' +
         'body{background:#000!important}'
       );
       function paintSB(doc) {
