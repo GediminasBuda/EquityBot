@@ -1794,6 +1794,9 @@ st.markdown(
         color: #FF3030 !important;
         background: #200505 !important;
       }
+      @media (max-width: 768px) {
+        .pf-del-pf-icon { font-size: 12px; padding: 1px 4px; }
+      }
 
       /* ── Custom portfolio dropdown ─────────────────────────────────── */
       .pf-dd-wrapper {
