@@ -1143,7 +1143,7 @@ with col_left:
             }
             [class*="control"], [class*="-control"] {
               background-color: #000000 !important;
-              border: 1px solid #8B0000 !important;
+              border: 2px solid #8B0000 !important;
               border-radius: 0 !important;
               box-shadow: none !important;
               min-height: 38px !important;
@@ -1180,7 +1180,7 @@ with col_left:
             }
             [class*="menu"] {
               background-color: #000000 !important;
-              border: 1px solid #8B0000 !important;
+              border: 2px solid #8B0000 !important;
               border-radius: 0 !important;
             }
             [class*="option"] {
