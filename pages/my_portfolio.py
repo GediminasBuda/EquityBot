@@ -1082,23 +1082,23 @@ for _i, _pf_n in enumerate(_pf_all_names):
         st.session_state.pf_sort_col = None
         st.rerun()
 
-# Hidden text input + create button for new portfolio
-st.markdown("<div class='pf-nameinput-anchor'></div>", unsafe_allow_html=True)
-_pf_new_name_val = st.text_input("·", key="pf_new_name_hidden",
-                                  label_visibility="collapsed")
+# Hidden create button — reads new portfolio name from URL query param
+# (JS stores it via history.replaceState before clicking this button)
+_cname_qp = (st.query_params.get("_pf_new") or "").strip()
 st.markdown("<div class='pf-create-anchor'></div>", unsafe_allow_html=True)
 if st.button("·", key="pf_do_create"):
-    _cname = (_pf_new_name_val or "").strip()
-    if _cname:
-        if _cname not in st.session_state.all_portfolios:
-            st.session_state.all_portfolios[_cname] = []
+    if _cname_qp:
+        if _cname_qp not in st.session_state.all_portfolios:
+            st.session_state.all_portfolios[_cname_qp] = []
             _save_portfolios(st.session_state.all_portfolios)
-        st.session_state.active_portfolio = _cname
+        st.session_state.active_portfolio = _cname_qp
         st.session_state.portfolio_tickers = list(
-            st.session_state.all_portfolios.get(_cname, [])
+            st.session_state.all_portfolios.get(_cname_qp, [])
         )
         st.session_state.portfolio_expanded = set()
         st.session_state.pf_sort_col = None
+        if "_pf_new" in st.query_params:
+            del st.query_params["_pf_new"]
         st.rerun()
 
 # Custom dropdown — width matches the Name column (2fr / 11.9fr of content)
@@ -1121,7 +1121,7 @@ with _dd_col:
           </div>
           <div class='pf-dd-create' id='pf-dd-create'>
             <input class='pf-dd-nameinput' id='pf-dd-nameinput'
-                   type='text' placeholder='enter name' autocomplete='off' />
+                   type='text' placeholder='Enter name' autocomplete='off' />
             <button class='pf-dd-ok' id='pf-dd-ok'>Ok</button>
           </div>
         </div>""",
@@ -1133,14 +1133,6 @@ st.iframe(
     """
     <script>
     (function() {
-      function reactSet(input, value) {
-        var setter = Object.getOwnPropertyDescriptor(
-          window.HTMLInputElement.prototype, 'value').set;
-        setter.call(input, value);
-        input.dispatchEvent(new Event('input',  { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-
       function anchorBtn(cls, attr, val) {
         var doc = window.parent.document;
         var sel = '.' + cls + (attr ? '[' + attr + '="' + CSS.escape(String(val)) + '"]' : '');
@@ -1155,27 +1147,19 @@ st.iframe(
         return next ? next.querySelector('button') : null;
       }
 
-      function anchorInput(cls) {
-        var doc = window.parent.document;
-        var anchor = doc.querySelector('.' + cls);
-        if (!anchor) return null;
-        var wrap = anchor.parentElement;
-        while (wrap && !wrap.matches(
-          '[data-testid="stElementContainer"],[data-testid="element-container"]'))
-          wrap = wrap.parentElement;
-        if (!wrap) return null;
-        var next = wrap.nextElementSibling;
-        return next ? next.querySelector('input') : null;
-      }
-
       function doCreate(doc) {
         var inp = doc.getElementById('pf-dd-nameinput');
         var val = (inp ? inp.value : '').trim();
         if (!val) return;
-        var hidden = anchorInput('pf-nameinput-anchor');
-        if (hidden) reactSet(hidden, val);
+        /* Store the name in the URL query param so Python reads it on rerun */
+        try {
+          var url = new URL(window.parent.location.href);
+          url.searchParams.set('_pf_new', val);
+          window.parent.history.replaceState({}, '', url.toString());
+        } catch(e) {}
+        /* Click the hidden create button to trigger a Streamlit rerun */
         var btn = anchorBtn('pf-create-anchor');
-        if (btn) setTimeout(function() { btn.click(); }, 150);
+        if (btn) btn.click();
       }
 
       function bind() {
@@ -1808,8 +1792,6 @@ st.markdown(
       /* ── Hide portfolio-switch / nameinput / create anchors + siblings ─ */
       div[data-testid="stElementContainer"]:has(.pf-sw-anchor),
       div[data-testid="stElementContainer"]:has(.pf-sw-anchor) + div[data-testid="stElementContainer"],
-      div[data-testid="stElementContainer"]:has(.pf-nameinput-anchor),
-      div[data-testid="stElementContainer"]:has(.pf-nameinput-anchor) + div[data-testid="stElementContainer"],
       div[data-testid="stElementContainer"]:has(.pf-create-anchor),
       div[data-testid="stElementContainer"]:has(.pf-create-anchor) + div[data-testid="stElementContainer"] {
         display: none !important;
