@@ -1025,15 +1025,6 @@ st.markdown(
     "</style>",
     unsafe_allow_html=True,
 )
-st.markdown(
-    "<div class='eq-page-title' "
-    "style='display:flex;align-items:center;gap:8px;margin:0;'>"
-    "<span style='font-size:20px;'>📁</span>"
-    "<span style='font-size:16px;font-weight:700;color:#FFA028;"
-    "font-family:monospace;letter-spacing:1px;text-transform:uppercase;'>"
-    "Portfolios</span></div>",
-    unsafe_allow_html=True,
-)
 
 if not EODHD_API_KEY:
     st.error(
@@ -1065,7 +1056,7 @@ if "pf_sort_asc" not in st.session_state:
 import html as _html_pf
 import json as _json_pf
 
-st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+st.markdown("<div style='margin-top:10px'></div>", unsafe_allow_html=True)
 _pf_all_names = list(st.session_state.all_portfolios.keys())
 
 # Hidden Streamlit controls (CSS-collapsed, JS-clickable) ─────────────────────
@@ -1110,6 +1101,8 @@ _opts_html = "".join(
 st.markdown(
     f"""<div class='pf-dd-wrapper'>
       <div class='pf-dd-display' id='pf-dd-display'>
+        <span class='pf-dd-title'>&#128193; PORTFOLIOS</span>
+        <span class='pf-dd-sep'>&#9474;</span>
         <span class='pf-dd-cur'>{_html_pf.escape(st.session_state.active_portfolio)}</span>
         <span class='pf-dd-arrow'>&#9660;</span>
       </div>
@@ -1853,7 +1846,7 @@ st.markdown(
         z-index: 2000;
         margin-bottom: 2px;
         width: 100%;
-        max-width: 380px;
+        max-width: 480px;
       }
       @media (max-width: 768px) {
         .pf-dd-wrapper { max-width: 100%; }
@@ -1861,22 +1854,40 @@ st.markdown(
       .pf-dd-display {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        gap: 0;
         padding: 6px 10px;
         background: #000000;
-        border: 1px solid #FF3030;
+        border: 1px solid #FFA028;
         cursor: pointer;
         color: #FFA028;
         font-size: 13px;
         user-select: none;
         white-space: nowrap;
       }
-      .pf-dd-display:hover { border-color: #FF6050; }
+      .pf-dd-display:hover { border-color: #FFB040; }
+      /* "📁 PORTFOLIOS" prefix label */
+      .pf-dd-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #FFA028;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        flex-shrink: 0;
+        margin-right: 8px;
+      }
+      /* vertical separator between title and portfolio name */
+      .pf-dd-sep {
+        color: #4a3010;
+        font-size: 14px;
+        margin-right: 8px;
+        flex-shrink: 0;
+      }
       .pf-dd-cur {
         flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
         margin-right: 6px;
+        color: #FFD080;
       }
       .pf-dd-arrow { font-size: 9px; color: #8a6a30; flex-shrink: 0; }
       .pf-dd-list {
@@ -1886,7 +1897,7 @@ st.markdown(
         left: 0;
         right: 0;
         background: #000000;
-        border: 1px solid #FF3030;
+        border: 1px solid #FFA028;
         border-top: none;
         z-index: 2001;
         box-shadow: 0 4px 12px rgba(0,0,0,0.8);
@@ -1900,8 +1911,8 @@ st.markdown(
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .pf-dd-option:hover  { background: #1a0606; color: #FF3030; }
-      .pf-dd-option.pf-dd-active { color: #FFD080; }
+      .pf-dd-option:hover  { background: #1a0e00; color: #FFD080; }
+      .pf-dd-option.pf-dd-active { color: #FFD080; font-weight: 700; }
       .pf-dd-new-btn {
         padding: 6px 10px;
         color: #8a6a30;
@@ -1916,15 +1927,15 @@ st.markdown(
         flex-direction: row;
         align-items: center;
         background: #000000;
-        border: 1px solid #FF3030;
+        border: 1px solid #FFA028;
       }
       .pf-dd-nameinput {
         flex: 1;
         background: #000000;
         border: none;
         outline: none;
-        color: #FF3030;
-        caret-color: #FF3030;
+        color: #FFA028;
+        caret-color: #FFA028;
         font-family: monospace;
         font-size: 13px;
         padding: 6px 10px;
@@ -1938,7 +1949,7 @@ st.markdown(
       .pf-dd-ok {
         background: #000000;
         border: none;
-        border-left: 1px solid #FF3030;
+        border-left: 1px solid #FFA028;
         color: #FFA028;
         font-family: monospace;
         font-size: 12px;
@@ -1947,7 +1958,7 @@ st.markdown(
         white-space: nowrap;
         flex-shrink: 0;
       }
-      .pf-dd-ok:hover { background: #1a0606; color: #FF3030; }
+      .pf-dd-ok:hover { background: #1a0e00; color: #FFD080; }
 
     </style>
     """,
