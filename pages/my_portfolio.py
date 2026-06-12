@@ -1061,66 +1061,205 @@ if "pf_sort_col" not in st.session_state:
     st.session_state.pf_sort_col = None               # None = original order
 if "pf_sort_asc" not in st.session_state:
     st.session_state.pf_sort_asc = False
-if "pf_creating_new" not in st.session_state:
-    st.session_state.pf_creating_new = False
+# ── Portfolio selector (custom narrow dropdown, JS-driven) ────────────────────
+import html as _html_pf
+import json as _json_pf
 
-# ── Portfolio selector row ────────────────────────────────────────────────────
 st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
 _pf_all_names = list(st.session_state.all_portfolios.keys())
-_active_idx = (
-    _pf_all_names.index(st.session_state.active_portfolio)
-    if st.session_state.active_portfolio in _pf_all_names else 0
-)
 
-_sel_col, _btn_col = st.columns([5, 1])
-with _sel_col:
-    _selected_pf = st.selectbox(
-        "Portfolio",
-        options=_pf_all_names,
-        index=_active_idx,
-        label_visibility="collapsed",
-        key="pf_selector",
-    )
-with _btn_col:
-    if st.button("＋ New", use_container_width=True, key="pf_create_btn"):
-        st.session_state.pf_creating_new = not st.session_state.pf_creating_new
+# Hidden Streamlit controls (CSS-collapsed, JS-clickable) ─────────────────────
+# One switch button per portfolio
+for _i, _pf_n in enumerate(_pf_all_names):
+    st.markdown(f"<div class='pf-sw-anchor' data-pfidx='{_i}'></div>",
+                unsafe_allow_html=True)
+    if st.button("·", key=f"pf_sw_{_i}"):
+        st.session_state.active_portfolio = _pf_n
+        st.session_state.portfolio_tickers = list(
+            st.session_state.all_portfolios.get(_pf_n, [])
+        )
+        st.session_state.portfolio_expanded = set()
+        st.session_state.pf_sort_col = None
         st.rerun()
 
-# Switch active portfolio when selector changes
-if _selected_pf != st.session_state.active_portfolio:
-    st.session_state.active_portfolio = _selected_pf
-    st.session_state.portfolio_tickers = list(
-        st.session_state.all_portfolios.get(_selected_pf, [])
-    )
-    st.session_state.portfolio_expanded = set()
-    st.session_state.pf_sort_col = None
-    st.rerun()
-
-# New-portfolio creation form
-if st.session_state.pf_creating_new:
-    _ni_col, _nc_col = st.columns([5, 1])
-    with _ni_col:
-        _new_pf_name = st.text_input(
-            "Name",
-            placeholder="Portfolio name…",
-            label_visibility="collapsed",
-            key="pf_new_name_input",
+# Hidden text input + create button for new portfolio
+st.markdown("<div class='pf-nameinput-anchor'></div>", unsafe_allow_html=True)
+_pf_new_name_val = st.text_input("·", key="pf_new_name_hidden",
+                                  label_visibility="collapsed")
+st.markdown("<div class='pf-create-anchor'></div>", unsafe_allow_html=True)
+if st.button("·", key="pf_do_create"):
+    _cname = (_pf_new_name_val or "").strip()
+    if _cname:
+        if _cname not in st.session_state.all_portfolios:
+            st.session_state.all_portfolios[_cname] = []
+            _save_portfolios(st.session_state.all_portfolios)
+        st.session_state.active_portfolio = _cname
+        st.session_state.portfolio_tickers = list(
+            st.session_state.all_portfolios.get(_cname, [])
         )
-    with _nc_col:
-        if st.button("Create", use_container_width=True, key="pf_confirm_create"):
-            _name = (_new_pf_name or "").strip()
-            if _name:
-                if _name not in st.session_state.all_portfolios:
-                    st.session_state.all_portfolios[_name] = []
-                    _save_portfolios(st.session_state.all_portfolios)
-                st.session_state.active_portfolio = _name
-                st.session_state.portfolio_tickers = list(
-                    st.session_state.all_portfolios[_name]
-                )
-                st.session_state.pf_creating_new = False
-                st.session_state.portfolio_expanded = set()
-                st.session_state.pf_sort_col = None
-                st.rerun()
+        st.session_state.portfolio_expanded = set()
+        st.session_state.pf_sort_col = None
+        st.rerun()
+
+# Custom dropdown — width matches the Name column (2fr / 11.9fr of content)
+_dd_col, _ = st.columns([2, 9.9])
+with _dd_col:
+    _opts_html = "".join(
+        f"<div class='pf-dd-option{' pf-dd-active' if n == st.session_state.active_portfolio else ''}'"
+        f" data-pfidx='{i}'>{_html_pf.escape(n)}</div>"
+        for i, n in enumerate(_pf_all_names)
+    )
+    st.markdown(
+        f"""<div class='pf-dd-wrapper'>
+          <div class='pf-dd-display' id='pf-dd-display'>
+            <span class='pf-dd-cur'>{_html_pf.escape(st.session_state.active_portfolio)}</span>
+            <span class='pf-dd-arrow'>&#9660;</span>
+          </div>
+          <div class='pf-dd-list' id='pf-dd-list'>
+            {_opts_html}
+            <div class='pf-dd-new-btn' id='pf-dd-new-btn'>＋ New portfolio</div>
+          </div>
+          <div class='pf-dd-create' id='pf-dd-create'>
+            <input class='pf-dd-nameinput' id='pf-dd-nameinput'
+                   type='text' placeholder='enter name' autocomplete='off' />
+            <button class='pf-dd-ok' id='pf-dd-ok'>Ok</button>
+          </div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+# JS that wires the custom dropdown to the hidden Streamlit controls
+st.iframe(
+    """
+    <script>
+    (function() {
+      function reactSet(input, value) {
+        var setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype, 'value').set;
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+
+      function anchorBtn(cls, attr, val) {
+        var doc = window.parent.document;
+        var sel = '.' + cls + (attr ? '[' + attr + '="' + CSS.escape(String(val)) + '"]' : '');
+        var anchor = doc.querySelector(sel);
+        if (!anchor) return null;
+        var wrap = anchor.parentElement;
+        while (wrap && !wrap.matches(
+          '[data-testid="stElementContainer"],[data-testid="element-container"]'))
+          wrap = wrap.parentElement;
+        if (!wrap) return null;
+        var next = wrap.nextElementSibling;
+        return next ? next.querySelector('button') : null;
+      }
+
+      function anchorInput(cls) {
+        var doc = window.parent.document;
+        var anchor = doc.querySelector('.' + cls);
+        if (!anchor) return null;
+        var wrap = anchor.parentElement;
+        while (wrap && !wrap.matches(
+          '[data-testid="stElementContainer"],[data-testid="element-container"]'))
+          wrap = wrap.parentElement;
+        if (!wrap) return null;
+        var next = wrap.nextElementSibling;
+        return next ? next.querySelector('input') : null;
+      }
+
+      function doCreate(doc) {
+        var inp = doc.getElementById('pf-dd-nameinput');
+        var val = (inp ? inp.value : '').trim();
+        if (!val) return;
+        var hidden = anchorInput('pf-nameinput-anchor');
+        if (hidden) reactSet(hidden, val);
+        var btn = anchorBtn('pf-create-anchor');
+        if (btn) setTimeout(function() { btn.click(); }, 150);
+      }
+
+      function bind() {
+        var doc = window.parent.document;
+        var display = doc.getElementById('pf-dd-display');
+        var list    = doc.getElementById('pf-dd-list');
+        var create  = doc.getElementById('pf-dd-create');
+
+        /* toggle dropdown open/close */
+        if (display && !display._pfBound) {
+          display._pfBound = true;
+          display.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (!list) return;
+            var open = list.style.display !== 'none';
+            list.style.display = open ? 'none' : 'block';
+          });
+        }
+
+        /* close on outside click */
+        if (!doc._pfOutsideBound) {
+          doc._pfOutsideBound = true;
+          doc.addEventListener('click', function(e) {
+            var w = doc.querySelector('.pf-dd-wrapper');
+            if (w && !w.contains(e.target)) {
+              var l = doc.getElementById('pf-dd-list');
+              if (l) l.style.display = 'none';
+            }
+          });
+        }
+
+        /* portfolio option click → switch */
+        doc.querySelectorAll('.pf-dd-option[data-pfidx]').forEach(function(opt) {
+          if (opt._pfBound) return;
+          opt._pfBound = true;
+          opt.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (list) list.style.display = 'none';
+            var btn = anchorBtn('pf-sw-anchor', 'data-pfidx', this.dataset.pfidx);
+            if (btn) btn.click();
+          });
+        });
+
+        /* "+ New portfolio" → show create form */
+        var newBtn = doc.getElementById('pf-dd-new-btn');
+        if (newBtn && !newBtn._pfBound) {
+          newBtn._pfBound = true;
+          newBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (list)    list.style.display    = 'none';
+            if (display) display.style.display = 'none';
+            if (create)  create.style.display  = 'flex';
+            var inp = doc.getElementById('pf-dd-nameinput');
+            if (inp) { inp.value = ''; inp.focus(); }
+          });
+        }
+
+        /* Ok button */
+        var okBtn = doc.getElementById('pf-dd-ok');
+        if (okBtn && !okBtn._pfBound) {
+          okBtn._pfBound = true;
+          okBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            doCreate(doc);
+          });
+        }
+
+        /* Enter in name field */
+        var nameInp = doc.getElementById('pf-dd-nameinput');
+        if (nameInp && !nameInp._pfEnterBound) {
+          nameInp._pfEnterBound = true;
+          nameInp.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.stopPropagation(); doCreate(doc); }
+          });
+        }
+      }
+
+      bind();
+      setInterval(bind, 500);
+    })();
+    </script>
+    """,
+    height=1,
+)
 
 # ── Add-ticker searchbox (type-as-you-go, EODHD /search) ──────────────────────
 # st_searchbox calls _ticker_search() on every keystroke (debounced) and
@@ -1663,6 +1802,121 @@ st.markdown(
       /* ── Hide sort anchor + button wrappers ───────────────────────── */
       div[data-testid="stElementContainer"]:has(.pf-sort-anchor),
       div[data-testid="stElementContainer"]:has(.pf-sort-anchor) + div[data-testid="stElementContainer"] {
+        display: none !important;
+      }
+
+      /* ── Hide portfolio-switch / nameinput / create anchors + siblings ─ */
+      div[data-testid="stElementContainer"]:has(.pf-sw-anchor),
+      div[data-testid="stElementContainer"]:has(.pf-sw-anchor) + div[data-testid="stElementContainer"],
+      div[data-testid="stElementContainer"]:has(.pf-nameinput-anchor),
+      div[data-testid="stElementContainer"]:has(.pf-nameinput-anchor) + div[data-testid="stElementContainer"],
+      div[data-testid="stElementContainer"]:has(.pf-create-anchor),
+      div[data-testid="stElementContainer"]:has(.pf-create-anchor) + div[data-testid="stElementContainer"] {
+        display: none !important;
+      }
+
+      /* ── Custom portfolio dropdown ─────────────────────────────────── */
+      .pf-dd-wrapper {
+        position: relative;
+        font-family: monospace;
+        z-index: 2000;
+        margin-bottom: 2px;
+      }
+      .pf-dd-display {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 10px;
+        background: #000000;
+        border: 1px solid #FF3030;
+        cursor: pointer;
+        color: #FFA028;
+        font-size: 13px;
+        user-select: none;
+        white-space: nowrap;
+      }
+      .pf-dd-display:hover { border-color: #FF6050; }
+      .pf-dd-cur {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-right: 6px;
+      }
+      .pf-dd-arrow { font-size: 9px; color: #8a6a30; flex-shrink: 0; }
+      .pf-dd-list {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: #000000;
+        border: 1px solid #FF3030;
+        border-top: none;
+        z-index: 2001;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+      }
+      .pf-dd-option {
+        padding: 6px 10px;
+        color: #FFA028;
+        font-size: 13px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .pf-dd-option:hover  { background: #1a0606; color: #FF3030; }
+      .pf-dd-option.pf-dd-active { color: #FFD080; }
+      .pf-dd-new-btn {
+        padding: 6px 10px;
+        color: #8a6a30;
+        font-size: 12px;
+        cursor: pointer;
+        border-top: 1px solid #2a1f10;
+      }
+      .pf-dd-new-btn:hover { background: #0a0500; color: #FFA028; }
+      /* Create form (input + Ok) — same border/style as the display row */
+      .pf-dd-create {
+        display: none;
+        flex-direction: row;
+        align-items: center;
+        background: #000000;
+        border: 1px solid #FF3030;
+      }
+      .pf-dd-nameinput {
+        flex: 1;
+        background: #000000;
+        border: none;
+        outline: none;
+        color: #FF3030;
+        caret-color: #FF3030;
+        font-family: monospace;
+        font-size: 13px;
+        padding: 6px 10px;
+        min-width: 0;
+      }
+      .pf-dd-nameinput::placeholder { color: #804020; opacity: 1; }
+      .pf-dd-ok {
+        background: #000000;
+        border: none;
+        border-left: 1px solid #FF3030;
+        color: #FFA028;
+        font-family: monospace;
+        font-size: 12px;
+        padding: 6px 12px;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .pf-dd-ok:hover { background: #1a0606; color: #FF3030; }
+
+      /* Collapse the Streamlit column gap so the dropdown column
+         sits flush left with no extra spacing */
+      div[data-testid="stHorizontalBlock"]:has(.pf-dd-wrapper) {
+        gap: 0 !important;
+        margin-bottom: 0 !important;
+      }
+      div[data-testid="stHorizontalBlock"]:has(.pf-dd-wrapper)
+        > div[data-testid="stColumn"]:nth-child(2) {
         display: none !important;
       }
     </style>
