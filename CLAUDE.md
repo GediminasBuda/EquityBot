@@ -1,6 +1,6 @@
 # Your Humble EquityBot — Agent Handoff Documentation
 
-**Last updated:** 2026-06-11  
+**Last updated:** 2026-06-12  
 **Stack:** Python 3.11 · Streamlit · ReportLab · Claude / GPT-4o · EODHD · yfinance  
 **Deployment:** Streamlit Community Cloud (auto-deploys on push to `Final-design-V3`)  
 **Repo:** https://github.com/GediminasBuda/EquityBot
@@ -550,3 +550,87 @@ python -c "import agents.pdf_eodhd_sheet, agents.pdf_overview; print('OK')"
 
 - **Adversarial mode**: Only implemented for Overview and Gravity. Fisher does not have adversarial support.
 - **Universe screener**: Exists (`models/universe_screener.py`) but is not covered in this documentation. Runs a framework against multiple tickers and produces an HTML comparison.
+
+---
+
+## 19. My Portfolio — Multi-Portfolio Feature (2026-06-12)
+
+### Architecture
+
+Multiple named portfolios. Stored as `{"portfolios": {"My Portfolio": [...], "GB": [...]}}` in the GitHub Gist (and mirrored to the local file as a fallback).
+
+**Session state keys:**
+- `all_portfolios` — `dict[str, list[str]]`: full portfolio map, loaded from Gist once per session
+- `active_portfolio` — `str`: name of the currently visible portfolio
+- `portfolio_tickers` — `list[str]`: re-derived from `all_portfolios[active_portfolio]` on **every rerun** (not guarded by `if not in session_state`). This is intentional — prevents aliasing bugs where `portfolio_tickers` drifts from the ground truth in `all_portfolios`.
+
+**Flow when switching portfolios:** JS click on `pf-dd-option` → fires hidden `pf-sw-anchor` Streamlit button → `active_portfolio` updated → `st.rerun()`. On rerun, `portfolio_tickers` is re-derived from `all_portfolios[active_portfolio]`.
+
+**Flow when creating a portfolio:** JS `doCreate()` → stores name in `?_pf_new=<name>` URL query param via `history.replaceState` → fires hidden `pf-create-anchor` Streamlit button → Python reads `_cname_qp = st.query_params.get("_pf_new")` → creates entry in `all_portfolios` → saves → `st.rerun()`.
+
+### JS–CSS Bridge Pattern
+
+Streamlit renders hidden buttons (text = `"·"`) whose containers are collapsed to zero via CSS. JavaScript running inside a `st.iframe` reaches up into the parent Streamlit page, finds the hidden button by traversing up from a nearby marker `<div>`, and calls `.click()` on it. This triggers a Streamlit rerun as if the user clicked the button.
+
+Key components:
+- `anchorBtn(cls, attr, val)` — finds the hidden button adjacent to the marker div with class `cls`
+- Marker divs: `.pf-sw-anchor[data-pfidx]`, `.pf-create-anchor`, `.pf-del-pf-anchor`, `.pf-toggle-anchor[data-ticker]`, `.pf-del-anchor[data-ticker]`, `.pf-sort-anchor[data-sortcol]`
+- `setInterval(bind, 100)` — rebinds click handlers every 100ms because Streamlit rebuilds the DOM on each rerun
+
+### Ticker-Add Dedup Guard (`_pf_sb_done`)
+
+`st_searchbox` with `clear_on_submit=True` can echo the last selected ticker on subsequent reruns (React component state persistence). Guard: `st.session_state["_pf_sb_done"]` stores the last processed ticker value. A new ticker selection is only processed when `selected_ticker != _pf_sb_done`. The guard resets to `None` when `selected_ticker` becomes `None` (searchbox cleared), allowing the same ticker to be intentionally added to a different portfolio later.
+
+**Critical: track by ticker value only, NOT `(ticker, portfolio)` pair.** A tuple key changes when the portfolio switches even if the searchbox is showing a stale value from the previous portfolio, causing the stale ticker to bleed into the new portfolio.
+
+### Dropdown JS Iframe — Hidden via CSS Anchor Pattern
+
+The dropdown iframe (`st.iframe(height=1)`) is hidden using the same anchor pattern as other hidden controls:
+
+```python
+st.markdown("<div class='pf-dd-js-anchor'></div>", unsafe_allow_html=True)
+st.iframe(dropdown_js, height=1)
+```
+
+CSS:
+```css
+.pf-dd-js-anchor { display: none; }
+div[data-testid="stElementContainer"]:has(.pf-dd-js-anchor),
+div[data-testid="stElementContainer"]:has(.pf-dd-js-anchor) + div[data-testid="stElementContainer"] {
+  display: none !important;
+}
+```
+
+`display: none` on the **parent container** does NOT prevent an iframe from loading and executing scripts in Chrome/Firefox/Safari. The dropdown JS keeps running even though its container is hidden.
+
+### Searchbox Style Injection (merged into dropdown iframe)
+
+The red-border CSS for `st_searchbox` is injected by `scanSB()`/`paintSB()` functions inside the **dropdown JS iframe** (not a separate iframe). `scanSB()` runs every 400ms, finds all iframes on the parent page whose `title` or `src` contains `"searchbox"`, and appends a `<style id="eqbot-searchbox-red">` block to their `contentDocument`. The style id prevents duplicate injection.
+
+**Why merged:** A separate `st.iframe` for style injection was unreliable. After a Streamlit rerun, Streamlit creates a NEW iframe node. If its container is `display:none`, some browsers defer loading it. The dropdown iframe is always guaranteed to load (needed for dropdown functionality), so merging is more robust.
+
+### Known Bugs Fixed (this session)
+
+#### Ticker bleeding across all portfolios
+`portfolio_tickers` was initialised with `if not in session_state` guard, allowing it to drift from `all_portfolios` across reruns. Fixed by always re-deriving on every rerun (no guard). The `_pf_sb_done` dedup guard prevents stale searchbox echoes from adding tickers to wrong portfolios after portfolio switches.
+
+#### Delete button non-functional on newly created portfolios
+`setInterval(bind, 500)` in the dropdown iframe left a 500ms window after a switch where new DOM elements had no click handlers. Fixed by reducing to 100ms.
+
+#### Create form persisting after portfolio creation (searchbox gap)
+When the user clicks OK, JS sets `display:flex` on the create form as inline styles. If React reuses the DOM node across a Streamlit rerun (which it does when the component position doesn't change), the inline style persists, leaving the create form visible and displacing the searchbox. Fixed by resetting the inline styles inside `doCreate()` **before** triggering the Streamlit button click.
+
+#### Searchbox invisible after rerun (black on black)
+The separate style-injection iframe's container was `display:none`. A newly-inserted iframe in a `display:none` parent can be deferred by the browser, so the CSS injection script never ran after reruns. The searchbox rendered with default (dark) styling — invisible against the black page. Fixed by merging style injection into the always-running dropdown iframe and removing the separate iframe.
+
+#### Phantom gap above searchbox (dropdown iframe not hidden)
+The dropdown JS iframe had no CSS hiding its container. Streamlit's default element spacing gave it ~20–40px height. Fixed by adding `pf-dd-js-anchor` marker and corresponding `display:none` CSS (same pattern as all other hidden Streamlit controls).
+
+### Gotchas for Future Development
+
+- **Never use a `(ticker, portfolio)` tuple as the `_pf_sb_done` key.** It causes the stale-searchbox ticker to bleed into the new portfolio on every switch.
+- **Always re-derive `portfolio_tickers` from `all_portfolios` every rerun** (no `if not in session_state` guard). A guarded init causes the in-memory list to drift from the persisted map.
+- **`display:none` on a parent DOES allow iframe scripts to run** in Chrome/Firefox/Safari. Don't change the dropdown iframe's hiding CSS to `height:0/overflow:hidden` — `display:none` is the correct and tested approach.
+- **Gist save is synchronous and blocks the rerun.** `_GIST_TIMEOUT = 5` (reduced from 15). Don't increase it; the UI hangs for the full timeout duration on slow connections.
+- **`pf-dd-js-anchor + div` CSS targets the dropdown iframe container.** If you add any new `st.markdown` or `st.` element between the anchor and the iframe, it will hide that element instead of the iframe. Keep anchor and iframe adjacent with nothing between them.
+- **The `_pfBound` flag pattern prevents duplicate event listeners** on dropdown elements across the 100ms bind() interval. When adding new interactive elements to the dropdown HTML, always check `if (el && !el._pfBound)` before attaching listeners.

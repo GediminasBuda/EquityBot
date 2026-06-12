@@ -60,7 +60,7 @@ EODHD_BASE = "https://eodhistoricaldata.com/api"
 _GIST_DESC      = "EquityBot Portfolio (do not delete)"
 _GIST_FILENAME  = "portfolio.json"
 _GIST_API       = "https://api.github.com"
-_GIST_TIMEOUT   = 15
+_GIST_TIMEOUT   = 5
 
 
 def _gist_token() -> Optional[str]:
@@ -1065,6 +1065,7 @@ for _i, _pf_n in enumerate(_pf_all_names):
     if st.button("·", key=f"pf_sw_{_i}"):
         st.session_state.active_portfolio = _pf_n
         st.session_state.portfolio_expanded = set()
+        st.session_state.portfolio_periods = {}
         st.session_state.pf_sort_col = None
         st.rerun()
 
@@ -2134,7 +2135,7 @@ else:
         next_earnings = _fetch_next_earnings(ticker)
 
         # Name + ticker + (sector if available) at left
-        name_full = snap["name"] or ticker
+        name_full = snap.get("name") or ticker
         sector = snap.get("sector") or ""
         sub_bits = [ticker] + ([sector] if sector else [])
         sub_line = " · ".join(sub_bits)
