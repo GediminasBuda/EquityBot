@@ -1248,6 +1248,7 @@ st.iframe(
         'input::placeholder,[class*="placeholder"]{color:#804020!important;' +
         '-webkit-text-fill-color:#804020!important;opacity:1!important;font-family:monospace!important}' +
         '[class*="control"],[class*="-control"]{background:#000!important;border:2px solid #8B0000!important;' +
+        'border-bottom:2px solid #8B0000!important;' +
         'border-radius:0!important;box-shadow:none!important;min-height:38px!important}' +
         '[class*="control"]:hover,[class*="-control"]:hover,' +
         '[class*="control--is-focused"],[class*="-control--is-focused"]' +
