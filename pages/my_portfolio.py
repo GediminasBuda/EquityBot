@@ -1362,21 +1362,23 @@ st.iframe(
 )
 
 if selected_ticker:
-    norm = _normalize_ticker(selected_ticker)
-    # Clear searchbox session state immediately so it cannot bleed into
-    # subsequent reruns (e.g. a portfolio switch rerun that fires after this one).
-    for _sb_k in [k for k in list(st.session_state.keys()) if "ticker_searchbox" in k]:
-        try:
-            st.session_state[_sb_k] = None
-        except Exception:
-            pass
-    if norm and norm not in st.session_state.portfolio_tickers:
-        st.session_state.portfolio_tickers.append(norm)
-        _save_active_portfolio()
-        st.success(f"Added **{norm}** to portfolio.")
-        st.rerun()
-    elif norm in st.session_state.portfolio_tickers:
-        st.info(f"**{norm}** is already in your portfolio.")
+    # Guard: only process each (ticker, portfolio) pair once.
+    # st_searchbox can return a stale value on reruns triggered by portfolio
+    # switches, so we track what we last processed and skip duplicates.
+    _sb_done = st.session_state.get("_pf_sb_done")
+    _sb_pair = (selected_ticker, st.session_state.active_portfolio)
+    if _sb_pair != _sb_done:
+        st.session_state["_pf_sb_done"] = _sb_pair
+        norm = _normalize_ticker(selected_ticker)
+        if norm and norm not in st.session_state.portfolio_tickers:
+            st.session_state.portfolio_tickers.append(norm)
+            _save_active_portfolio()
+            st.success(f"Added **{norm}** to portfolio.")
+            st.rerun()
+        elif norm in st.session_state.portfolio_tickers:
+            st.info(f"**{norm}** is already in your portfolio.")
+else:
+    st.session_state["_pf_sb_done"] = None
 
 # ── Top bar ───────────────────────────────────────────────────────────────────
 top_l, top_r = st.columns([6, 1])
