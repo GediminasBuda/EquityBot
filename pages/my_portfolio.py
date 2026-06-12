@@ -1366,7 +1366,10 @@ if selected_ticker:
     # Clear searchbox session state immediately so it cannot bleed into
     # subsequent reruns (e.g. a portfolio switch rerun that fires after this one).
     for _sb_k in [k for k in list(st.session_state.keys()) if "ticker_searchbox" in k]:
-        st.session_state[_sb_k] = None
+        try:
+            st.session_state[_sb_k] = None
+        except Exception:
+            pass
     if norm and norm not in st.session_state.portfolio_tickers:
         st.session_state.portfolio_tickers.append(norm)
         _save_active_portfolio()
