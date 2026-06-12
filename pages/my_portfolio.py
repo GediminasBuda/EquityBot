@@ -1005,27 +1005,20 @@ st.markdown(
     # #### markdown blocks in, so they don't dominate the layout.
     ".st-emotion-cache-1dy2t46 h4 { font-size: 1rem !important; }"
     ".st-emotion-cache-1dy2t46 { margin-bottom: -10px; }"
-    # ── Collapse the JS-injection iframe wrappers so they don't add
-    # an empty row between the searchbox and the first portfolio card.
-    # The anchor div/container uses display:none (no JS, safe to hide).
-    # The STYLE IFRAME container uses height:0/overflow:hidden instead of
-    # display:none — display:none on a newly-inserted iframe container
-    # prevents the browser from loading it after a Streamlit rerun,
-    # breaking CSS injection into the searchbox. height:0 keeps it
-    # visually hidden but lets the script execute. */
-    ".pf-style-iframe-anchor { display: none; }"
-    "div[data-testid=\"stElementContainer\"]:has(.pf-style-iframe-anchor),"
-    "div[data-testid=\"element-container\"]:has(.pf-style-iframe-anchor),"
-    "div.stElementContainer:has(.pf-style-iframe-anchor),"
-    "div.element-container:has(.pf-style-iframe-anchor) {"
+    # ── Collapse the dropdown-JS iframe wrapper. Both the anchor div's
+    # container and the adjacent iframe container use display:none —
+    # display:none does NOT prevent iframe script execution in Chrome /
+    # Firefox / Safari (confirmed), so the dropdown bind() keeps running. */
+    ".pf-dd-js-anchor { display: none; }"
+    "div[data-testid=\"stElementContainer\"]:has(.pf-dd-js-anchor),"
+    "div[data-testid=\"element-container\"]:has(.pf-dd-js-anchor),"
+    "div.stElementContainer:has(.pf-dd-js-anchor),"
+    "div.element-container:has(.pf-dd-js-anchor),"
+    "div[data-testid=\"stElementContainer\"]:has(.pf-dd-js-anchor) + div[data-testid=\"stElementContainer\"],"
+    "div[data-testid=\"element-container\"]:has(.pf-dd-js-anchor) + div[data-testid=\"element-container\"],"
+    "div.stElementContainer:has(.pf-dd-js-anchor) + div.stElementContainer,"
+    "div.element-container:has(.pf-dd-js-anchor) + div.element-container {"
     "  display: none !important;"
-    "}"
-    "div[data-testid=\"stElementContainer\"]:has(.pf-style-iframe-anchor) + div[data-testid=\"stElementContainer\"],"
-    "div[data-testid=\"element-container\"]:has(.pf-style-iframe-anchor) + div[data-testid=\"element-container\"],"
-    "div.stElementContainer:has(.pf-style-iframe-anchor) + div.stElementContainer,"
-    "div.element-container:has(.pf-style-iframe-anchor) + div.element-container {"
-    "  height: 0 !important; min-height: 0 !important; max-height: 0 !important;"
-    "  overflow: hidden !important; padding: 0 !important; margin: 0 !important;"
     "}"
     "</style>",
     unsafe_allow_html=True,
@@ -1118,7 +1111,10 @@ st.markdown(
     unsafe_allow_html=True,
     )
 
-# JS that wires the custom dropdown to the hidden Streamlit controls
+# JS that wires the custom dropdown to the hidden Streamlit controls.
+# Also injects red-border CSS into the st_searchbox iframe (scan/paint),
+# so we need only ONE hidden JS iframe instead of two.
+st.markdown("<div class='pf-dd-js-anchor'></div>", unsafe_allow_html=True)
 st.iframe(
     """
     <script>
@@ -1243,6 +1239,57 @@ st.iframe(
         });
       }
 
+      /* ── Inject red-border CSS into the st_searchbox iframe ── */
+      var STYLE_ID = 'eqbot-searchbox-red';
+      var SB_CSS = (
+        'input,[class*="control"] input{background:#000!important;color:#FF3030!important;' +
+        'caret-color:#FF3030!important;-webkit-text-fill-color:#FF3030!important;font-family:monospace!important}' +
+        'input::placeholder,[class*="placeholder"]{color:#804020!important;' +
+        '-webkit-text-fill-color:#804020!important;opacity:1!important;font-family:monospace!important}' +
+        '[class*="control"],[class*="-control"]{background:#000!important;border:1px solid #FF3030!important;' +
+        'border-radius:0!important;box-shadow:none!important;min-height:38px!important}' +
+        '[class*="control"]:hover,[class*="-control"]:hover,' +
+        '[class*="control--is-focused"],[class*="-control--is-focused"]' +
+        '{border-color:#FF3030!important;box-shadow:0 0 0 1px #FF3030!important}' +
+        '[class*="placeholder"]{color:transparent!important}' +
+        '.css-1wy0on6,[class*="indicatorContainer"],[class*="IndicatorsContainer"],' +
+        '[class*="indicatorSeparator"],[class*="IndicatorSeparator"],' +
+        '[class*="loadingIndicator"],[class*="LoadingIndicator"],[class*="dropdownIndicator"]' +
+        '{display:none!important}' +
+        '[class*="menu"]{background:#000!important;border:1px solid #FF3030!important;border-radius:0!important}' +
+        '[class*="option"]{background:#000!important;color:#FFA028!important;font-family:monospace!important}' +
+        '[class*="option--is-focused"],[class*="option"]:hover{background:#1a0606!important;color:#FF3030!important}' +
+        '[class*="singleValue"]{color:#FF3030!important}' +
+        'body{background:#000!important}'
+      );
+      function paintSB(doc) {
+        try {
+          if (!doc) return;
+          if (!doc.getElementById(STYLE_ID)) {
+            var s = doc.createElement('style');
+            s.id = STYLE_ID;
+            s.textContent = SB_CSS;
+            doc.head.appendChild(s);
+          }
+          var inp = doc.querySelector('input');
+          if (inp && !inp.value) inp.setAttribute('placeholder', 'add ticker');
+        } catch(e) {}
+      }
+      function scanSB() {
+        var parent = window.parent || window;
+        try {
+          parent.document.querySelectorAll('iframe').forEach(function(f) {
+            var t = (f.title || '').toLowerCase();
+            var s = (f.src   || '').toLowerCase();
+            if (t.indexOf('searchbox') >= 0 || s.indexOf('searchbox') >= 0) {
+              try { paintSB(f.contentDocument); } catch(e) {}
+            }
+          });
+        } catch(e) {}
+      }
+      scanSB();
+      setInterval(scanSB, 400);
+
       bind();
       setInterval(bind, 100);
     })();
@@ -1264,112 +1311,6 @@ selected_ticker = st_searchbox(
     key="ticker_searchbox",
 )
 
-# ── Inject red styling into this page's streamlit_searchbox iframes ────
-# Same approach as the Report Generator: a parent-page <script> reaches
-# every searchbox iframe (same-origin) and appends a <style> block.
-# Repaints every 800ms in case Streamlit re-creates the iframe on a
-# rerender. The anchor div lets CSS collapse the iframe wrapper's
-# default padding so it doesn't add an empty gap below the searchbox.
-st.markdown("<div class='pf-style-iframe-anchor'></div>",
-            unsafe_allow_html=True)
-st.iframe(
-    """
-    <script>
-    (function () {
-      const STYLE_ID = 'eqbot-searchbox-red';
-      const CSS = `
-        input, .css-1d391kg input, [class*="control"] input {
-          background-color: #000000 !important;
-          color: #FF3030 !important;
-          caret-color: #FF3030 !important;
-          -webkit-text-fill-color: #FF3030 !important;
-          font-family: monospace !important;
-        }
-        input::placeholder, [class*="placeholder"] {
-          color: #804020 !important;
-          -webkit-text-fill-color: #804020 !important;
-          opacity: 1 !important;
-          font-family: monospace !important;
-        }
-        [class*="placeholder"] {
-          color: #804020 !important;
-        }
-        [class*="control"], [class*="-control"] {
-          background-color: #000000 !important;
-          border: 1px solid #FF3030 !important;
-          border-radius: 0 !important;
-          box-shadow: none !important;
-          min-height: 38px !important;
-        }
-        [class*="control"]:hover, [class*="-control"]:hover,
-        [class*="control--is-focused"], [class*="-control--is-focused"] {
-          border-color: #FF3030 !important;
-          box-shadow: 0 0 0 1px #FF3030 !important;
-        }
-        [class*="placeholder"] { color: transparent !important; }
-        .css-1wy0on6,
-        [class*="indicatorContainer"],
-        [class*="IndicatorsContainer"],
-        [class*="indicator-container"],
-        [class*="dropdownIndicator"],
-        [class*="DropdownIndicator"],
-        [class*="indicatorSeparator"],
-        [class*="IndicatorSeparator"],
-        [class*="loadingIndicator"],
-        [class*="LoadingIndicator"] {
-          display: none !important;
-        }
-        [class*="menu"] {
-          background-color: #000000 !important;
-          border: 1px solid #FF3030 !important;
-          border-radius: 0 !important;
-        }
-        [class*="option"] {
-          background-color: #000000 !important;
-          color: #FFA028 !important;
-          font-family: monospace !important;
-        }
-        [class*="option--is-focused"], [class*="option"]:hover {
-          background-color: #1a0606 !important;
-          color: #FF3030 !important;
-        }
-        [class*="singleValue"] { color: #FF3030 !important; }
-        body { background-color: #000000 !important; }
-      `;
-
-      function paint(doc) {
-        try {
-          if (!doc) return;
-          if (!doc.getElementById(STYLE_ID)) {
-            const s = doc.createElement('style');
-            s.id = STYLE_ID;
-            s.textContent = CSS;
-            doc.head.appendChild(s);
-          }
-          const inp = doc.querySelector('input');
-          if (inp && !inp.value) inp.setAttribute('placeholder', 'add ticker');
-        } catch (e) { /* same-origin race / not ready */ }
-      }
-
-      function scan() {
-        const parent = window.parent || window;
-        const iframes = parent.document.querySelectorAll('iframe');
-        iframes.forEach(f => {
-          const title = (f.title || '').toLowerCase();
-          const src   = (f.src   || '').toLowerCase();
-          if (title.includes('searchbox') || src.includes('searchbox')) {
-            try { paint(f.contentDocument); } catch (e) {}
-          }
-        });
-      }
-
-      scan();
-      setInterval(scan, 800);
-    })();
-    </script>
-    """,
-    height=1,
-)
 
 if selected_ticker:
     # Guard against stale searchbox values persisting across portfolio-switch
