@@ -1136,6 +1136,11 @@ st.iframe(
         var inp = doc.getElementById('pf-dd-nameinput');
         var val = (inp ? inp.value : '').trim();
         if (!val) return;
+        /* Reset UI immediately so inline styles don't persist through the rerun */
+        var create  = doc.getElementById('pf-dd-create');
+        var display = doc.getElementById('pf-dd-display');
+        if (create)  create.style.display  = 'none';
+        if (display) display.style.display = '';
         /* Store the name in the URL query param so Python reads it on rerun */
         try {
           var url = new URL(window.parent.location.href);
@@ -1152,6 +1157,16 @@ st.iframe(
         var display = doc.getElementById('pf-dd-display');
         var list    = doc.getElementById('pf-dd-list');
         var create  = doc.getElementById('pf-dd-create');
+
+        /* If create form has stale inline display:flex (persisted across rerun),
+           reset it so it doesn't cover the searchbox or alter layout */
+        if (create && create.style.display === 'flex') {
+          /* Only reset if the list is closed — means no user action is pending */
+          if (!list || list.style.display === 'none' || list.style.display === '') {
+            create.style.display  = 'none';
+            if (display) display.style.display = '';
+          }
+        }
 
         /* toggle dropdown open/close */
         if (display && !display._pfBound) {
