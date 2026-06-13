@@ -356,6 +356,8 @@ def _snapshot_yf(yf_ticker: str) -> dict:
         week_52_low  = _to_float(info.get("fiftyTwoWeekLow"))
         forward_pe   = _to_float(info.get("forwardPE"))
         q_rev_growth = _to_float(info.get("revenueGrowth"))
+        ev           = _to_float(info.get("enterpriseValue"))
+        ev_ebitda    = _to_float(info.get("enterpriseToEbitda"))
 
         return {
             "eodhd_ticker": yf_ticker,
@@ -364,6 +366,7 @@ def _snapshot_yf(yf_ticker: str) -> dict:
             "pe": pe, "roe": roe, "ebit_margin": ebit_mg, "ytd_pct": ytd_pct,
             "week_52_high": week_52_high, "week_52_low": week_52_low,
             "forward_pe": forward_pe, "q_rev_growth": q_rev_growth,
+            "ev": ev, "ev_ebitda": ev_ebitda,
         }
     except Exception:
         return _empty
@@ -471,6 +474,8 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
     valuation    = fund.get("Valuation") or {}
     forward_pe   = _to_float(valuation.get("ForwardPE")) or _to_float(highlights.get("ForwardPE"))
     q_rev_growth = _to_float(highlights.get("QuarterlyRevenueGrowthYOY"))
+    ev           = _to_float(valuation.get("EnterpriseValue")) or _to_float(highlights.get("EnterpriseValue"))
+    ev_ebitda    = _to_float(valuation.get("EnterpriseValueEbitda")) or _to_float(highlights.get("EnterpriseValueEbitda"))
 
     # ── YTD: pull the first trading day of the current year close ────────────
     ytd_pct: Optional[float] = None
@@ -516,6 +521,8 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
         "week_52_low":  week_52_low,
         "forward_pe":   forward_pe,
         "q_rev_growth": q_rev_growth,
+        "ev":           ev,
+        "ev_ebitda":    ev_ebitda,
     }
 
 
@@ -1396,12 +1403,12 @@ st.markdown(
         z-index: 1;
       }
 
-      /* ── Summary grid: name + 11 metrics ─────────────────────────── */
+      /* ── Summary grid: name + 13 metrics ─────────────────────────── */
       .pf-summary {
         display: grid;
         grid-template-columns:
           minmax(0, 2fr)     /* name + ticker */
-          repeat(11, minmax(0, 0.9fr));   /* earnings · price · mcap · pe · fpe · roe · ebit · qrev · ytd · 52wh · 52wl */
+          repeat(13, minmax(0, 0.9fr));   /* earnings · price · mcap · ev · ev/ebitda · pe · fpe · roe · ebit · qrev · ytd · 52wh · 52wl */
         gap: 6px 4px;
         align-items: center;
       }
@@ -1522,16 +1529,18 @@ st.markdown(
               Row 3: ROE   | YTD
            (Name cell + Earnings are above thanks to grid-column span;
            order on grid items still flows them left→right, top→bottom.) */
-        .pf-m-price { order: 1; }
-        .pf-m-mcap  { order: 2; }
-        .pf-m-pe    { order: 3; }
-        .pf-m-fpe   { order: 4; }
-        .pf-m-roe   { order: 5; }
-        .pf-m-ebit  { order: 6; }
-        .pf-m-qrev  { order: 7; }
-        .pf-m-ytd   { order: 8; }
-        .pf-m-52wh  { order: 9; }
-        .pf-m-52wl  { order: 10; }
+        .pf-m-price    { order: 1; }
+        .pf-m-mcap     { order: 2; }
+        .pf-m-ev       { order: 3; }
+        .pf-m-evebitda { order: 4; }
+        .pf-m-pe       { order: 5; }
+        .pf-m-fpe      { order: 6; }
+        .pf-m-roe      { order: 7; }
+        .pf-m-ebit     { order: 8; }
+        .pf-m-qrev     { order: 9; }
+        .pf-m-ytd      { order: 10; }
+        .pf-m-52wh     { order: 11; }
+        .pf-m-52wl     { order: 12; }
       }
 
       /* ── Phone (≤380px): keep the 2-col metric grid (so the 6 lower
@@ -1738,7 +1747,7 @@ st.markdown(
         display: grid;
         grid-template-columns:
           minmax(0, 2fr)
-          repeat(11, minmax(0, 0.9fr));
+          repeat(13, minmax(0, 0.9fr));
         gap: 0 4px;
         padding: 0 12px 3px;
         align-items: center;
@@ -2042,18 +2051,20 @@ else:
 
     # ── Column definitions for header + sort ─────────────────────────────────
     _SORT_COLS = [
-        ("name",      "Name",      "name"),
-        ("earnings",  "Earnings",  "next_earnings"),
-        ("price",     "Price",     "price"),
-        ("mcap",      "Mkt Cap",   "market_cap"),
-        ("pe",        "P/E",       "pe"),
-        ("fpe",       "Forward P/E",     "forward_pe"),
-        ("roe",       "ROE",       "roe"),
-        ("ebit",      "EBIT M.",   "ebit_margin"),
+        ("name",      "Name",       "name"),
+        ("earnings",  "Earnings",   "next_earnings"),
+        ("price",     "Price",      "price"),
+        ("mcap",      "Mkt Cap",    "market_cap"),
+        ("ev",        "EV",         "ev"),
+        ("evebitda",  "EV/EBITDA",  "ev_ebitda"),
+        ("pe",        "P/E",        "pe"),
+        ("fpe",       "Forward P/E","forward_pe"),
+        ("roe",       "ROE",        "roe"),
+        ("ebit",      "EBIT M.",    "ebit_margin"),
         ("qrev",      "Q REV YoY", "q_rev_growth"),
-        ("ytd",       "YTD",       "ytd_pct"),
-        ("52wh",      "52WH",      "week_52_high"),
-        ("52wl",      "52WL",      "week_52_low"),
+        ("ytd",       "YTD",        "ytd_pct"),
+        ("52wh",      "52WH",       "week_52_high"),
+        ("52wl",      "52WL",       "week_52_low"),
     ]
 
     # ── Sort header row ───────────────────────────────────────────────────────
@@ -2178,6 +2189,8 @@ else:
             f"{_metric_html('Earnings', earn_value, extra_cls='pf-m-earnings', **earn_kw)}"
             f"{_metric_html('Price', _fmt_price(snap['price'], snap['currency']), color='#4D9FFF' if (snap.get('change_pct') or 0) > 0 else ('#FF3030' if (snap.get('change_pct') or 0) < 0 else '#FFA028'), extra_cls='pf-m-price')}"
             f"{_metric_html('Mkt Cap', _fmt_money(snap['market_cap']), extra_cls='pf-m-mcap')}"
+            f"{_metric_html('EV', _fmt_money(snap.get('ev')), extra_cls='pf-m-ev')}"
+            f"{_metric_html('EV/EBITDA', _fmt_ratio(snap.get('ev_ebitda')), extra_cls='pf-m-evebitda')}"
             f"{_metric_html('P/E', _fmt_ratio(snap['pe']), extra_cls='pf-m-pe')}"
             f"{_metric_html('Forward P/E', fpe_text, extra_cls='pf-m-fpe')}"
             f"{_metric_html('ROE', _fmt_pct(snap['roe']), extra_cls='pf-m-roe')}"
