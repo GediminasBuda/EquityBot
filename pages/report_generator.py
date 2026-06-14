@@ -1649,8 +1649,6 @@ with col_right:
     elif _is_nl_query:
         st.caption("💡 Natural language detected — click Generate to interpret and run.")
 
-st.divider()
-
 
 # ── Bulk run from screener table ──────────────────────────────────────────────
 # Triggered by the "🚀 Run [Framework] on all N" button in the screener
