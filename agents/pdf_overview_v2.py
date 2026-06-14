@@ -121,7 +121,7 @@ def _styles(company_name: str = "") -> dict:
         ),
         "body": S("body",
             fontName=BASE_FONT, fontSize=8.5, textColor=HexColor('#222222'),
-            leading=13, alignment=TA_JUSTIFY, spaceAfter=4,
+            leading=13, alignment=TA_JUSTIFY, spaceAfter=8,
         ),
         "body_small": S("body_small",
             fontName=BASE_FONT, fontSize=7.8, textColor=MGRAY,
@@ -154,11 +154,11 @@ def _styles(company_name: str = "") -> dict:
         ),
         "news_sub": S("news_sub",
             fontName=BOLD_FONT, fontSize=8, textColor=NAVY,
-            spaceBefore=5, spaceAfter=2, leading=10, leftIndent=0,
+            spaceBefore=8, spaceAfter=3, leading=10, leftIndent=0,
         ),
         "news_item": S("news_item",
             fontName=BASE_FONT, fontSize=8, textColor=HexColor('#222222'),
-            leading=11, leftIndent=0, spaceAfter=1, alignment=TA_JUSTIFY,
+            leading=12, leftIndent=0, spaceAfter=6, alignment=TA_JUSTIFY,
         ),
         "news_meta": S("news_meta",
             fontName=OBLIQUE_FONT, fontSize=6.5, textColor=MGRAY,
@@ -1163,17 +1163,16 @@ class OverviewV2PDFGenerator:
                     # Bold section header
                     _hdr = _part[2:-2].strip().rstrip(";:—- ")
                     if _hdr:
-                        el.append(Spacer(1, 4))
                         el.append(Paragraph(_hdr, styles["news_sub"]))
                 else:
                     # Body: collapse all newlines into spaces, clean stray punctuation
-                    _body = _re.sub(r'\s*\n\s*', ' ', _part)   # newlines → space
-                    _body = _re.sub(r'\s{2,}', ' ', _body)      # multiple spaces → one
-                    _body = _re.sub(r'^\s*[,\.;]\s*', '', _body) # leading punctuation
+                    _body = _re.sub(r'\s*\n\s*', ' ', _part)      # newlines → space
+                    _body = _re.sub(r'\s{2,}', ' ', _body)         # multiple spaces → one
+                    _body = _re.sub(r'^\s*[,\.;]\s*', '', _body)   # leading punctuation
+                    _body = _re.sub(r'\s+([.!?,;:])', r'\1', _body) # "word ." → "word."
                     _body = _body.strip()
                     if len(_body) > 4:  # skip stray punctuation fragments
                         el.append(Paragraph(_body, styles["news_item"]))
-                        el.append(Spacer(1, 2))
 
         return el
 
@@ -1275,12 +1274,27 @@ class OverviewV2PDFGenerator:
 
 # ── Text helpers ──────────────────────────────────────────────────────────────
 
-def _split_paragraphs(text: str) -> list[str]:
-    """Split long text on double newlines; clean up for ReportLab."""
+def _split_paragraphs(text: str, sentences_per_para: int = 4) -> list[str]:
+    """Split long text into readable paragraphs for ReportLab.
+
+    Tries double-newline splits first. If the LLM returned a single block
+    (common for snapshot/bull/bear), falls back to grouping every
+    `sentences_per_para` sentences into one paragraph.
+    """
+    import re as _re
     if not text:
         return [""]
+    # Prefer explicit paragraph breaks from the LLM
     paras = [p.strip() for p in text.replace("\r\n", "\n").split("\n\n") if p.strip()]
-    return paras if paras else [text]
+    if len(paras) >= 2:
+        return paras
+    # Fallback: split on sentence endings then group
+    sentences = _re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = [s.strip() for s in sentences if s.strip()]
+    grouped = []
+    for i in range(0, len(sentences), sentences_per_para):
+        grouped.append(" ".join(sentences[i:i + sentences_per_para]))
+    return grouped if grouped else [text]
 
 
 def _fmt_b(v) -> str:
