@@ -1109,9 +1109,12 @@ class OverviewV2PDFGenerator:
         # TTM date footnote
         _ttm_date = getattr(company, 'ttm_last_quarter_date', None)
         if _ttm_date:
+            _note_bold_ttm = ParagraphStyle(
+                "tbl_note_bold_ttm", parent=_note_style, fontName=BOLD_FONT,
+            )
             el.append(Paragraph(
-                f"TTM — last quarterly earnings report: {_ttm_date}",
-                _note_style,
+                f"<b>TTM / Most Recent Quarter: {_ttm_date}</b>",
+                _note_bold_ttm,
             ))
         _next_ed = getattr(company, 'next_earnings_date', None) or "—"
         if _ttm_date:  # only show if TTM line is shown (i.e. we have EODHD data)

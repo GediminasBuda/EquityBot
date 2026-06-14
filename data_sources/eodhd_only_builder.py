@@ -231,7 +231,7 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         if _sorted_q:
             _latest_q = _sorted_q[0]
             company.ttm_last_quarter_date = (
-                _latest_q[:7] if len(_latest_q) >= 7 else _latest_q
+                _latest_q[:10] if len(_latest_q) >= 10 else _latest_q
             )
         # Fallback: sum last 4 quarters when Highlights TTM is missing
         if company.ttm_revenue is None:

@@ -732,9 +732,8 @@ class EODHDAdapter:
         # Sort quarterly dates descending to find the most recent 4 quarters
         sorted_dates = sorted(income_q.keys(), reverse=True)
         if sorted_dates:
-            # Store as "YYYY-MM" (trim day)
             latest = sorted_dates[0]
-            company.ttm_last_quarter_date = latest[:7] if len(latest) >= 7 else latest
+            company.ttm_last_quarter_date = latest[:10] if len(latest) >= 10 else latest
 
         # Fallback: compute TTM revenue/EBITDA by summing last 4 quarters
         recent_4 = sorted_dates[:4]
