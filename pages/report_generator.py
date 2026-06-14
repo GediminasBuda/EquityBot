@@ -2115,7 +2115,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(35, text="🤖  Running LLM (EODHD-only context)…")
                 st.write("🤖  Running LLM on EODHD-only context…")
                 analysis = llm.generate_json(dynamic_prompt, SYS,
-                                             max_tokens=5000,
+                                             max_tokens=8000,
                                              cacheable_prefix=cacheable_pfx)
                 rec = analysis.get("recommendation", "n/a")
                 st.write(f"✓  Recommendation: **{rec}**")
