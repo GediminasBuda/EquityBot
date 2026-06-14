@@ -980,25 +980,18 @@ st.markdown(
     ".rg-peers-mobile-wrap { display: none; }"
     ".rg-peers-desktop-wrap { display: none; }"
     ".rg-style-iframe-anchor { display: none; }"
-    # ── Mobile only: collapse both the rg-style-iframe-anchor
-    # wrapper AND the immediately-following stElementContainer
-    # (which holds the JS-injection iframe). The iframe runs the
-    # script that re-paints the searchbox red, and it stays in
-    # the DOM (display:none on the wrapper still lets the script
-    # execute) — but its visible empty ~32px row between Ticker
-    # and Peers is gone on phones. Desktop keeps the iframe row
-    # visible because the gap is hidden behind col_right content. */
-    "@media (max-width: 768px) {"
-    "  div[data-testid=\"stElementContainer\"]:has(.rg-style-iframe-anchor),"
-    "  div[data-testid=\"element-container\"]:has(.rg-style-iframe-anchor),"
-    "  div.stElementContainer:has(.rg-style-iframe-anchor),"
-    "  div.element-container:has(.rg-style-iframe-anchor),"
-    "  div[data-testid=\"stElementContainer\"]:has(.rg-style-iframe-anchor) + div[data-testid=\"stElementContainer\"],"
-    "  div[data-testid=\"element-container\"]:has(.rg-style-iframe-anchor) + div[data-testid=\"element-container\"],"
-    "  div.stElementContainer:has(.rg-style-iframe-anchor) + div.stElementContainer,"
-    "  div.element-container:has(.rg-style-iframe-anchor) + div.element-container {"
-    "    display: none !important;"
-    "  }"
+    # ── Always hide the rg-style-iframe-anchor wrapper and its
+    # immediately-following stElementContainer (the JS-injection
+    # iframe). display:none still allows the iframe script to run.
+    "div[data-testid=\"stElementContainer\"]:has(.rg-style-iframe-anchor),"
+    "div[data-testid=\"element-container\"]:has(.rg-style-iframe-anchor),"
+    "div.stElementContainer:has(.rg-style-iframe-anchor),"
+    "div.element-container:has(.rg-style-iframe-anchor),"
+    "div[data-testid=\"stElementContainer\"]:has(.rg-style-iframe-anchor) + div[data-testid=\"stElementContainer\"],"
+    "div[data-testid=\"element-container\"]:has(.rg-style-iframe-anchor) + div[data-testid=\"element-container\"],"
+    "div.stElementContainer:has(.rg-style-iframe-anchor) + div.stElementContainer,"
+    "div.element-container:has(.rg-style-iframe-anchor) + div.element-container {"
+    "  display: none !important;"
     "}"
     # ── Collapse the anchor's stElementContainer wrapper too.
     # Without this, the wrapper still renders with Streamlit's
