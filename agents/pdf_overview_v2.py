@@ -712,6 +712,12 @@ class OverviewV2PDFGenerator:
 
         story = []
 
+        _uses_eodhd = (
+            any(getattr(af, "source", "") == "eodhd"
+                for af in company.annual_financials.values())
+            or "eodhd" in (company.data_sources or [])
+        )
+
         # ── PAGE 1: Financial Table + Snapshot + Current News ────────────────
         story += self._page1(company, analysis, styles, news_summary=news_summary)
         story.append(PageBreak())
@@ -723,13 +729,14 @@ class OverviewV2PDFGenerator:
         # ── PAGE 3: Peer Table + Checklist ───────────────────────────────────
         story += self._page3(company, analysis, peers, checklist, styles)
 
-        # ── PAGE 4: EODHD Direct Data (Identity + Trading + Technicals) ──────
+        # ── PAGE 4 & 5: Data pages depend on source ───────────────────────────
         story.append(PageBreak())
-        story += self._page4_eodhd_data(company, styles)
-
-        # ── PAGE 5: V2-specific field provenance legend ───────────────────────
-        story.append(PageBreak())
-        story += self._page4_provenance(company, styles)
+        if _uses_eodhd:
+            story += self._page4_eodhd_data(company, styles)
+            story.append(PageBreak())
+            story += self._page4_provenance(company, styles)
+        else:
+            story += self._page4_yfinance(company, styles)
 
         # ── PAGE 5 (optional): Adversarial Review ────────────────────────────
         if adv_result is not None:
@@ -739,6 +746,171 @@ class OverviewV2PDFGenerator:
 
         doc.build(story, onFirstPage=_page_header, onLaterPages=_page_header)
         logger.info(f"[PDF V2] Saved: {output_path}")
+
+    # ── V2 Page 4: yfinance Market Data (fallback when EODHD not available) ──
+    def _page4_yfinance(self, company: CompanyData, styles: dict) -> list:
+        """Single combined data + provenance page for non-EODHD reports."""
+        from reportlab.platypus import Table, TableStyle
+
+        el = []
+
+        el.append(Paragraph(
+            "Market Data — yfinance (Yahoo Finance)",
+            ParagraphStyle("yf4title", fontName=BOLD_FONT, fontSize=12,
+                           textColor=NAVY, spaceAfter=2, leading=15),
+        ))
+        is_uk   = (company.ticker or "").upper().endswith(".L")
+        is_balt = any((company.ticker or "").upper().endswith(s)
+                      for s in (".VS", ".TL", ".RG"))
+        exch_note = (
+            "London Stock Exchange (LSE) — prices in GBP (converted from GBX)." if is_uk
+            else "Baltic exchange — limited EODHD coverage; data from yfinance." if is_balt
+            else "EODHD does not cover this exchange. Data sourced from yfinance (Yahoo Finance)."
+        )
+        el.append(Paragraph(
+            f"Data source: <b>yfinance</b>. {exch_note} "
+            "Historical depth is typically 3–5 years. Some fields "
+            "(ISIN, detailed officers, intraday prices) may be unavailable.",
+            ParagraphStyle("yf4sub", fontName=BASE_FONT, fontSize=7.5,
+                           textColor=MGRAY, leading=11, spaceAfter=8),
+        ))
+
+        def _kv2(pairs):
+            ls = ParagraphStyle("kl2", fontName=BOLD_FONT, fontSize=8,
+                                textColor=NAVY, leading=10)
+            vs = ParagraphStyle("kv2", fontName=BASE_FONT, fontSize=8,
+                                textColor=HexColor("#111111"), leading=10)
+            if len(pairs) % 2:
+                pairs = list(pairs) + [("", "")]
+            rows = []
+            for i in range(0, len(pairs), 2):
+                l1, v1 = pairs[i]; l2, v2 = pairs[i + 1]
+                rows.append([
+                    Paragraph(l1, ls), Paragraph(str(v1), vs),
+                    Paragraph(l2, ls), Paragraph(str(v2), vs),
+                ])
+            cw = CW / 4
+            t = Table(rows, colWidths=[cw*0.85, cw*1.15, cw*0.85, cw*1.15])
+            t.setStyle(TableStyle([
+                ("VALIGN",        (0,0), (-1,-1), "TOP"),
+                ("TOPPADDING",    (0,0), (-1,-1), 2),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+                ("LINEBELOW",     (0,0), (-1,-1), 0.3, HexColor("#DDDDDD")),
+                ("LEFTPADDING",   (0,0), (-1,-1), 2),
+                ("RIGHTPADDING",  (0,0), (-1,-1), 4),
+                ("ROWBACKGROUNDS",(0,0),(-1,-1), [HexColor("#FFFFFF"), HexColor("#F6F8FA")]),
+            ]))
+            return t
+
+        def _v(val, fmt=None):
+            if val is None or val == "" or val == "NA":
+                return "—"
+            try:
+                f = float(val)
+                if fmt == "price": return f"{f:,.2f}"
+                if fmt == "pct":   return f"{f:.2f}%"
+                if fmt == "b":
+                    if abs(f) >= 1e9: return f"{f/1e9:,.2f}B"
+                    if abs(f) >= 1e6: return f"{f/1e6:,.1f}M"
+                    return f"{f:,.0f}"
+                return str(val)
+            except (ValueError, TypeError):
+                return str(val) if val else "—"
+
+        def _sec_hdr(title):
+            return Paragraph(title,
+                ParagraphStyle("yfdh", fontName=BOLD_FONT, fontSize=9.5,
+                               textColor=NAVY, spaceBefore=10, spaceAfter=3, leading=12))
+
+        def _rule():
+            return HRFlowable(width="100%", thickness=0.5, color=BORDER, spaceAfter=4)
+
+        # Identity
+        el.append(_sec_hdr("Company Identity & Listing"))
+        el.append(_rule())
+        el.append(_kv2([
+            ("Company Name",      company.name or "—"),
+            ("Ticker",            company.ticker or "—"),
+            ("Exchange",          company.exchange or "—"),
+            ("Currency",          (company.currency_price or company.currency) or "—"),
+            ("Sector",            company.sector or "—"),
+            ("Industry",          company.industry or "—"),
+            ("Country",           company.country or "—"),
+            ("Employees",         _v(company.employees, "b") if company.employees else "—"),
+            ("Website",           company.website or "—"),
+            ("IPO Date",          company.ipo_date or "—"),
+            ("Fiscal Year End",   company.fiscal_year_end or "—"),
+            ("ISIN",              company.isin or "—"),
+        ]))
+
+        # Trading snapshot
+        el.append(_sec_hdr("Trading Snapshot"))
+        el.append(_rule())
+        el.append(_kv2([
+            ("Price",             _v(company.current_price, "price")),
+            ("Market Cap",        _v(company.market_cap, "b")),
+            ("Enterprise Value",  _v(company.enterprise_value, "b")),
+            ("52-Week High",      _v(company.week_52_high, "price")),
+            ("52-Week Low",       _v(company.week_52_low, "price")),
+            ("50-Day MA",         _v(company.ma_50, "price")),
+            ("200-Day MA",        _v(company.ma_200, "price")),
+            ("Beta",              _v(company.beta)),
+            ("Div Yield",         _v(company.dividend_yield, "pct") if company.dividend_yield else "—"),
+            ("Shares Out.",       _v(company.shares_outstanding, "b")),
+            ("Shares Float",      _v(company.shares_float, "b")),
+            ("% Insiders",        _v(company.pct_insiders, "pct") if company.pct_insiders else "—"),
+        ]))
+
+        # Provenance table
+        el.append(_sec_hdr("Data Provenance — yfinance Fields"))
+        el.append(_rule())
+        chk = "✓ yfinance"
+        na  = "— n/a"
+        rows = [[
+            Paragraph("<b>Field</b>", styles["table_header"]),
+            Paragraph("<b>yfinance Source</b>", styles["table_header"]),
+            Paragraph("<b>Status</b>", styles["table_header"]),
+        ]]
+        for row in [
+            ("Company name / sector / industry",  "Ticker.info → longName, sector",        chk),
+            ("Current price",                     "Ticker.info → currentPrice / regularMarketPrice", chk),
+            ("Market cap / shares outstanding",   "Ticker.info → marketCap, sharesOutstanding", chk),
+            ("Enterprise value",                  "Ticker.info → enterpriseValue",          chk),
+            ("P/E (TTM) / Forward P/E",           "Ticker.info → trailingPE / forwardPE",   chk),
+            ("EV/EBITDA / EV/Revenue",            "Ticker.info → enterpriseToEbitda / enterpriseToRevenue", chk),
+            ("Annual revenue / net income",       "Ticker.financials → Total Revenue, Net Income", chk),
+            ("Annual EPS (diluted)",              "Ticker.financials → Diluted EPS",        chk),
+            ("TTM revenue / EBITDA",              "Ticker.quarterly_financials → last 4Q sum", chk),
+            ("Dividends per share",               "Ticker.dividends (by fiscal year)",      chk),
+            ("52-Week High / Low",                "Ticker.info → fiftyTwoWeekHigh/Low",     chk),
+            ("50 / 200-Day MA",                   "Ticker.info → fiftyDayAverage, twoHundredDayAverage", chk),
+            ("Beta",                              "Ticker.info → beta",                     chk),
+            ("Next earnings date",                "Ticker.info → earningsDate",             chk),
+            ("ISIN",                              "Ticker.isin",                            chk),
+            ("Intraday price / real-time data",   "Not available via yfinance free tier",   na),
+            ("EODHD fundamentals depth (10yr+)",  "EODHD subscription required",            "— EODHD"),
+        ]:
+            rows.append([
+                Paragraph(row[0], styles["table_body"]),
+                Paragraph(row[1], styles["table_body"]),
+                Paragraph(row[2], ParagraphStyle("yf_st", parent=styles["table_body"],
+                    fontName=BOLD_FONT,
+                    textColor=HexColor("#2E7D32") if row[2].startswith("✓") else MGRAY)),
+            ])
+        col_w = [CW * 0.35, CW * 0.47, CW * 0.18]
+        t = Table(rows, colWidths=col_w)
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,0), HexColor("#003F54")),
+            ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+            ("VALIGN",        (0,0), (-1,-1), "TOP"),
+            ("TOPPADDING",    (0,0), (-1,-1), 3),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+            ("LINEBELOW",     (0,0), (-1,-2), 0.3, HexColor("#DDDDDD")),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1), [HexColor("#FFFFFF"), HexColor("#F6F8FA")]),
+        ]))
+        el.append(t)
+
+        return el
 
     # ── V2 Page 4: EODHD Direct Data ─────────────────────────────────────────
     def _page4_eodhd_data(self, company: CompanyData, styles: dict) -> list:
@@ -1112,25 +1284,21 @@ class OverviewV2PDFGenerator:
             )
         el.append(Paragraph(_src_note, _note_style))
 
-        # TTM date footnote
+        # TTM date footnote — each line is independent
+        _note_bold_ttm = ParagraphStyle(
+            "tbl_note_bold_ttm", parent=_note_style, fontName=BOLD_FONT,
+        )
         _ttm_date = getattr(company, 'ttm_last_quarter_date', None)
         if _ttm_date:
-            _note_bold_ttm = ParagraphStyle(
-                "tbl_note_bold_ttm", parent=_note_style, fontName=BOLD_FONT,
-            )
             el.append(Paragraph(
                 f"<b>TTM / Most Recent Quarter: {_ttm_date}</b>",
                 _note_bold_ttm,
             ))
         _next_ed = getattr(company, 'next_earnings_date', None) or "—"
-        if _ttm_date or _next_ed != "—":  # show whenever either date is available
-            _note_bold_style = ParagraphStyle(
-                "tbl_note_bold", parent=_note_style, fontName=BOLD_FONT,
-            )
-            el.append(Paragraph(
-                f"Next earnings report: {_next_ed}",
-                _note_bold_style,
-            ))
+        el.append(Paragraph(
+            f"Next earnings report: {_next_ed}",
+            _note_bold_ttm,
+        ))
 
         el.append(Spacer(1, 6))
 
