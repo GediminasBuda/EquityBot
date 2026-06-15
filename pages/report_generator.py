@@ -2160,17 +2160,33 @@ if generate_clicked and ticker_input:
                         break
                 for pt in raw_peers:
                     try:
-                        if pt.endswith(".T"):
-                            # Japanese peer → use DataManager (yfinance)
+                        pd_ = None
+                        src_label = "unknown"
+                        _is_balt_peer = any(pt.upper().endswith(s)
+                                            for s in (".VS", ".TL", ".RG"))
+                        if pt.endswith(".T") or _is_balt_peer:
+                            # Japan / Baltic → yfinance only
                             pd_ = dm.get(pt, force_refresh=False)
-                            src_label = "yfinance (TSE)"
+                            src_label = "yfinance (TSE)" if pt.endswith(".T") else "yfinance (Baltic)"
                         else:
-                            pd_, _ = fetch_company_data_eodhd_only(pt)
-                            src_label = "EODHD"
+                            # Try EODHD first, fall back to yfinance
+                            try:
+                                _eodhd_pd, _ = fetch_company_data_eodhd_only(pt)
+                                _la = _eodhd_pd.latest_annual() if _eodhd_pd else None
+                                if (_eodhd_pd and _eodhd_pd.name
+                                        and (_eodhd_pd.market_cap or (_la and _la.revenue))):
+                                    pd_ = _eodhd_pd
+                                    src_label = "EODHD"
+                            except Exception:
+                                pass
+                            if pd_ is None:
+                                # EODHD unavailable or returned empty — fall back to yfinance
+                                pd_ = dm.get(pt, force_refresh=False)
+                                src_label = "yfinance"
                         # Keep only if we got meaningful data
-                        la_check = pd_.latest_annual()
+                        la_check = pd_.latest_annual() if pd_ else None
                         has_rev = bool(la_check and la_check.revenue)
-                        if pd_.name and (pd_.market_cap or has_rev):
+                        if pd_ and pd_.name and (pd_.market_cap or has_rev):
                             peers[pt] = pd_
                             st.write(f"   ✓ {pt}: {pd_.name} [{src_label}]")
                         else:
