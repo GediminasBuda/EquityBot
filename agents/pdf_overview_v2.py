@@ -891,9 +891,9 @@ class OverviewV2PDFGenerator:
             ("EODHD fundamentals depth (10yr+)",  "EODHD subscription required",            "— EODHD"),
         ]:
             rows.append([
-                Paragraph(row[0], styles["table_body"]),
-                Paragraph(row[1], styles["table_body"]),
-                Paragraph(row[2], ParagraphStyle("yf_st", parent=styles["table_body"],
+                Paragraph(row[0], styles["table_cell"]),
+                Paragraph(row[1], styles["table_cell"]),
+                Paragraph(row[2], ParagraphStyle("yf_st", parent=styles["table_cell"],
                     fontName=BOLD_FONT,
                     textColor=HexColor("#2E7D32") if row[2].startswith("✓") else MGRAY)),
             ])
