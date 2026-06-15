@@ -296,11 +296,23 @@ def _rg_eodhd_search(query: str) -> list[dict]:
             timeout=15,
         )
         if r.status_code != 200:
+            logger.warning("EODHD search HTTP %s for query %r", r.status_code, query)
             return []
         data = r.json()
         return data if isinstance(data, list) else []
-    except Exception:
+    except Exception as _e:
+        logger.warning("EODHD search exception for query %r: %s", query, _e)
         return []
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _rg_yfinance_search(query: str) -> list[tuple[str, str]]:
+    """yfinance fallback for autocomplete when EODHD search returns nothing."""
+    results = _search_tickers(query, max_results=8)
+    return [
+        (f"{r['symbol']:<14}  {r['name'][:48]}  ({r['exchange']})", r["symbol"])
+        for r in results if r.get("symbol")
+    ]
 
 
 # Trigger words / patterns that suggest a natural-language prompt
@@ -378,6 +390,13 @@ def _smart_search(query: str) -> list[tuple[str, str]]:
         if meta:
             label += f"  ({meta})"
         suggestions.append((label, yf_ticker))
+
+    # ── yfinance fallback when EODHD search returned nothing ─────────────────
+    if not suggestions and not _looks_like_nl(q):
+        for label, val in _rg_yfinance_search(q):
+            if val not in seen:
+                seen.add(val)
+                suggestions.append((label, val))
 
     # ── Japan / TSE supplement ────────────────────────────────────────────────
     # Three-layer approach (EODHD doesn't cover TSE fundamentals):
