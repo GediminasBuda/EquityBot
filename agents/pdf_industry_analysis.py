@@ -95,11 +95,11 @@ def _extend_styles(styles: dict) -> dict:
     styles["ia_body"] = ParagraphStyle(
         "ia_body", fontName="Helvetica", fontSize=9.5,
         textColor=HexColor("#222"), alignment=TA_JUSTIFY,
-        leading=13, spaceAfter=4,
+        leading=13, spaceAfter=8,
     )
     styles["ia_source"] = ParagraphStyle(
         "ia_source", fontName=ITALIC_FONT, fontSize=8,
-        textColor=MGRAY, alignment=TA_LEFT, leading=11, spaceAfter=2,
+        textColor=MGRAY, alignment=TA_LEFT, leading=11, spaceAfter=4,
     )
     styles["ia_score_cell"] = ParagraphStyle(
         "ia_score_cell", fontName="Helvetica-Bold", fontSize=9,
@@ -128,12 +128,12 @@ def _extend_styles(styles: dict) -> dict:
     styles["ia_swot_body"] = ParagraphStyle(
         "ia_swot_body", fontName="Helvetica", fontSize=8.5,
         textColor=HexColor("#111"), alignment=TA_JUSTIFY,
-        leading=12, spaceAfter=2,
+        leading=12, spaceAfter=6,
     )
     styles["ia_swot_summary"] = ParagraphStyle(
         "ia_swot_summary", fontName="Helvetica", fontSize=9.5,
         textColor=HexColor("#222"), alignment=TA_JUSTIFY,
-        leading=13, spaceAfter=4,
+        leading=13, spaceAfter=8,
     )
     return styles
 
@@ -504,13 +504,10 @@ def _swot_page(swot: dict, company_name: str, styles: dict) -> list:
 
     # Build 2×2 SWOT table
     def _quadrant(header: str, text: str, hdr_color, bg_color) -> Table:
-        hdr_para  = Paragraph(header, styles["ia_swot_header"])
-        body_para = Paragraph(
-            text.replace("\n", "<br/>") if text else "—",
-            styles["ia_swot_body"],
-        )
+        hdr_para = Paragraph(header, styles["ia_swot_header"])
+        body_paras = _split_paragraphs(text or "—", styles, "ia_swot_body")
         t = Table(
-            [[hdr_para], [body_para]],
+            [[hdr_para]] + [[p] for p in body_paras],
             colWidths=[CW / 2 - 3],
         )
         t.setStyle(TableStyle([

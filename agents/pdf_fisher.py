@@ -11,6 +11,7 @@ Visual language: same palette and typography as pdf_overview.py for consistency.
 
 from __future__ import annotations
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -70,11 +71,11 @@ def _styles() -> dict:
         ),
         "body": S("body",
             fontName=BASE_FONT, fontSize=8.5, textColor=HexColor('#222222'),
-            leading=13, alignment=TA_JUSTIFY, spaceAfter=4,
+            leading=13, alignment=TA_JUSTIFY, spaceAfter=8,
         ),
         "body_small": S("body_small",
             fontName=BASE_FONT, fontSize=7.8, textColor=MGRAY,
-            leading=11, alignment=TA_JUSTIFY,
+            leading=11, alignment=TA_JUSTIFY, spaceAfter=6,
         ),
         "table_header": S("th",
             # Ink-saving: navy text on white background (was white-on-navy)
@@ -139,7 +140,7 @@ def _styles() -> dict:
         ),
         "risk_bullet": S("risk_bullet",
             fontName=BASE_FONT, fontSize=8.5, textColor=HexColor('#222222'),
-            leading=13, leftIndent=10, spaceAfter=3,
+            leading=13, leftIndent=10, spaceAfter=8,
         ),
     }
 
@@ -443,12 +444,29 @@ def _section(title: str, styles: dict) -> list:
     ]
 
 
-def _split_paragraphs(text: str, styles: dict, style_key: str = "body") -> list:
-    """Split on double newlines and return list of Paragraph flowables."""
+def _split_paragraphs(text: str, styles: dict, style_key: str = "body",
+                       sentences_per_para: int = 4) -> list:
+    """Split LLM text into readable paragraph flowables.
+
+    Strategy (in order):
+    1. Double-newline split — respects LLM paragraph structure.
+    2. Single-newline split — when LLM uses \\n but not \\n\\n.
+    3. Sentence-grouping fallback — groups every `sentences_per_para`
+       sentences when the entire response is one wall of text.
+    """
     if not text:
         return []
     paras = [p.strip() for p in text.split("\n\n") if p.strip()]
-    return [Paragraph(p, styles[style_key]) for p in paras]
+    if len(paras) <= 1 and len(text) > 250:
+        paras = [p.strip() for p in text.split("\n") if p.strip()]
+    if len(paras) <= 1 and len(text) > 400:
+        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+        paras = [
+            " ".join(sentences[i:i + sentences_per_para])
+            for i in range(0, len(sentences), sentences_per_para)
+            if sentences[i:i + sentences_per_para]
+        ]
+    return [Paragraph(p, styles[style_key]) for p in paras if p]
 
 
 # ── Main generator ────────────────────────────────────────────────────────────
