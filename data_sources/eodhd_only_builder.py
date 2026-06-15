@@ -149,9 +149,17 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
                 company.officers.append({"name": o.get("Name"),
                                           "title": o.get("Title") or ""})
 
+    # ── GBX detection: LSE stocks quote prices in pence (GBX), not pounds (GBP).
+    # Financial statements are in GBP, so all price-derived ratios need /100.
+    _gbx_exchange = (company.exchange or "").upper() in {"LSE"}
+    _gbx_factor = 100.0 if _gbx_exchange else 1.0
+
     # ── Current market (price from real-time if available) ───────────────────
     price = rt.get("close") or rt.get("previousClose")
-    company.current_price = _f(price)
+    raw_price = _f(price)
+    company.current_price = (raw_price / _gbx_factor) if raw_price is not None else None
+    if _gbx_exchange:
+        company.currency_price = "GBP"  # we've converted; label consistently
 
     # Market cap from Highlights MarketCapitalizationMln (already in millions)
     mc_mln = _f(h.get("MarketCapitalizationMln"))
@@ -324,7 +332,8 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
 
     # ── Dividends ────────────────────────────────────────────────────────────
     company.dividend_yield = _f(h.get("DividendYield"))
-    company.forward_annual_dividend_rate  = _f(sd.get("ForwardAnnualDividendRate"))
+    _fdr = _f(sd.get("ForwardAnnualDividendRate"))
+    company.forward_annual_dividend_rate  = (_fdr / _gbx_factor) if _fdr is not None else None
     company.forward_annual_dividend_yield = _f(sd.get("ForwardAnnualDividendYield"))
     company.payout_ratio    = _f(sd.get("PayoutRatio"))
     company.dividend_date   = sd.get("DividendDate") or None
@@ -569,7 +578,8 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         for yr, dps in dps_by_year.items():
             af = company.annual_financials.get(yr)
             if af and af.dividends_per_share is None:
-                af.dividends_per_share = dps
+                # EODHD dividends for LSE stocks are in GBX (pence); convert to GBP.
+                af.dividends_per_share = dps / _gbx_factor
 
     # ── Historical year-end prices from /eod history ─────────────────────────
     eod = bundle.get("eod") or []
@@ -585,13 +595,14 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
             yr = _year_from_date(d)
             pv = _f(p)
             if yr is not None and pv is not None and pv > 0:
-                ye_prices[yr] = pv          # later iterations overwrite → year-end close
+                ye_prices[yr] = pv / _gbx_factor  # convert GBX→GBP for LSE; no-op for others
         for yr, af in company.annual_financials.items():
             if af.price_year_end is None and yr in ye_prices:
                 af.price_year_end = ye_prices[yr]
 
     # ── Spring-payer DPS fix (German calendar reporters) ─────────────────────
-    fwd_div = _f(sd.get("ForwardAnnualDividendRate"))
+    fwd_div_raw = _f(sd.get("ForwardAnnualDividendRate"))
+    fwd_div = (fwd_div_raw / _gbx_factor) if fwd_div_raw is not None else None
     if fwd_div and company.annual_financials:
         latest_yr = max(company.annual_financials.keys())
         if company.annual_financials[latest_yr].dividends_per_share is None:
