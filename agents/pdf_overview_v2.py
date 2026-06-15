@@ -311,8 +311,14 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
             s = str(v)
         return Paragraph(f"<i>{s}</i>", tc_style)
 
+    _uses_eodhd_tbl = (
+        any(getattr(af, "source", "") == "eodhd" for af in company.annual_financials.values())
+        or "eodhd" in (company.data_sources or [])
+    )
+    _lbl_check = _EODHD_CHECK if _uses_eodhd_tbl else ""
+
     def lbl(text):
-        return Paragraph(text + _EODHD_CHECK, tl_style)
+        return Paragraph(text + _lbl_check, tl_style)
 
     # ── TTM values — use getattr() defensively: old cached CompanyData objects
     # (created before these fields existed) won't have the attribute at all.
@@ -1117,7 +1123,7 @@ class OverviewV2PDFGenerator:
                 _note_bold_ttm,
             ))
         _next_ed = getattr(company, 'next_earnings_date', None) or "—"
-        if _ttm_date:  # only show if TTM line is shown (i.e. we have EODHD data)
+        if _ttm_date or _next_ed != "—":  # show whenever either date is available
             _note_bold_style = ParagraphStyle(
                 "tbl_note_bold", parent=_note_style, fontName=BOLD_FONT,
             )

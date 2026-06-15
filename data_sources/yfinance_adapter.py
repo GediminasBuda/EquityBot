@@ -285,6 +285,28 @@ class YFinanceAdapter:
             except Exception as e:
                 logger.warning(f"[yfinance] TTM computation failed for {ticker}: {e}")
 
+            # ── TTM last quarter date + next earnings date ────────────────────
+            try:
+                if q_financials is not None and not q_financials.empty:
+                    _qcols = sorted(q_financials.columns, reverse=True)
+                    if _qcols:
+                        company.ttm_last_quarter_date = str(_qcols[0].date())
+            except Exception:
+                pass
+            try:
+                _ed = info.get("earningsDate") or info.get("earningsTimestamp")
+                if _ed:
+                    if isinstance(_ed, (list, tuple)):
+                        _ed = _ed[0]
+                    import datetime as _dt
+                    if isinstance(_ed, (int, float)):
+                        _ed = _dt.datetime.utcfromtimestamp(_ed).strftime("%Y-%m-%d")
+                    elif hasattr(_ed, "strftime"):
+                        _ed = _ed.strftime("%Y-%m-%d")
+                    company.next_earnings_date = str(_ed)
+            except Exception:
+                pass
+
             # ── Re-derive net_debt and EV from quarterly balance sheet ────────
             # info["totalCash"] = cash-and-equivalents ONLY. For companies that
             # hold significant short-term financial investments (common for
@@ -358,7 +380,9 @@ class YFinanceAdapter:
                     # Assign to matching AnnualFinancials records
                     for year, af in company.annual_financials.items():
                         if year in dps_assign and af.dividends_per_share is None:
-                            af.dividends_per_share = dps_assign[year]
+                            # yfinance .L dividends are in pence; convert to GBP
+                            _dps_gbx = 100.0 if ticker.upper().endswith(".L") else 1.0
+                            af.dividends_per_share = dps_assign[year] / _dps_gbx
                     logger.debug(f"[yfinance] DPS by year: {dps_by_year}")
             except Exception as e:
                 logger.warning(f"[yfinance] Could not fetch dividend history for {ticker}: {e}")
@@ -373,12 +397,16 @@ class YFinanceAdapter:
                     # current shares in millions (from CompanyData, set above)
                     current_shares_m = company.shares_outstanding  # millions
 
+                    # LSE stocks quote in GBX (pence); financials are in GBP.
+                    # Divide price by 100 so market cap and P/E are consistent.
+                    _gbx_factor = 100.0 if ticker.upper().endswith(".L") else 1.0
+
                     for year, af in company.annual_financials.items():
                         year_prices = hist[hist.index.year == year]
                         if year_prices.empty:
                             continue
                         # last available monthly close for that calendar year
-                        af.price_year_end = float(year_prices["Close"].iloc[-1])
+                        af.price_year_end = float(year_prices["Close"].iloc[-1]) / _gbx_factor
 
                         # shares this year are already stored in millions
                         # (matches the convention used by EODHD).
