@@ -901,7 +901,7 @@ class OverviewV2PDFGenerator:
         t = Table(rows, colWidths=col_w)
         t.setStyle(TableStyle([
             ("BACKGROUND",    (0,0), (-1,0), HexColor("#003F54")),
-            ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+            ("TEXTCOLOR",     (0,0), (-1,0), HexColor("#FFFFFF")),
             ("VALIGN",        (0,0), (-1,-1), "TOP"),
             ("TOPPADDING",    (0,0), (-1,-1), 3),
             ("BOTTOMPADDING", (0,0), (-1,-1), 3),
