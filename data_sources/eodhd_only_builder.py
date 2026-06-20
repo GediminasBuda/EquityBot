@@ -539,6 +539,35 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
                 continue
             af.shares_outstanding = shares_in_m
 
+    # ── Backfill missing per-year shares from nearest known year ─────────────
+    # Some exchanges (e.g. Mexico .MX) only expose the most-recent entry in
+    # outstandingShares.annual, leaving all historical years at None → market
+    # cap, EV, FCF yield and EV multiples all become n/a in the table.
+    # Backfill from the closest known year (forward-fill for older years,
+    # backward-fill for newer years). This is an approximation for companies
+    # that have changed their share count, but always beats blank cells.
+    _known_shares: dict[int, float] = {
+        yr: af.shares_outstanding
+        for yr, af in company.annual_financials.items()
+        if af.shares_outstanding is not None
+    }
+    if not _known_shares and company.shares_outstanding is not None:
+        # No annual data at all — use current scalar for every year.
+        for af in company.annual_financials.values():
+            if af.shares_outstanding is None:
+                af.shares_outstanding = company.shares_outstanding
+    elif _known_shares:
+        _syk = sorted(_known_shares.keys())
+        for yr, af in company.annual_financials.items():
+            if af.shares_outstanding is not None:
+                continue
+            before = [y for y in _syk if y <= yr]
+            after  = [y for y in _syk if y > yr]
+            if before:
+                af.shares_outstanding = _known_shares[before[-1]]
+            elif after:
+                af.shares_outstanding = _known_shares[after[0]]
+
     # (EPS from Earnings.Annual is now applied inline during income-statement
     # parsing above via eps_by_year lookup — no post-hoc override needed.)
 
