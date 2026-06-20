@@ -461,6 +461,32 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ── Cost counter badge (fixed top-right) ─────────────────────────────────────
+def _render_cost_badge() -> None:
+    """Inject a fixed-position cost counter into the top-right header area."""
+    try:
+        from utils.cost_tracker import load as _ct_load
+        data = _ct_load()
+        n    = data.get("reports", 0)
+        usd  = data.get("total_usd", 0.0)
+        label = f"📊 {n} reports · ${usd:.2f}"
+    except Exception:
+        label = "📊 — reports · $—"
+
+    st.markdown(
+        f"""
+        <div id="eq-cost-badge" style="
+            position:fixed; top:8px; right:72px; z-index:9999;
+            background:#0a0a0a; border:1px solid #2a1f10;
+            border-radius:2px; padding:3px 10px;
+            font-family:monospace; font-size:11px; color:#a87f30;
+            white-space:nowrap; pointer-events:none;
+        ">{label}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 # ── Auth gate ─────────────────────────────────────────────────────────────────
 _users = _load_users()
 if _users:
@@ -476,6 +502,8 @@ if _users:
     else:
         _logout_button()
 # else: no [users] in secrets → dev mode, gate bypassed
+
+_render_cost_badge()
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 pg = st.navigation([

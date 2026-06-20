@@ -130,7 +130,7 @@ def _cost_block(
     usage_claude: dict,
     usage_openai: dict | None = None,
     usage_prompt: dict | None = None,
-) -> None:
+) -> float:
     """
     Render a styled cost summary card after report generation.
     Called once and stored in report_result for persistent display.
@@ -161,7 +161,7 @@ def _cost_block(
             "</div>",
             unsafe_allow_html=True,
         )
-        return
+        return 0.0
 
     lines = []
 
@@ -229,6 +229,7 @@ def _cost_block(
         + "</div>",
         unsafe_allow_html=True,
     )
+    return total
 
 
 # ── Ticker search helper ──────────────────────────────────────────────────────
@@ -3527,11 +3528,18 @@ if st.session_state.report_result:
         or None
     )
     if "usage_claude" in res or _prompt_u:
-        _cost_block(
+        _report_cost = _cost_block(
             res.get("usage_claude") or {},
             res.get("usage_openai"),
             _prompt_u,
         )
+        if _report_cost and not res.get("_cost_counted"):
+            try:
+                from utils.cost_tracker import increment as _ct_inc
+                _ct_inc(_report_cost)
+                res["_cost_counted"] = True  # prevent double-counting on reruns
+            except Exception:
+                pass
 
     st.divider()
 
