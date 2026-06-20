@@ -1352,14 +1352,17 @@ with col_left:
                         rows = []
                         st.error(f"Thematic resolver failed: {_e}")
                 if rows:
-                    st.success(
-                        f"✓  Found **{len(rows)}** companies for: *{_tq}*  ·  "
-                        f"Select a framework and click **Run [Framework] on all {len(rows)}**"
-                    )
                     # Pre-select framework if LLM detected one
                     _fid = intent.get("framework_id")
                     if _fid and _fid in REPORT_TYPES:
                         st.session_state["report_type"] = _fid
+                    _fw_label = REPORT_TYPES.get(_fid or "", {}).get("label", "")
+                    _action_hint = (
+                        f"Click **Run {_fw_label} on all {len(rows)}** below ↓"
+                        if _fw_label
+                        else f"Select a framework below and click **Run [Framework] on all {len(rows)}**"
+                    )
+                    st.success(f"✓  Found **{len(rows)}** companies for: *{_tq}*  ·  {_action_hint}")
                 else:
                     st.warning(
                         f"⚠ Could not resolve companies for: **{_tq}**. "
@@ -1579,6 +1582,90 @@ with col_left:
     rt = REPORT_TYPES[report_type]
     builtin_badge = "" if rt.get("is_builtin", True) else "  ·  Custom"
     st.caption(f"{rt['desc']}  ·  {rt['pages']}{builtin_badge}")
+
+    # ── Gravity Taxers: file upload for universe definition ───────────────────
+    if report_type == "gravity":
+        st.markdown(
+            "<div style='margin-top:10px;'></div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("#### 📂 Universe from File")
+        st.caption(
+            "Upload a PDF, CSV, or Excel file containing company names or tickers. "
+            "EquityBot will extract the universe and run Gravity Taxers on all companies found."
+        )
+        _uploaded = st.file_uploader(
+            "Upload company list",
+            type=["pdf", "csv", "xls", "xlsx"],
+            key="gravity_file_upload",
+            label_visibility="collapsed",
+        )
+        if _uploaded is not None:
+            _upload_key = f"{_uploaded.name}_{_uploaded.size}"
+            if st.session_state.get("_gravity_upload_key") != _upload_key:
+                # New file — parse it
+                with st.spinner(f"📂 Parsing **{_uploaded.name}**…"):
+                    try:
+                        import importlib
+                        import utils.file_parser as _fp_mod
+                        importlib.reload(_fp_mod)
+                        from utils.file_parser import parse_file as _parse_file
+
+                        _file_bytes = _uploaded.read()
+                        _parsed_rows = _parse_file(
+                            _file_bytes,
+                            _uploaded.name,
+                            llm_client=llm,
+                        )
+                    except Exception as _fe:
+                        _parsed_rows = []
+                        st.error(f"File parse failed: {_fe}")
+
+                st.session_state["_gravity_upload_key"] = _upload_key
+                st.session_state["_gravity_parsed_rows"] = _parsed_rows
+
+            _parsed_rows = st.session_state.get("_gravity_parsed_rows") or []
+
+            if _parsed_rows:
+                st.success(
+                    f"✓ Found **{len(_parsed_rows)} companies** in `{_uploaded.name}`"
+                )
+                # Show log of all extracted companies
+                with st.expander(
+                    f"📋 Companies extracted ({len(_parsed_rows)})", expanded=True
+                ):
+                    for _pr in _parsed_rows:
+                        _note = f" — {_pr['note']}" if _pr.get("note") else ""
+                        st.markdown(
+                            f"**{_pr['rank']}.** `{_pr['ticker']}`  {_pr['name']}{_note}"
+                        )
+
+                # Button to load into screener table
+                if st.button(
+                    f"⚖️ Load {len(_parsed_rows)} companies into Gravity Taxers",
+                    type="primary",
+                    use_container_width=True,
+                    key="gravity_load_from_file",
+                ):
+                    st.session_state.rg_screener_rows = _parsed_rows
+                    st.session_state.rg_intent = {
+                        "framework_id": "gravity",
+                        "thematic_query": f"from file: {_uploaded.name}",
+                        "universe": None,
+                        "action": "screen",
+                        "sort_by": None,
+                        "sort_dir": None,
+                        "limit": len(_parsed_rows),
+                        "notes": f"Universe loaded from uploaded file: {_uploaded.name}",
+                    }
+                    st.session_state["report_type"] = "gravity"
+                    st.session_state.rg_active_ticker = ""
+                    st.rerun()
+            else:
+                st.warning(
+                    "⚠ No companies could be extracted from this file. "
+                    "Check that it contains company names or stock tickers."
+                )
 
 with col_right:
     # Peer tickers — only relevant for Overview-style reports.
