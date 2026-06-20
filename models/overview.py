@@ -171,6 +171,12 @@ Return a single JSON object with exactly these keys.
 
 Required JSON output:
 {
+  "snapshot": "800-1000 word Investment Snapshot. Cover: (1) business model and what the company actually does, (2) industry structure and value chain position, (3) competitive moat — be specific about sources, (4) key growth drivers and risks to them, (5) capital allocation quality and management track record, (6) current financial highlights and what has driven recent results. Write as a senior analyst briefing a long-term investor. Be factual, no padding.",
+
+  "bull_case": "400-600 word bull case from a value investor's perspective. Structure: (1) why the current valuation is attractive relative to quality and growth, (2) what the market is underestimating or mispricing, (3) the primary moat that protects returns, (4) the specific scenario under which this becomes a 3-5x over a decade. Be specific — cite the multiples, margins, and growth rates in the financial data. No generic optimism.",
+
+  "bear_case": "400-600 word Devil's Advocate bear case. Structure: (1) what the current price already assumes — what multiple compression or earnings miss would hurt, (2) structural risks to the moat that are not yet in financial statements, (3) hidden accounting or quality risks if any, (4) management or capital allocation concerns, (5) macro or regulatory threats specific to this business. This is the stress test. Be genuinely adversarial.",
+
   "recommendation": "BUY or HOLD or SELL",
 
   "recommendation_rationale": "100-150 word rationale. State the key decision variable: what price or condition makes this attractive/unattractive. Include a rough fair value range if calculable from the data. Reference the most important financial metric that drives your view.",
@@ -186,13 +192,7 @@ Required JSON output:
     "Specific, verifiable, surprising fact about the company (not just 'founded in X')",
     "Another genuinely interesting fact",
     "Third fact — can be about scale, market position, history, or culture"
-  ],
-
-  "snapshot": "800-1000 word Investment Snapshot. Cover: (1) business model and what the company actually does, (2) industry structure and value chain position, (3) competitive moat — be specific about sources, (4) key growth drivers and risks to them, (5) capital allocation quality and management track record, (6) current financial highlights and what has driven recent results. Write as a senior analyst briefing a long-term investor. Be factual, no padding.",
-
-  "bull_case": "400-600 word bull case from a value investor's perspective. Structure: (1) why the current valuation is attractive relative to quality and growth, (2) what the market is underestimating or mispricing, (3) the primary moat that protects returns, (4) the specific scenario under which this becomes a 3-5x over a decade. Be specific — cite the multiples, margins, and growth rates in the financial data. No generic optimism.",
-
-  "bear_case": "400-600 word Devil's Advocate bear case. Structure: (1) what the current price already assumes — what multiple compression or earnings miss would hurt, (2) structural risks to the moat that are not yet in financial statements, (3) hidden accounting or quality risks if any, (4) management or capital allocation concerns, (5) macro or regulatory threats specific to this business. This is the stress test. Be genuinely adversarial."
+  ]
 }
 
 Rules:
