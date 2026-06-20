@@ -1591,81 +1591,141 @@ with col_left:
         )
         st.markdown("#### 📂 Universe from File")
         st.caption(
-            "Upload a PDF, CSV, or Excel file containing company names or tickers. "
-            "EquityBot will extract the universe and run Gravity Taxers on all companies found."
+            "Upload a PDF, CSV, or Excel file with company names or tickers. "
+            "Or paste a list of company names / tickers in the text box below."
         )
-        _uploaded = st.file_uploader(
-            "Upload company list",
-            type=["pdf", "csv", "xls", "xlsx"],
-            key="gravity_file_upload",
-            label_visibility="collapsed",
-        )
-        if _uploaded is not None:
-            _upload_key = f"{_uploaded.name}_{_uploaded.size}"
-            if st.session_state.get("_gravity_upload_key") != _upload_key:
-                # New file — parse it
-                with st.spinner(f"📂 Parsing **{_uploaded.name}**…"):
+
+        _grav_tab_file, _grav_tab_paste = st.tabs(["📎 Upload file", "✏️ Paste list"])
+
+        _gravity_source_label = ""
+        _gravity_raw_rows: list[dict] | None = None
+
+        with _grav_tab_file:
+            _uploaded = st.file_uploader(
+                "Upload company list",
+                type=["pdf", "csv", "xls", "xlsx"],
+                key="gravity_file_upload",
+                label_visibility="collapsed",
+            )
+            if _uploaded is not None:
+                _upload_key = f"{_uploaded.name}_{_uploaded.size}"
+                if st.session_state.get("_gravity_upload_key") != _upload_key:
+                    with st.spinner(f"📂 Parsing **{_uploaded.name}**…"):
+                        try:
+                            import importlib
+                            import utils.file_parser as _fp_mod
+                            importlib.reload(_fp_mod)
+                            from utils.file_parser import parse_file as _parse_file
+                            _file_bytes = _uploaded.read()
+                            _fp_rows = _parse_file(
+                                _file_bytes,
+                                _uploaded.name,
+                                llm_client=llm,
+                            )
+                        except Exception as _fe:
+                            _fp_rows = []
+                            st.error(f"File parse error: {_fe}")
+                    st.session_state["_gravity_upload_key"] = _upload_key
+                    st.session_state["_gravity_parsed_rows"] = _fp_rows
+                    st.session_state["_gravity_source_label"] = _uploaded.name
+
+                _gravity_raw_rows = st.session_state.get("_gravity_parsed_rows") or []
+                _gravity_source_label = st.session_state.get("_gravity_source_label", "")
+
+                if not _gravity_raw_rows:
+                    st.warning(
+                        "⚠ Could not extract company data from this file.  \n"
+                        "**Possible causes:** PDF text extraction library not yet "
+                        "installed (app may still be redeploying — try again in a minute), "
+                        "or the PDF is image-based.  \n"
+                        "**Workaround:** use the **Paste list** tab and copy-paste "
+                        "the company names/tickers directly."
+                    )
+
+        with _grav_tab_paste:
+            _paste_text = st.text_area(
+                "Paste company names or tickers (one per line, or comma-separated)",
+                height=200,
+                key="gravity_paste_text",
+                placeholder="Taiwan Semiconductor Manufacturing\nSamsung Electronics\nTSMC\nAAPL, MSFT, GOOG",
+            )
+            _paste_btn = st.button(
+                "🔍 Resolve tickers from pasted list",
+                key="gravity_paste_resolve",
+                use_container_width=True,
+            )
+            if _paste_btn and _paste_text.strip():
+                with st.spinner("🤖 Resolving tickers with LLM…"):
                     try:
                         import importlib
-                        import utils.file_parser as _fp_mod
-                        importlib.reload(_fp_mod)
-                        from utils.file_parser import parse_file as _parse_file
+                        import utils.file_parser as _fp_mod2
+                        importlib.reload(_fp_mod2)
+                        from utils.file_parser import _screener_row as _sr, \
+                            _looks_like_ticker as _llt, _resolve_tickers as _rt
 
-                        _file_bytes = _uploaded.read()
-                        _parsed_rows = _parse_file(
-                            _file_bytes,
-                            _uploaded.name,
-                            llm_client=llm,
-                        )
-                    except Exception as _fe:
-                        _parsed_rows = []
-                        st.error(f"File parse failed: {_fe}")
+                        # Split on newlines and commas
+                        import re as _re_paste
+                        _raw_entries = [
+                            e.strip()
+                            for e in _re_paste.split(r"[,\n]+", _paste_text)
+                            if e.strip()
+                        ]
+                        _paste_rows = [
+                            _sr(i + 1, e if _llt(e) else e, e)
+                            for i, e in enumerate(_raw_entries)
+                        ]
+                        # Resolve names to tickers
+                        _paste_rows = _rt(_paste_rows, llm)
+                    except Exception as _pe:
+                        _paste_rows = []
+                        st.error(f"Resolve failed: {_pe}")
 
-                st.session_state["_gravity_upload_key"] = _upload_key
-                st.session_state["_gravity_parsed_rows"] = _parsed_rows
+                st.session_state["_gravity_parsed_rows"] = _paste_rows
+                st.session_state["_gravity_source_label"] = "pasted list"
+                st.session_state["_gravity_upload_key"] = None
+                _gravity_raw_rows = _paste_rows
+                _gravity_source_label = "pasted list"
 
-            _parsed_rows = st.session_state.get("_gravity_parsed_rows") or []
+            # Show previously pasted rows even without clicking resolve
+            if _gravity_raw_rows is None:
+                _gravity_raw_rows = st.session_state.get("_gravity_parsed_rows") or []
+                _gravity_source_label = st.session_state.get("_gravity_source_label", "")
 
-            if _parsed_rows:
-                st.success(
-                    f"✓ Found **{len(_parsed_rows)} companies** in `{_uploaded.name}`"
-                )
-                # Show log of all extracted companies
-                with st.expander(
-                    f"📋 Companies extracted ({len(_parsed_rows)})", expanded=True
-                ):
-                    for _pr in _parsed_rows:
-                        _note = f" — {_pr['note']}" if _pr.get("note") else ""
-                        st.markdown(
-                            f"**{_pr['rank']}.** `{_pr['ticker']}`  {_pr['name']}{_note}"
-                        )
+        # ── Common results display ────────────────────────────────────────────
+        _parsed_rows = _gravity_raw_rows or []
+        if _parsed_rows:
+            st.success(
+                f"✓ **{len(_parsed_rows)} companies** from {_gravity_source_label}"
+            )
+            with st.expander(
+                f"📋 Companies extracted ({len(_parsed_rows)})", expanded=True
+            ):
+                for _pr in _parsed_rows:
+                    _note = f" — {_pr['note']}" if _pr.get("note") else ""
+                    st.markdown(
+                        f"**{_pr['rank']}.** `{_pr['ticker']}`  {_pr['name']}{_note}"
+                    )
 
-                # Button to load into screener table
-                if st.button(
-                    f"⚖️ Load {len(_parsed_rows)} companies into Gravity Taxers",
-                    type="primary",
-                    use_container_width=True,
-                    key="gravity_load_from_file",
-                ):
-                    st.session_state.rg_screener_rows = _parsed_rows
-                    st.session_state.rg_intent = {
-                        "framework_id": "gravity",
-                        "thematic_query": f"from file: {_uploaded.name}",
-                        "universe": None,
-                        "action": "screen",
-                        "sort_by": None,
-                        "sort_dir": None,
-                        "limit": len(_parsed_rows),
-                        "notes": f"Universe loaded from uploaded file: {_uploaded.name}",
-                    }
-                    st.session_state["report_type"] = "gravity"
-                    st.session_state.rg_active_ticker = ""
-                    st.rerun()
-            else:
-                st.warning(
-                    "⚠ No companies could be extracted from this file. "
-                    "Check that it contains company names or stock tickers."
-                )
+            if st.button(
+                f"⚖️ Load {len(_parsed_rows)} companies into Gravity Taxers",
+                type="primary",
+                use_container_width=True,
+                key="gravity_load_from_file",
+            ):
+                st.session_state.rg_screener_rows = _parsed_rows
+                st.session_state.rg_intent = {
+                    "framework_id": "gravity",
+                    "thematic_query": f"from {_gravity_source_label}",
+                    "universe": None,
+                    "action": "screen",
+                    "sort_by": None,
+                    "sort_dir": None,
+                    "limit": len(_parsed_rows),
+                    "notes": f"Universe loaded from: {_gravity_source_label}",
+                }
+                st.session_state["report_type"] = "gravity"
+                st.session_state.rg_active_ticker = ""
+                st.rerun()
 
 with col_right:
     # Peer tickers — only relevant for Overview-style reports.
