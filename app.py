@@ -461,30 +461,30 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Cost counter badge (fixed top-right) ─────────────────────────────────────
+# ── Cost counter badge (sidebar) ──────────────────────────────────────────────
 def _render_cost_badge() -> None:
-    """Inject a fixed-position cost counter into the top-right header area."""
+    """Render cumulative report count and cost at the top of the sidebar."""
     try:
         from utils.cost_tracker import load as _ct_load
         data = _ct_load()
         n    = data.get("reports", 0)
         usd  = data.get("total_usd", 0.0)
-        label = f"📊 {n} reports · ${usd:.2f}"
+        count_str = str(n)
+        cost_str  = f"${usd:.2f}"
     except Exception:
-        label = "📊 — reports · $—"
+        count_str = "—"
+        cost_str  = "$—"
 
-    st.markdown(
-        f"""
-        <div id="eq-cost-badge" style="
-            position:fixed; top:8px; right:72px; z-index:9999;
-            background:#0a0a0a; border:1px solid #2a1f10;
-            border-radius:2px; padding:3px 10px;
-            font-family:monospace; font-size:11px; color:#a87f30;
-            white-space:nowrap; pointer-events:none;
-        ">{label}</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.sidebar:
+        st.markdown(
+            f"<div style='font-family:monospace;font-size:11px;color:#a87f30;"
+            f"border:1px solid #2a1f10;border-radius:2px;padding:5px 10px;"
+            f"margin-bottom:6px;line-height:1.7;'>"
+            f"📊 <b style='color:#FFA028;'>{count_str}</b> reports generated"
+            f"<br>💰 <b style='color:#FFA028;'>{cost_str}</b> total LLM cost"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
 
 # ── Auth gate ─────────────────────────────────────────────────────────────────
