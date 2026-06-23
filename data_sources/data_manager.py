@@ -335,7 +335,12 @@ class DataManager:
         # When EODHD succeeded → fill-only (don't overwrite accurate paid data)
         # When EODHD failed    → override yfinance stubs for non-US tickers
         # Skipped entirely when EODHD provided sufficient history
-        if self._av and ENABLE_ALPHA_VANTAGE:
+        # Alpha Vantage has no coverage for these exchanges (same gap as
+        # EODHD) — skip entirely rather than burning the shared, heavily
+        # rate-limited (25/day) API key on calls that always fail.
+        _AV_UNSUPPORTED_SUFFIXES = (".T", ".NS", ".BO", ".SI")
+        is_av_unsupported = ticker.upper().endswith(_AV_UNSUPPORTED_SUFFIXES)
+        if self._av and ENABLE_ALPHA_VANTAGE and not is_av_unsupported:
             needs_history = len(company.annual_financials) < MIN_HISTORY_YEARS
             # Run AV if we still need history OR if EODHD failed for non-US
             run_av = needs_history or (not eodhd_succeeded and not is_us_ticker)

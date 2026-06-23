@@ -133,22 +133,27 @@ class LLMClient:
         # Strip any markdown code fences the model might add despite instructions
         cleaned = _strip_code_fences(raw)
 
+        # strict=False allows literal control characters (unescaped newlines,
+        # tabs) inside string values — GPT-4o frequently writes multi-paragraph
+        # "snapshot" text with raw newlines instead of escaping them as \n,
+        # which json.loads() otherwise rejects outright as a parse error even
+        # though the JSON is structurally fine.
         try:
-            return json.loads(cleaned)
+            return json.loads(cleaned, strict=False)
         except json.JSONDecodeError:
             # Fallback 1: find first { to last } (handles trailing commentary)
             start = cleaned.find('{')
             end   = cleaned.rfind('}')
             if start != -1 and end != -1 and end > start:
                 try:
-                    return json.loads(cleaned[start:end+1])
+                    return json.loads(cleaned[start:end+1], strict=False)
                 except json.JSONDecodeError:
                     pass
             # Fallback 2: regex extraction
             match = re.search(r'\{.*\}', cleaned, re.DOTALL)
             if match:
                 try:
-                    return json.loads(match.group(0))
+                    return json.loads(match.group(0), strict=False)
                 except json.JSONDecodeError:
                     pass
             # Fallback 3: truncated-JSON repair (max_tokens hit mid-response)
