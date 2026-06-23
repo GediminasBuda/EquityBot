@@ -79,18 +79,36 @@ class YFinanceAdapter:
 
         try:
             yt = yf.Ticker(ticker)
-            info = yt.info or {}
+            # Ticker.info calls Yahoo's quoteSummary endpoint via a crumb/cookie
+            # handshake that is frequently rate-limited on Streamlit Cloud's
+            # shared IPs (YFRateLimitError). That used to take down this whole
+            # fetch() — info={} lets us fall through to the chart/fundamentals-
+            # timeseries fallbacks (lighter-weight, separate endpoints) instead
+            # of failing the ticker outright.
+            try:
+                info = yt.info or {}
+            except Exception as e:
+                logger.warning(f"[yfinance] .info failed for {ticker}, continuing with fallbacks: {e}")
+                info = {}
 
-            # Validate we got real data
+            # Only fail outright when info AND the chart fallback both have
+            # nothing — i.e. genuinely no signal that this ticker exists.
             if not info or info.get("regularMarketPrice") is None and info.get("currentPrice") is None:
-                # Try to catch a completely empty response
                 if not info.get("longName") and not info.get("shortName"):
-                    return DataSourceResult(
-                        success=False,
-                        source_name=self.SOURCE_NAME,
-                        error=f"No data returned for ticker '{ticker}'. Check ticker format.",
-                        duration_seconds=time.time() - start,
-                    )
+                    chart_snap = None
+                    try:
+                        from .yahoo_chart_fallback import fetch_yahoo_chart_snapshot
+                        chart_snap = fetch_yahoo_chart_snapshot(ticker)
+                    except Exception:
+                        chart_snap = None
+                    if chart_snap is None:
+                        return DataSourceResult(
+                            success=False,
+                            source_name=self.SOURCE_NAME,
+                            error=f"No data returned for ticker '{ticker}'. Check ticker format.",
+                            duration_seconds=time.time() - start,
+                        )
+                    logger.info(f"[yfinance] .info empty for {ticker} but chart API confirms it exists; continuing")
 
             company = CompanyData(
                 ticker=ticker,
