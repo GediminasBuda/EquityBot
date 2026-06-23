@@ -240,6 +240,35 @@ class YFinanceAdapter:
             except Exception as e:
                 logger.warning(f"[yfinance] Could not fetch annual history for {ticker}: {e}")
 
+            # ── Fundamentals-timeseries fallback (Streamlit Cloud IP block) ─────
+            # yt.financials/.balance_sheet/.cashflow call Yahoo's quoteSummary
+            # endpoint, which is the endpoint most often blocked on Streamlit
+            # Cloud. If that left us with no annual history at all, try Yahoo's
+            # separate fundamentals-timeseries API directly — it's lighter-
+            # weight and frequently still responds when quoteSummary doesn't.
+            if not company.annual_financials:
+                try:
+                    from .yahoo_fundamentals_fallback import fetch_yahoo_annual_financials
+                    fallback_years = fetch_yahoo_annual_financials(ticker)
+                    if fallback_years:
+                        for year, fields in fallback_years.items():
+                            af = company.annual_financials.get(year, AnnualFinancials(year=year))
+                            for field, value in fields.items():
+                                setattr(af, field, value)
+                            company.annual_financials[year] = af
+                        fields_filled.append("annual_financials")
+                        logger.info(
+                            f"[yfinance] Fundamentals-timeseries fallback recovered "
+                            f"{len(fallback_years)} years for {ticker}"
+                        )
+                        if company.shares_outstanding is None:
+                            latest_year = max(fallback_years)
+                            latest_shares = fallback_years[latest_year].get("shares_outstanding")
+                            if latest_shares:
+                                company.shares_outstanding = latest_shares
+                except Exception as e:
+                    logger.warning(f"[yfinance] Fundamentals-timeseries fallback failed for {ticker}: {e}")
+
             # ── TTM from financials first column (reuses already-fetched data) ──
             # yt.financials is already in memory. Its first (most recent) column
             # is the TTM period when it post-dates the last fiscal year end —
