@@ -255,6 +255,7 @@ class YFinanceAdapter:
                             af = company.annual_financials.get(year, AnnualFinancials(year=year))
                             for field, value in fields.items():
                                 setattr(af, field, value)
+                            af.calculate_derived()
                             company.annual_financials[year] = af
                         fields_filled.append("annual_financials")
                         logger.info(
