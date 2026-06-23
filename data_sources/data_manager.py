@@ -157,6 +157,18 @@ class DataManager:
                             logger.info(f"[DataManager] Patched cached price via Stooq: {ticker} = {sp}")
                     except Exception as e:
                         logger.warning(f"[DataManager] Stooq patch failed for cached {ticker}: {e}")
+                if cached.current_price is None:
+                    try:
+                        from .yahoo_chart_fallback import fetch_yahoo_chart_snapshot
+                        snap = fetch_yahoo_chart_snapshot(ticker)
+                        if snap is not None:
+                            cached.current_price = snap["price"]
+                            if cached.market_cap is None and cached.shares_outstanding:
+                                cached.market_cap = snap["price"] * cached.shares_outstanding
+                            self._save_cache(ticker, cached)
+                            logger.info(f"[DataManager] Patched cached price via Yahoo chart: {ticker} = {snap['price']}")
+                    except Exception as e:
+                        logger.warning(f"[DataManager] Yahoo chart patch failed for cached {ticker}: {e}")
                 return cached
 
         # ── Tier 1a: yfinance ─────────────────────────────────────────────────
@@ -353,6 +365,33 @@ class DataManager:
                         company.market_cap = stooq_price * company.shares_outstanding
             except Exception as e:
                 logger.debug(f"[DataManager] Stooq fallback failed: {e}")
+
+        # ── Yahoo chart-API fallback (last resort) ─────────────────────────────
+        # Stooq has no coverage for some Asian exchanges (e.g. Tokyo `.T`
+        # tickers return 404). Yahoo's lighter-weight chart endpoint sometimes
+        # still responds even when yfinance's quoteSummary (`.info`) is
+        # blocked on Streamlit Cloud's IP, so it's worth trying before giving
+        # up — this is what rescues Japan/other EODHD-uncovered tickers from
+        # a hard "no data found" error.
+        if company.current_price is None:
+            try:
+                from .yahoo_chart_fallback import fetch_yahoo_chart_snapshot
+                snap = fetch_yahoo_chart_snapshot(ticker)
+                if snap is not None:
+                    company.current_price = snap["price"]
+                    logger.info(f"[DataManager] Yahoo chart fallback: {ticker} price = {snap['price']}")
+                    if not company.name and snap.get("name"):
+                        company.name = snap["name"]
+                    if not company.currency and snap.get("currency"):
+                        company.currency = snap["currency"]
+                    if company.week_52_high is None and snap.get("week_52_high"):
+                        company.week_52_high = snap["week_52_high"]
+                    if company.week_52_low is None and snap.get("week_52_low"):
+                        company.week_52_low = snap["week_52_low"]
+                    if company.market_cap is None and company.shares_outstanding:
+                        company.market_cap = snap["price"] * company.shares_outstanding
+            except Exception as e:
+                logger.debug(f"[DataManager] Yahoo chart fallback failed: {e}")
 
         # ── Historical year-end prices via yfinance + Alpha Vantage ───────────
         # On Streamlit Cloud Yahoo Finance often blocks .info() but
