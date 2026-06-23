@@ -169,6 +169,36 @@ class DataManager:
                             logger.info(f"[DataManager] Patched cached price via Yahoo chart: {ticker} = {snap['price']}")
                     except Exception as e:
                         logger.warning(f"[DataManager] Yahoo chart patch failed for cached {ticker}: {e}")
+                # Same staleness problem for annual financials: a cache entry
+                # saved before the fundamentals-timeseries fallback existed
+                # (or saved while it failed) has no annual_financials and
+                # never gets a second chance, since cache hits return early.
+                if not cached.annual_financials:
+                    try:
+                        from .yahoo_fundamentals_fallback import fetch_yahoo_annual_financials
+                        from .base import AnnualFinancials
+                        fallback_years = fetch_yahoo_annual_financials(ticker)
+                        if fallback_years:
+                            for year, fields in fallback_years.items():
+                                af = cached.annual_financials.get(year, AnnualFinancials(year=year))
+                                for field, value in fields.items():
+                                    setattr(af, field, value)
+                                af.calculate_derived()
+                                cached.annual_financials[year] = af
+                            if cached.shares_outstanding is None:
+                                latest_year = max(fallback_years)
+                                latest_shares = fallback_years[latest_year].get("shares_outstanding")
+                                if latest_shares:
+                                    cached.shares_outstanding = latest_shares
+                            if cached.market_cap is None and cached.shares_outstanding and cached.current_price:
+                                cached.market_cap = cached.current_price * cached.shares_outstanding
+                            self._save_cache(ticker, cached)
+                            logger.info(
+                                f"[DataManager] Patched cached annual_financials via Yahoo "
+                                f"fundamentals-timeseries: {ticker} ({len(fallback_years)} years)"
+                            )
+                    except Exception as e:
+                        logger.warning(f"[DataManager] Yahoo fundamentals patch failed for cached {ticker}: {e}")
                 return cached
 
         # ── Tier 1a: yfinance ─────────────────────────────────────────────────
