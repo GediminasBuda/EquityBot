@@ -2762,20 +2762,39 @@ if generate_clicked and ticker_input:
                     )
                     logger.info("[SWOT] LLM returned keys: %s", list(_swot_raw.keys()) if isinstance(_swot_raw, dict) else type(_swot_raw))
                     _show_token_usage(llm.last_usage)
+                    # DeepSeek (and some OpenAI responses) may wrap the fields
+                    # in a nested "swot" key or return non-string values.
+                    # Unwrap nested key if the expected fields are absent.
+                    if isinstance(_swot_raw, dict) and "swot" in _swot_raw and isinstance(_swot_raw["swot"], dict):
+                        if not any(k in _swot_raw for k in ("summary", "strengths", "weaknesses")):
+                            _swot_raw = _swot_raw["swot"]
+
+                    def _swot_str(val) -> str:
+                        if val is None:
+                            return ""
+                        if isinstance(val, str):
+                            return val.strip()
+                        if isinstance(val, list):
+                            return " ".join(str(item) for item in val).strip()
+                        return str(val).strip()
+
                     _swot_valid = {
-                        "summary":       (_swot_raw.get("summary")       or "").strip(),
-                        "strengths":     (_swot_raw.get("strengths")     or "").strip(),
-                        "weaknesses":    (_swot_raw.get("weaknesses")    or "").strip(),
-                        "opportunities": (_swot_raw.get("opportunities") or "").strip(),
-                        "threats":       (_swot_raw.get("threats")       or "").strip(),
+                        "summary":       _swot_str(_swot_raw.get("summary")),
+                        "strengths":     _swot_str(_swot_raw.get("strengths")),
+                        "weaknesses":    _swot_str(_swot_raw.get("weaknesses")),
+                        "opportunities": _swot_str(_swot_raw.get("opportunities")),
+                        "threats":       _swot_str(_swot_raw.get("threats")),
                     }
+                    logger.info("[SWOT] Validated fields: %s", {k: bool(v) for k, v in _swot_valid.items()})
                     if any(_swot_valid.values()):
                         analysis["swot"] = _swot_valid
                         logger.info("[SWOT] SWOT populated successfully.")
                         st.write("✓  SWOT analysis generated successfully.")
                     else:
-                        logger.warning("[SWOT] All SWOT fields empty.")
+                        logger.warning("[SWOT] All SWOT fields empty. Raw keys: %s", list(_swot_raw.keys()) if isinstance(_swot_raw, dict) else type(_swot_raw))
                         st.warning("⚠  SWOT call returned empty fields — SWOT page will be omitted.")
+                        with st.expander("📋 Raw SWOT response (debug)", expanded=False):
+                            st.code(getattr(llm, "last_raw_response", "(not available)")[:2000], language="json")
                 except Exception as _swot_err:
                     import traceback
                     logger.exception("[SWOT] Exception during SWOT generation")
