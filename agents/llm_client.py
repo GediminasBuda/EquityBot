@@ -418,12 +418,19 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_prompt})
 
+        # o-series models (o1, o3, o4-mini, o1-pro, etc.) use
+        # max_completion_tokens instead of max_tokens and do not accept
+        # a temperature parameter.
+        _is_o_series = re.match(r"^o\d", self.model or "")
         kwargs: dict = dict(
             model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
             messages=messages,
         )
+        if _is_o_series:
+            kwargs["max_completion_tokens"] = max_tokens
+        else:
+            kwargs["max_tokens"] = max_tokens
+            kwargs["temperature"] = temperature
         # Hard-enable JSON mode when the caller explicitly asks for it
         # (from generate_json). This guarantees valid JSON output —
         # without it GPT-4o frequently returns prose-wrapped or
