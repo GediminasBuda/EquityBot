@@ -418,18 +418,22 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_prompt})
 
-        # o-series models (o1, o3, o4-mini, o1-pro, etc.) use
-        # max_completion_tokens instead of max_tokens and do not accept
-        # a temperature parameter.
-        _is_o_series = re.match(r"^o\d", self.model or "")
+        # OpenAI (no custom base_url) requires max_completion_tokens on all
+        # modern models (gpt-4.1, gpt-5.x, o-series, etc.). DeepSeek's
+        # OpenAI-compatible API still uses max_tokens, so only switch when
+        # hitting real OpenAI endpoints.
+        # o-series reasoning models additionally reject the temperature param.
+        _is_o_series = bool(re.match(r"^o\d", self.model or ""))
+        _is_real_openai = not base_url  # DeepSeek always passes a base_url
         kwargs: dict = dict(
             model=self.model,
             messages=messages,
         )
-        if _is_o_series:
+        if _is_real_openai:
             kwargs["max_completion_tokens"] = max_tokens
         else:
             kwargs["max_tokens"] = max_tokens
+        if not _is_o_series:
             kwargs["temperature"] = temperature
         # Hard-enable JSON mode when the caller explicitly asks for it
         # (from generate_json). This guarantees valid JSON output —
