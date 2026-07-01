@@ -418,46 +418,52 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_prompt})
 
-        # OpenAI (no custom base_url) requires max_completion_tokens on all
-        # modern models (gpt-4.1, gpt-5.x, o-series, etc.). DeepSeek's
-        # OpenAI-compatible API still uses max_tokens, so only switch when
-        # hitting real OpenAI endpoints.
-        # o-series reasoning models additionally reject the temperature param.
-        _is_o_series = bool(re.match(r"^o\d", self.model or ""))
-        _is_real_openai = not base_url  # DeepSeek always passes a base_url
+        # DeepSeek (custom base_url) uses max_tokens; real OpenAI uses
+        # max_completion_tokens on all modern models. Start with whichever
+        # is appropriate and let the retry logic handle edge cases.
+        _is_real_openai = not base_url
         kwargs: dict = dict(
             model=self.model,
             messages=messages,
+            temperature=temperature,
         )
         if _is_real_openai:
             kwargs["max_completion_tokens"] = max_tokens
         else:
             kwargs["max_tokens"] = max_tokens
-        if not _is_o_series:
-            kwargs["temperature"] = temperature
-        # Hard-enable JSON mode when the caller explicitly asks for it
-        # (from generate_json). This guarantees valid JSON output —
-        # without it GPT-4o frequently returns prose-wrapped or
-        # markdown-fenced responses for complex schemas, which the
-        # downstream parser then fails on.
         if force_json:
             kwargs["response_format"] = {"type": "json_object"}
 
-        try:
-            resp = client.chat.completions.create(**kwargs)
-            # Track token usage (same dict shape as Claude for consistency)
-            if resp.usage:
-                self.last_usage = {
-                    "input_tokens":                resp.usage.prompt_tokens,
-                    "output_tokens":               resp.usage.completion_tokens,
-                    "cache_creation_input_tokens": 0,
-                    "cache_read_input_tokens":     getattr(resp.usage, "prompt_tokens_details", None)
-                                                   and getattr(resp.usage.prompt_tokens_details,
-                                                               "cached_tokens", 0) or 0,
-                }
-            return resp.choices[0].message.content
-        except Exception as e:
-            raise RuntimeError(f"OpenAI API error: {e}")
+        # Retry loop: strip unsupported params reported by the API so the
+        # same code works universally across gpt-4o, gpt-4.1, gpt-5.x,
+        # o-series, DeepSeek, and any future models without hardcoding lists.
+        for _attempt in range(3):
+            try:
+                resp = client.chat.completions.create(**kwargs)
+                if resp.usage:
+                    self.last_usage = {
+                        "input_tokens":                resp.usage.prompt_tokens,
+                        "output_tokens":               resp.usage.completion_tokens,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens":     getattr(resp.usage, "prompt_tokens_details", None)
+                                                       and getattr(resp.usage.prompt_tokens_details,
+                                                                   "cached_tokens", 0) or 0,
+                    }
+                return resp.choices[0].message.content
+            except Exception as e:
+                err = str(e)
+                # Some models reject max_tokens — swap to max_completion_tokens
+                if "max_tokens" in err and "max_completion_tokens" in err:
+                    if "max_tokens" in kwargs:
+                        kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+                        logger.info("[LLMClient] Retrying with max_completion_tokens (model rejected max_tokens)")
+                        continue
+                # Some models reject non-default temperature — drop it
+                if "temperature" in err and "temperature" in kwargs:
+                    kwargs.pop("temperature")
+                    logger.info("[LLMClient] Retrying without temperature (model rejected custom value)")
+                    continue
+                raise RuntimeError(f"OpenAI API error: {e}")
 
     def _api_key(self) -> str:
         if self.provider == "claude":
