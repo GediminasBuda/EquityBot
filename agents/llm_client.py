@@ -208,6 +208,8 @@ class LLMClient:
                 return self._openai_web_search(prompt)
             elif self.provider == "claude":
                 return self._claude_web_search(prompt)
+            elif self.provider == "deepseek":
+                return self._deepseek_news_summary(company_name, ticker)
         except Exception as e:
             logger.warning(f"[LLMClient] Web news search failed: {e}")
         return ""
@@ -242,6 +244,41 @@ class LLMClient:
         # Collect all text blocks from the response
         parts = [b.text for b in msg.content if hasattr(b, "text") and b.text]
         return "\n\n".join(parts)
+
+    def _deepseek_news_summary(self, company_name: str, ticker: str) -> str:
+        """
+        DeepSeek has no native web-search tool, so we fetch headlines via
+        NewsAPI (news_adapter.py) and ask DeepSeek to synthesise a narrative.
+        Falls back to empty string when NewsAPI key is absent or returns nothing.
+        """
+        from data_sources.news_adapter import NewsAdapter
+        adapter = NewsAdapter()
+        articles = adapter.fetch_company_news(company_name, ticker, max_articles=12)
+        headlines_block = adapter.format_for_prompt(articles)
+        if not headlines_block:
+            logger.warning(
+                "[LLMClient] DeepSeek news: NewsAPI returned no articles "
+                f"for {company_name} ({ticker}). "
+                "Add NEWS_API_KEY to Streamlit secrets to enable news."
+            )
+            return ""
+
+        summarise_prompt = (
+            f"Based on the following recent news headlines about {company_name} ({ticker}), "
+            "write a senior equity analyst narrative overview organised into 3-5 themes "
+            '(e.g. "Financial performance", "Strategic moves & M&A", "Insider activity"). '
+            "Format: each theme as **Theme name** on its own line, then 2-4 continuous "
+            "prose sentences — NO bullet points, NO numbered lists, NO citation brackets. "
+            "Include specific dates and numbers inline in the prose. "
+            "Write each theme as ONE flowing paragraph, not fragmented lines. "
+            "Do NOT include a document title or heading at the top. "
+            "Plain text with **bold** theme headers only — no other markdown, no JSON.\n\n"
+            f"{headlines_block}"
+        )
+        return self._openai(
+            summarise_prompt, "", max_tokens=1500, temperature=0.3,
+            base_url="https://api.deepseek.com", api_key=DEEPSEEK_API_KEY,
+        )
 
     def check_configured(self) -> tuple[bool, str]:
         """

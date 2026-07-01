@@ -1,6 +1,6 @@
 # Your Humble EquityBot — Agent Handoff Documentation
 
-**Last updated:** 2026-06-12  
+**Last updated:** 2026-07-01  
 **Stack:** Python 3.11 · Streamlit · ReportLab · Claude / GPT-4o · EODHD · yfinance  
 **Deployment:** Streamlit Community Cloud (auto-deploys on push to `Final-design-V3`)  
 **Repo:** https://github.com/GediminasBuda/EquityBot
@@ -352,6 +352,9 @@ Two new metrics appended after YTD on every portfolio card:
 - Sorting uses already-cached snapshots — no extra API calls.
 - Column label "F P/E" renamed to "Forward P/E".
 
+### DeepSeek — Current News section missing from Investment Memo (2026-07-01)
+When `LLM_PROVIDER=deepseek`, the "Current News" section was silently absent from Investment Memo V2 reports. Root cause: `generate_web_news()` in `agents/llm_client.py` only dispatched on `"openai"` and `"claude"` — the `deepseek` branch fell through to `return ""`, so `_news_summary` was always empty and the PDF renderer rendered nothing. OpenAI and Claude have provider-native web search tools; DeepSeek does not. **Fix (2026-07-01):** added `elif self.provider == "deepseek": return self._deepseek_news_summary(company_name, ticker)`. The new `_deepseek_news_summary()` method fetches up to 12 headlines from `NewsAdapter` (NewsAPI.org), then calls DeepSeek's chat API to synthesise the analyst narrative in the same format as the native web-search path. Requires `NEWS_API_KEY` in Streamlit secrets; logs a warning and returns `""` gracefully if absent.
+
 ---
 
 ## 8. Report Types
@@ -411,6 +414,13 @@ Available prompt placeholders for custom frameworks: `{financials}`, `{forward_e
 Change `LLM_PROVIDER` and `LLM_MODEL` in Streamlit secrets (or `.env` locally). No code changes needed. Valid combinations:
 - `claude` + `claude-sonnet-4-5` (or `claude-opus-4-5`, `claude-haiku-4-5`)
 - `openai` + `gpt-4o` (or `gpt-4o-mini`, `gpt-4-turbo`)
+- `deepseek` + `deepseek-chat` (or `deepseek-reasoner`) — requires `DEEPSEEK_API_KEY`
+
+### Web news search per provider
+`generate_web_news()` in `agents/llm_client.py` fetches a current-news narrative for the "Current News" section of Investment Memo reports. Each provider uses a different mechanism:
+- **OpenAI**: Responses API with `web_search_preview` tool (native web search)
+- **Claude**: Messages API with `web_search_20250305` tool (native web search)
+- **DeepSeek**: No native web search tool. Falls back to `NewsAdapter` (NewsAPI.org) to fetch up to 12 recent headlines, then passes them to DeepSeek's chat API to synthesise the analyst narrative (`_deepseek_news_summary()`). Requires `NEWS_API_KEY` in Streamlit secrets. If `NEWS_API_KEY` is absent, the Current News section is silently omitted from the report.
 
 ### Prompt caching (Claude only)
 All report prompts split into:
