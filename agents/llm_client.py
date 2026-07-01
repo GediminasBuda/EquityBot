@@ -15,7 +15,7 @@ import time
 from typing import Optional
 
 from config import (
-    ANTHROPIC_API_KEY, OPENAI_API_KEY,
+    ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY,
     LLM_PROVIDER, LLM_MODEL, ADVERSARIAL_MODE,
 )
 
@@ -88,9 +88,15 @@ class LLMClient:
             result = self._openai(user_prompt, system_prompt, max_tokens, temperature,
                                   cacheable_prefix=cacheable_prefix,
                                   force_json=force_json)
+        elif self.provider == "deepseek":
+            result = self._openai(user_prompt, system_prompt, max_tokens, temperature,
+                                  cacheable_prefix=cacheable_prefix,
+                                  force_json=force_json,
+                                  base_url="https://api.deepseek.com",
+                                  api_key=DEEPSEEK_API_KEY)
         else:
             raise ValueError(f"Unknown LLM provider: '{self.provider}'. "
-                             f"Set LLM_PROVIDER=claude or LLM_PROVIDER=openai in .env")
+                             f"Set LLM_PROVIDER=claude, openai, or deepseek in .env")
 
         elapsed = time.time() - start
         u = self.last_usage
@@ -243,7 +249,8 @@ class LLMClient:
         """
         key = self._api_key()
         if not key:
-            provider_label = "ANTHROPIC_API_KEY" if self.provider == "claude" else "OPENAI_API_KEY"
+            provider_label = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY",
+                              "deepseek": "DEEPSEEK_API_KEY"}.get(self.provider, "API_KEY")
             return False, (
                 f"No API key found for '{self.provider}'. "
                 f"Add {provider_label} to your .env file."
@@ -348,20 +355,22 @@ class LLMClient:
         temperature: float,
         cacheable_prefix: str = "",   # prepended to user_prompt (no server-side caching for OpenAI)
         force_json: bool = False,
+        base_url: str = "",
+        api_key: str = "",
     ) -> str:
         try:
             from openai import OpenAI
         except ImportError:
             raise ImportError("Run: pip install openai")
 
-        key = OPENAI_API_KEY
+        key = api_key or OPENAI_API_KEY
         if not key:
+            provider_hint = "DEEPSEEK_API_KEY" if base_url else "OPENAI_API_KEY"
             raise RuntimeError(
-                "OPENAI_API_KEY not set. Add it to .env:\n"
-                "  OPENAI_API_KEY=sk-..."
+                f"{provider_hint} not set. Add it to .env."
             )
 
-        client = OpenAI(api_key=key)
+        client = OpenAI(api_key=key, **({"base_url": base_url} if base_url else {}))
         # Prepend cacheable_prefix to user_prompt — OpenAI has no server-side
         # prompt caching via content blocks, so we just concatenate both parts
         # into one message. The full schema + instructions + data all arrive together.
@@ -407,6 +416,8 @@ class LLMClient:
             return ANTHROPIC_API_KEY
         elif self.provider == "openai":
             return OPENAI_API_KEY
+        elif self.provider == "deepseek":
+            return DEEPSEEK_API_KEY
         return ""
 
 

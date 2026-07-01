@@ -42,6 +42,7 @@ CACHE_TTL_HOURS = 24
 # ── API Keys ──────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
+DEEPSEEK_API_KEY     = os.getenv("DEEPSEEK_API_KEY", "")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 FRED_API_KEY         = os.getenv("FRED_API_KEY", "")
 FMP_API_KEY          = os.getenv("FMP_API_KEY", "")
