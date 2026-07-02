@@ -382,7 +382,8 @@ class FisherPeersPDFGenerator:
         st = _extend_styles(_styles())
 
         def on_page(canvas, doc):
-            _draw_header(canvas, doc, company, report_date)
+            _draw_header(canvas, doc, company, report_date,
+                         model_name="Fisher Alternatives + Peers")
 
         doc = SimpleDocTemplate(
             output_path,

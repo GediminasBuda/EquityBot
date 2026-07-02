@@ -23,6 +23,8 @@ from reportlab.platypus import (
     Spacer, HRFlowable, PageBreak,
 )
 
+from config import LLM_MODEL
+
 logger = logging.getLogger(__name__)
 
 W, H    = A4
@@ -136,7 +138,8 @@ def _draw_footer(canvas, doc, fw_name: str, index_ticker: str,
         W / 2, MB - 7.5*mm,
         f"{fw_name}  ·  {index_ticker}  ·  {company_count} companies  ·  {date}",
     )
-    canvas.drawRightString(W - MR, MB - 7.5*mm, f"Page {doc.page}")
+    canvas.drawRightString(W - MR, MB - 7.5*mm,
+        f"Page {doc.page}  |  Your Humble EquityBot  |  {LLM_MODEL}")
     canvas.restoreState()
 
 

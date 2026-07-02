@@ -30,6 +30,8 @@ from reportlab.platypus import (
     Spacer, HRFlowable, PageBreak, Image,
 )
 
+from config import LLM_MODEL
+
 logger = logging.getLogger(__name__)
 
 # ── Page geometry ─────────────────────────────────────────────────────────────
@@ -150,6 +152,73 @@ def _kv_table(rows: list[tuple], col_widths=None) -> Table:
         ("LINEBELOW",   (0, 0), (-1, -1), 0.3, RULE),
     ]))
     return t
+
+
+def _draw_header(canvas, doc, bundle: dict, report_date: str) -> None:
+    """Harmonised header: company name + price (row 1), subtitle + mcap (row 2), rule."""
+    canvas.saveState()
+
+    g = (bundle.get("General") or {})
+    name    = g.get("Name") or g.get("Code") or bundle.get("ticker") or ""
+    ticker  = g.get("Code") or bundle.get("ticker") or ""
+    country = g.get("CountryName") or g.get("Country") or ""
+    exch    = g.get("Exchange") or ""
+    cur     = g.get("CurrencyCode") or ""
+    fund_type = bundle.get("fund_type", "")
+
+    NAME_Y     = H - 11 * mm
+    SUBTITLE_Y = H - 17 * mm
+    LINE_Y     = H - 21 * mm
+
+    # Row 1: fund name (left) | price (right)
+    canvas.setFont(BOLD_FONT, 14)
+    canvas.setFillColor(NAVY)
+    canvas.drawString(ML, NAME_Y, name)
+
+    stats = bundle.get("Stats") or bundle.get("Technicals") or {}
+    price = stats.get("last_close") or stats.get("200DayMA")
+    if price:
+        try:
+            price_str = f"Price: {float(price):,.2f} {cur}".strip()
+        except (ValueError, TypeError):
+            price_str = "Price n/a"
+    else:
+        price_str = "Price n/a"
+    canvas.setFont(BOLD_FONT, 8.5)
+    canvas.setFillColor(NAVY)
+    canvas.drawRightString(W - MR, NAME_Y, price_str)
+
+    # Row 2: subtitle (left) | AUM (right)
+    model_label = f"Fund Fundamentals ({fund_type})" if fund_type else "Fund Fundamentals"
+    subtitle = " | ".join(filter(None, [
+        model_label, country, exch, ticker, report_date,
+    ]))
+    canvas.setFont(BASE_FONT, 8)
+    canvas.setFillColor(MGRAY)
+    canvas.drawString(ML, SUBTITLE_Y, subtitle)
+
+    aum = (bundle.get("ETF_Data") or {}).get("TotalAssets")
+    if not aum:
+        aum = g.get("MarketCapitalization")
+    try:
+        aum_str = f"AUM: {float(aum)/1e9:,.2f}B {cur}".strip() if aum else ""
+    except (ValueError, TypeError):
+        aum_str = ""
+    canvas.setFont(BASE_FONT, 8)
+    canvas.setFillColor(NAVY)
+    canvas.drawRightString(W - MR, SUBTITLE_Y, aum_str)
+
+    # Separator line
+    canvas.setStrokeColor(NAVY)
+    canvas.setLineWidth(0.8)
+    canvas.line(ML, LINE_Y, W - MR, LINE_Y)
+
+    # Footer
+    canvas.setFont(BASE_FONT, 7)
+    canvas.setFillColor(MGRAY)
+    canvas.drawRightString(W - MR, 7 * mm,
+        f"Page {doc.page}  |  Your Humble EquityBot  |  {LLM_MODEL}")
+    canvas.restoreState()
 
 
 def _data_table(headers: list, rows: list, col_widths=None,
@@ -955,6 +1024,10 @@ class FundFundamentalsPDFGenerator:
         styles    = _build_styles()
         fund_type = bundle.get("fund_type", "UNKNOWN")
         analysis  = analysis or {}
+        report_date = datetime.now().strftime("%Y-%m-%d")
+
+        def _on_page(canvas, doc):
+            _draw_header(canvas, doc, bundle, report_date)
 
         doc = SimpleDocTemplate(
             output_path,
@@ -991,4 +1064,4 @@ class FundFundamentalsPDFGenerator:
                            textColor=CGRAY, alignment=TA_RIGHT),
         ))
 
-        doc.build(story)
+        doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)

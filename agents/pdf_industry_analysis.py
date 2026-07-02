@@ -28,6 +28,7 @@ from reportlab.platypus import (
     Spacer, PageBreak, KeepTogether, HRFlowable,
 )
 
+from config import LLM_MODEL
 from data_sources.base import CompanyData
 from agents.pdf_fisher import (
     _styles, _section, _split_paragraphs, _draw_header,
@@ -564,7 +565,8 @@ class IndustryAnalysisPDFGenerator:
         st = _extend_styles(_styles())
 
         def on_page(canvas, doc):
-            _draw_header(canvas, doc, company, report_date)
+            _draw_header(canvas, doc, company, report_date,
+                         model_name="Industry Analysis")
 
         doc = SimpleDocTemplate(
             output_path,

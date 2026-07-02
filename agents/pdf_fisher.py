@@ -148,43 +148,52 @@ def _styles() -> dict:
 
 # ── Page header (canvas callback) ────────────────────────────────────────────
 
-def _draw_header(canvas, doc, company: CompanyData, report_date: str):
+def _draw_header(canvas, doc, company: CompanyData, report_date: str,
+                 model_name: str = "Fisher 15 Questions"):
     """Ink-saving header: white background, navy (Pantone 303) text."""
     canvas.saveState()
 
-    # Company name — navy on white
-    canvas.setFillColor(NAVY)
-    canvas.setFont(BOLD_FONT, 13)
-    canvas.drawString(ML, H - 10*mm, company.name or company.ticker)
+    NAME_Y     = H - 11*mm
+    SUBTITLE_Y = H - 17*mm
+    LINE_Y     = H - 21*mm
 
-    # Subtitle
+    # Row 1: company name (left) | price (right)
+    canvas.setFont(BOLD_FONT, 14)
+    canvas.setFillColor(NAVY)
+    canvas.drawString(ML, NAME_Y, company.name or company.ticker)
+
+    cur = company.currency_price or company.currency or ""
+    price_str = (f"Price: {company.current_price:,.2f} {cur}"
+                 if company.current_price else "Price n/a")
+    canvas.setFont(BOLD_FONT, 8.5)
+    canvas.drawRightString(W - MR, NAME_Y, price_str)
+
+    # Row 2: subtitle (left) | mcap (right)
+    subtitle = " | ".join(filter(None, [
+        model_name,
+        company.sector, company.country,
+        company.exchange, company.ticker, report_date,
+    ]))
     canvas.setFont(BASE_FONT, 8)
     canvas.setFillColor(MGRAY)
-    canvas.drawString(ML, H - 15.5*mm,
-        f"Fisher Alternatives  |  {company.sector or ''}  |  {company.exchange or ''}")
+    canvas.drawString(ML, SUBTITLE_Y, subtitle)
 
-    # Report date tag
-    canvas.setFont(BASE_FONT, 7.5)
-    canvas.setFillColor(MGRAY)
-    canvas.drawString(ML, H - 20.5*mm, f"Report date: {report_date}")
-
-    # Right: price + ticker
-    price_str = (f"{company.current_price:.2f} {company.currency_price or ''}"
-                 if company.current_price else "Price n/a")
-    cap_str   = (f"Mkt Cap {company.market_cap/1000:,.1f}B {company.currency or ''}"
-                 if company.market_cap else "")
-    canvas.setFont(BOLD_FONT, 9)
+    mcap_str = (f"MCap: {company.market_cap/1e9:,.2f}B {company.currency or ''}"
+                if company.market_cap else "")
+    canvas.setFont(BASE_FONT, 8)
     canvas.setFillColor(NAVY)
-    canvas.drawRightString(W - MR, H - 10*mm, price_str)
-    canvas.setFont(BASE_FONT, 7.5)
-    canvas.setFillColor(NAVY)
-    canvas.drawRightString(W - MR, H - 15.5*mm, cap_str)
-    canvas.drawRightString(W - MR, H - 20.5*mm, company.ticker)
+    canvas.drawRightString(W - MR, SUBTITLE_Y, mcap_str)
 
-    # Page number
+    # Separator line
+    canvas.setStrokeColor(NAVY)
+    canvas.setLineWidth(0.8)
+    canvas.line(ML, LINE_Y, W - MR, LINE_Y)
+
+    # Footer
     canvas.setFont(BASE_FONT, 7)
     canvas.setFillColor(MGRAY)
-    canvas.drawCentredString(W / 2, MB / 2, f"Page {doc.page}")
+    canvas.drawRightString(W - MR, 8*mm,
+                           f"Page {doc.page}  |  Your Humble EquityBot  |  {LLM_MODEL}")
 
     canvas.restoreState()
 

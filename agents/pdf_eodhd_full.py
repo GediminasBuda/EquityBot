@@ -36,6 +36,8 @@ from reportlab.platypus import (
     Spacer, HRFlowable, PageBreak, Image,
 )
 
+from config import LLM_MODEL
+
 logger = logging.getLogger(__name__)
 
 # ── Page geometry ─────────────────────────────────────────────────────────────
@@ -166,48 +168,63 @@ def _draw_header(canvas, doc, bundle: dict, report_date: str):
     canvas.saveState()
     f = bundle.get("fundamentals") or {}
     g = f.get("General") or {}
-    name = g.get("Name") or bundle.get("ticker") or ""
-    sub = " | ".join(filter(None, [
-        g.get("CountryName"), g.get("Sector"), g.get("Industry"),
-        f"ISIN: {g.get('ISIN')}" if g.get("ISIN") else None,
-    ]))
+    name    = g.get("Name") or bundle.get("ticker") or ""
+    ticker  = g.get("Code") or bundle.get("ticker") or ""
+    sector  = g.get("Sector") or ""
+    country = g.get("CountryName") or ""
+    exch    = g.get("Exchange") or ""
 
-    canvas.setFont(BOLD_FONT, 13)
+    NAME_Y     = H - 11 * mm
+    SUBTITLE_Y = H - 17 * mm
+    LINE_Y     = H - 21 * mm
+
+    # Row 1: company name (left) | price (right)
+    canvas.setFont(BOLD_FONT, 14)
     canvas.setFillColor(NAVY)
-    canvas.drawString(ML, H - 12 * mm, name)
+    canvas.drawString(ML, NAME_Y, name)
 
-    canvas.setFont(BASE_FONT, 8)
-    canvas.setFillColor(MGRAY)
-    canvas.drawString(ML, H - 17 * mm, sub)
-
-    # Right: price (real-time if available, otherwise last close)
     rt = bundle.get("realtime") or {}
     price = rt.get("close") or rt.get("previousClose")
     cur = g.get("CurrencyCode") or ""
     if price not in (None, "", "NA"):
         try:
-            ps = f"{float(price):,.2f} {cur}".strip()
+            price_str = f"Price: {float(price):,.2f} {cur}".strip()
         except (ValueError, TypeError):
-            ps = "—"
+            price_str = "Price n/a"
     else:
-        ps = "—"
+        price_str = "Price n/a"
     canvas.setFont(BOLD_FONT, 8.5)
     canvas.setFillColor(NAVY)
-    canvas.drawRightString(W - MR, H - 11 * mm, ps)
-    canvas.setFont(BASE_FONT, 7.5)
+    canvas.drawRightString(W - MR, NAME_Y, price_str)
+
+    # Row 2: subtitle (left) | mcap (right)
+    subtitle = " | ".join(filter(None, [
+        "EODHD Data Sheet", sector, country, exch, ticker, report_date,
+    ]))
+    canvas.setFont(BASE_FONT, 8)
     canvas.setFillColor(MGRAY)
-    canvas.drawRightString(W - MR, H - 16 * mm, report_date)
+    canvas.drawString(ML, SUBTITLE_Y, subtitle)
 
-    canvas.setStrokeColor(RULE)
-    canvas.setLineWidth(0.6)
-    canvas.line(ML, H - 20 * mm, W - MR, H - 20 * mm)
+    h_data = (f.get("Highlights") or {})
+    mcap_raw = h_data.get("MarketCapitalization")
+    try:
+        mcap_str = f"MCap: {float(mcap_raw)/1e9:,.2f}B {cur}".strip() if mcap_raw else ""
+    except (ValueError, TypeError):
+        mcap_str = ""
+    canvas.setFont(BASE_FONT, 8)
+    canvas.setFillColor(NAVY)
+    canvas.drawRightString(W - MR, SUBTITLE_Y, mcap_str)
 
-    canvas.setFont(BASE_FONT, 6.5)
-    canvas.setFillColor(CGRAY)
-    canvas.drawString(ML, 7 * mm,
-        "Your Humble EquityBot | EODHD All-In-One data | For internal use only.")
+    # Separator line
+    canvas.setStrokeColor(NAVY)
+    canvas.setLineWidth(0.8)
+    canvas.line(ML, LINE_Y, W - MR, LINE_Y)
+
+    # Footer
+    canvas.setFont(BASE_FONT, 7)
+    canvas.setFillColor(MGRAY)
     canvas.drawRightString(W - MR, 7 * mm,
-        f"Page {doc.page} | {report_date}")
+        f"Page {doc.page}  |  Your Humble EquityBot  |  {LLM_MODEL}")
     canvas.restoreState()
 
 

@@ -25,6 +25,7 @@ from reportlab.platypus import (
     Spacer, HRFlowable, Image,
 )
 
+from config import LLM_MODEL
 from data_sources.base import CompanyData
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ── Page geometry ──────────────────────────────────────────────────────────────
 W, H = A4
 ML = MR = 15 * mm
-MT     = 26 * mm
+MT     = 28 * mm
 MB     = 12 * mm
 CW     = W - ML - MR
 
@@ -199,44 +200,47 @@ def _sec(title: str, st: dict) -> list:
 def _draw_header(canvas, doc, company: CompanyData, report_date: str) -> None:
     canvas.saveState()
 
-    # Left: report name + company sub-line
-    canvas.setFont(BF, 12)
+    NAME_Y     = H - 11 * mm
+    SUBTITLE_Y = H - 17 * mm
+    LINE_Y     = H - 21 * mm
+
+    # Row 1: company name (left) | price (right)
+    canvas.setFont(BF, 14)
     canvas.setFillColor(NAVY)
-    canvas.drawString(ML, H - 10 * mm, "Short Interest")
+    canvas.drawString(ML, NAME_Y, company.name or company.ticker)
 
-    canvas.setFont(NF, 7.5)
-    canvas.setFillColor(MGRAY)
-    sub = " | ".join(filter(None, [
-        company.name or company.ticker,
-        company.sector,
-        company.country,
-    ]))
-    canvas.drawString(ML, H - 15 * mm, sub[:90])
-
-    # Right: ticker + price + date
-    ccy   = company.currency or ""
+    ccy = company.currency_price or company.currency or ""
     price = company.current_price
-    ps    = f"{price:,.2f} {ccy}".strip() if price else "—"
+    price_str = (f"Price: {price:,.2f} {ccy}".strip() if price else "Price n/a")
     canvas.setFont(BF, 8.5)
-    canvas.setFillColor(NAVY)
-    canvas.drawRightString(W - MR, H - 10 * mm, ps)
-    canvas.setFont(NF, 7.5)
-    canvas.setFillColor(MGRAY)
-    canvas.drawRightString(W - MR, H - 15 * mm,
-                           f"{company.ticker or ''}  ·  {report_date}")
+    canvas.drawRightString(W - MR, NAME_Y, price_str)
 
-    # Thin navy rule
+    # Row 2: subtitle (left) | mcap (right)
+    subtitle = " | ".join(filter(None, [
+        "Short Interest",
+        company.sector, company.country,
+        company.exchange, company.ticker, report_date,
+    ]))
+    canvas.setFont(NF, 8)
+    canvas.setFillColor(MGRAY)
+    canvas.drawString(ML, SUBTITLE_Y, subtitle)
+
+    mcap_str = (f"MCap: {company.market_cap/1e9:,.2f}B {company.currency or ''}"
+                if company.market_cap else "")
+    canvas.setFont(NF, 8)
+    canvas.setFillColor(NAVY)
+    canvas.drawRightString(W - MR, SUBTITLE_Y, mcap_str)
+
+    # Separator line
     canvas.setStrokeColor(NAVY)
-    canvas.setLineWidth(0.6)
-    canvas.line(ML, H - 18 * mm, W - MR, H - 18 * mm)
+    canvas.setLineWidth(0.8)
+    canvas.line(ML, LINE_Y, W - MR, LINE_Y)
 
     # Footer
-    canvas.setFont(NF, 6.5)
-    canvas.setFillColor(CGRAY)
-    canvas.drawString(ML, 7 * mm,
-                      "Short Interest data from EODHD. For informational purposes only.")
+    canvas.setFont(NF, 7)
+    canvas.setFillColor(MGRAY)
     canvas.drawRightString(W - MR, 7 * mm,
-                           f"Page {doc.page}  |  {report_date}")
+        f"Page {doc.page}  |  Your Humble EquityBot  |  {LLM_MODEL}")
     canvas.restoreState()
 
 

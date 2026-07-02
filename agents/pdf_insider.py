@@ -32,6 +32,8 @@ from reportlab.platypus import (
     Spacer, HRFlowable, PageBreak,
 )
 
+from config import LLM_MODEL
+
 logger = logging.getLogger(__name__)
 
 # ── Page geometry ────────────────────────────────────────────────────────────
@@ -385,20 +387,53 @@ def _txn_log_section(
 # ── Page header (top-of-every-page banner) ───────────────────────────────────
 def _draw_header(canvas, doc, company, report_date: str):
     canvas.saveState()
+
+    NAME_Y     = H - 11 * mm
+    SUBTITLE_Y = H - 17 * mm
+    LINE_Y     = H - 21 * mm
+
+    name = getattr(company, "name", None) or getattr(company, "ticker", "?")
+
+    # Row 1: company name (left) | price (right)
+    canvas.setFont(BOLD_FONT, 14)
     canvas.setFillColor(NAVY)
+    canvas.drawString(ML, NAME_Y, name)
+
+    ccy = getattr(company, "currency_price", None) or getattr(company, "currency", "") or ""
+    price = getattr(company, "current_price", None)
+    price_str = (f"Price: {price:,.2f} {ccy}".strip() if price else "Price n/a")
     canvas.setFont(BOLD_FONT, 8.5)
-    title = (getattr(company, "name", None)
-             or getattr(company, "ticker", "?"))
-    canvas.drawString(ML, H - 14 * mm, f"{title} — Insider Transactions")
+    canvas.drawRightString(W - MR, NAME_Y, price_str)
+
+    # Row 2: subtitle (left) | mcap (right)
+    ticker  = getattr(company, "ticker", "") or ""
+    sector  = getattr(company, "sector", "") or ""
+    country = getattr(company, "country", "") or ""
+    exch    = getattr(company, "exchange", "") or ""
+    subtitle = " | ".join(filter(None, [
+        "Insider Transactions", sector, country, exch, ticker, report_date,
+    ]))
+    canvas.setFont(BASE_FONT, 8)
     canvas.setFillColor(MGRAY)
-    canvas.setFont(BASE_FONT, 7.5)
-    canvas.drawRightString(W - MR, H - 14 * mm, report_date)
-    canvas.setStrokeColor(RULE)
-    canvas.setLineWidth(0.3)
-    canvas.line(ML, H - 17 * mm, W - MR, H - 17 * mm)
-    # Page number bottom-right
-    canvas.setFont(BASE_FONT, 7.5)
-    canvas.drawRightString(W - MR, 8 * mm, f"Page {doc.page}")
+    canvas.drawString(ML, SUBTITLE_Y, subtitle)
+
+    mcap = getattr(company, "market_cap", None)
+    currency = getattr(company, "currency", "") or ""
+    mcap_str = (f"MCap: {mcap/1e9:,.2f}B {currency}" if mcap else "")
+    canvas.setFont(BASE_FONT, 8)
+    canvas.setFillColor(NAVY)
+    canvas.drawRightString(W - MR, SUBTITLE_Y, mcap_str)
+
+    # Separator line
+    canvas.setStrokeColor(NAVY)
+    canvas.setLineWidth(0.8)
+    canvas.line(ML, LINE_Y, W - MR, LINE_Y)
+
+    # Footer
+    canvas.setFont(BASE_FONT, 7)
+    canvas.setFillColor(MGRAY)
+    canvas.drawRightString(W - MR, 8 * mm,
+        f"Page {doc.page}  |  Your Humble EquityBot  |  {LLM_MODEL}")
     canvas.restoreState()
 
 

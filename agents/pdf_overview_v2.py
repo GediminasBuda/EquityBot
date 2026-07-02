@@ -199,6 +199,7 @@ def _draw_header(canvas, doc, company: CompanyData, report_date: str):
 
     # Subtitle: sector | country | exchange | ticker | date
     subtitle = " | ".join(filter(None, [
+        "Investment Memo",
         company.sector, company.country,
         company.exchange, company.ticker, report_date
     ]))
@@ -230,7 +231,7 @@ def _draw_header(canvas, doc, company: CompanyData, report_date: str):
     canvas.setFont(BASE_FONT, 7)
     canvas.setFillColor(MGRAY)
     canvas.drawRightString(W - MR, 8*mm,
-                           f"Page {doc.page}  |  Your Humble EquityBot")
+                           f"Page {doc.page}  |  Your Humble EquityBot  |  {LLM_MODEL}")
 
     canvas.restoreState()
 
