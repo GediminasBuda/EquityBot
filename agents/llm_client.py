@@ -353,21 +353,17 @@ class LLMClient:
         else:
             system_content = None
 
-        # Fable and other reasoning models reject temperature
-        _no_temp_models = ("claude-fable",)
         kwargs: dict = dict(
             model=self.model,
             max_tokens=max_tokens,
+            temperature=temperature,
             messages=[{"role": "user", "content": user_content}],
         )
-        if not any(self.model.startswith(m) for m in _no_temp_models):
-            kwargs["temperature"] = temperature
         if system_content is not None:
             kwargs["system"] = system_content
 
-        try:
-            msg = client.messages.create(**kwargs)
-            # ── Track token usage (includes cache stats) ──────────────────────
+        def _do_call(kw: dict):
+            msg = client.messages.create(**kw)
             u = msg.usage
             self.last_usage = {
                 "input_tokens":               u.input_tokens,
@@ -379,6 +375,9 @@ class LLMClient:
             if text_block is None:
                 raise RuntimeError("No text block in Claude response")
             return text_block.text
+
+        try:
+            return _do_call(kwargs)
         except anthropic.AuthenticationError:
             raise RuntimeError(
                 "Invalid ANTHROPIC_API_KEY. Check your key at console.anthropic.com"
@@ -387,6 +386,15 @@ class LLMClient:
             raise RuntimeError(
                 "Anthropic rate limit hit. Wait a moment and try again."
             )
+        except anthropic.BadRequestError as e:
+            if "temperature" in str(e):
+                logger.info("[LLMClient] Model rejected temperature — retrying without it")
+                kwargs.pop("temperature", None)
+                try:
+                    return _do_call(kwargs)
+                except Exception as e2:
+                    raise RuntimeError(f"Claude API error: {e2}")
+            raise RuntimeError(f"Claude API error: {e}")
         except Exception as e:
             raise RuntimeError(f"Claude API error: {e}")
 
