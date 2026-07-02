@@ -375,7 +375,10 @@ class LLMClient:
                 "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
                 "cache_read_input_tokens":     getattr(u, "cache_read_input_tokens",     0) or 0,
             }
-            return msg.content[0].text
+            text_block = next((b for b in msg.content if hasattr(b, "text")), None)
+            if text_block is None:
+                raise RuntimeError("No text block in Claude response")
+            return text_block.text
         except anthropic.AuthenticationError:
             raise RuntimeError(
                 "Invalid ANTHROPIC_API_KEY. Check your key at console.anthropic.com"
