@@ -353,12 +353,15 @@ class LLMClient:
         else:
             system_content = None
 
+        # Fable and other reasoning models reject temperature
+        _no_temp_models = ("claude-fable",)
         kwargs: dict = dict(
             model=self.model,
             max_tokens=max_tokens,
-            temperature=temperature,
             messages=[{"role": "user", "content": user_content}],
         )
+        if not any(self.model.startswith(m) for m in _no_temp_models):
+            kwargs["temperature"] = temperature
         if system_content is not None:
             kwargs["system"] = system_content
 
