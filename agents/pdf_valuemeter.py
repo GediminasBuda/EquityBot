@@ -202,7 +202,7 @@ def _draw_header(canvas, doc, company: CompanyData, report_date: str) -> None:
     canvas.setFillColor(MGRAY)
     canvas.drawString(ML, SUBTITLE_Y, subtitle)
 
-    mcap_str = (f"MCap: {company.market_cap/1e9:,.2f}B {company.currency or ''}"
+    mcap_str = (f"MCap: {company.market_cap/1000:,.2f}B {company.currency or ''}"
                 if company.market_cap else "")
     canvas.setFont(NF, 8)
     canvas.setFillColor(NAVY)

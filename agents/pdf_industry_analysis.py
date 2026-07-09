@@ -5,9 +5,8 @@ Layout:
   Page  1-2 : Executive Summary + 5-Forces Scorecard table
   Pages 3-12: One detailed page per force × 5
               (state_2026 + historical evolution + confidence + sources)
-  Page 13   : Competitive Advantage — Summary banner + summary text
-  Page 14-15: Competitive Advantage — Detailed analysis
-  Page 16   : Key Uncertainties + adversarial appendix (if present)
+  Page 13   : Competitive Advantage — Summary banner + summary text + sources
+  Page 14   : Key Uncertainties + adversarial appendix (if present)
 
 Visual language matches the rest of the EquityBot suite (Pantone 303
 ink-saving palette).
@@ -625,13 +624,6 @@ class IndustryAnalysisPDFGenerator:
         story += _section("Competitive Advantage — Summary", st)
         story += _split_paragraphs(
             analysis.get("competitive_advantage_summary", ""), st, "ia_body",
-        )
-        story.append(PageBreak())
-
-        # ── PAGE 9: Competitive Advantage detail (Porter 1985) ──────────────
-        story += _section("Competitive Advantage — Detailed Assessment", st)
-        story += _split_paragraphs(
-            analysis.get("competitive_advantage_detail", ""), st, "ia_body",
         )
 
         ca_sources = analysis.get("competitive_advantage_sources") or []

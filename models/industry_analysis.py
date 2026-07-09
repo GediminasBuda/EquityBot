@@ -71,7 +71,7 @@ outside the object. Every text field must contain substantive content.
 - Each force's state_2026:      250-400 words
 - Each force's historical_evolution: 150-250 words
 - Strategic implications:       150-250 words
-- Competitive advantage detail: 500-800 words
+- Competitive advantage summary: 250-350 words
 - Total Porter-5-Forces text:   2,000-3,000 words across the five forces
 
 == SOURCE & CITATION DISCIPLINE ==
@@ -129,6 +129,28 @@ Field: structural_shifts
 Field: strategic_implications
   Type: string. 150-250 words. What should incumbents and entrants do now?
 
+Field: competitive_advantage_size
+  Type: enum string. One of: "None", "Small", "Large".
+  IMPORTANT: emit this field and the next three (competitive_advantage_*)
+  in the JSON BEFORE the "forces" field, in the order listed here — even
+  though "forces" covers the industry context that logically comes first.
+  This ordering keeps the competitive-advantage assessment safe if your
+  response is truncated later while writing the long "forces" section.
+
+Field: competitive_advantage_evolution
+  Type: enum string. One of: "Eroded Materially", "Eroded", "Stable",
+  "Strengthened", "Strengthened Materially".
+
+Field: competitive_advantage_summary
+  Type: string. 250-350 words. Apply Porter's Competitive Advantage
+  framework (1985): cost leadership / differentiation / focus, and the
+  sources and durability of the advantage. State the conclusion clearly and
+  reference the 10-year evolution. Do NOT re-do the 5-Forces analysis —
+  focus only on the company's own competitive position.
+
+Field: competitive_advantage_sources
+  Type: array of 2-8 strings, each a citation with a year.
+
 Field: forces
   Type: array of 5 objects, in the SAME order as the scorecard. Each object:
     "name"                — exact force name
@@ -142,26 +164,6 @@ Field: forces
     "confidence_level"    — "High" | "Medium" | "Low"
     "data_gaps"           — 1-3 sentences naming concrete data gaps.
     "sources"             — 2-5 source strings, each ending with a year.
-
-Field: competitive_advantage_size
-  Type: enum string. One of: "None", "Small", "Large".
-
-Field: competitive_advantage_evolution
-  Type: enum string. One of: "Eroded Materially", "Eroded", "Stable",
-  "Strengthened", "Strengthened Materially".
-
-Field: competitive_advantage_summary
-  Type: string. 150-250 words. State the conclusion clearly. Reference
-  the 10-year evolution.
-
-Field: competitive_advantage_detail
-  Type: string. 500-800 words. Apply Porter's Competitive Advantage
-  framework (1985): cost leadership / differentiation / focus, value-chain
-  analysis, sources and durability of the advantage. Do NOT re-do the
-  5-Forces analysis — focus only on the company's own competitive position.
-
-Field: competitive_advantage_sources
-  Type: array of 2-8 strings, each a citation with a year.
 
 Field: key_uncertainties
   Type: array of 3-5 strings. The biggest uncertainties / data gaps in
@@ -197,9 +199,10 @@ def _industry_dynamic_prompt(
 
     parts.append(
         "\nReminder: return a single valid JSON object exactly as specified, "
-        "with no markdown fences or JSON comments. Target 2,000-3,000 words "
-        "across the five forces and 500-800 words for the competitive "
-        "advantage detail. Cite sources inline with publication dates."
+        "with no markdown fences or JSON comments. Emit the "
+        "competitive_advantage_* fields BEFORE the forces field. Target "
+        "2,000-3,000 words across the five forces and 250-350 words for the "
+        "competitive advantage summary. Cite sources inline with publication dates."
     )
     return "\n".join(parts)
 
@@ -336,10 +339,9 @@ def build_swot_prompt(
 ) -> tuple[str, str]:
     """
     Return (system_prompt, user_prompt) for the dedicated SWOT call.
-    Passes the already-generated competitive_advantage_detail and
+    Passes the already-generated competitive_advantage_summary and
     key_uncertainties as context so the SWOT is grounded in the analysis.
     """
-    ca_detail  = analysis.get("competitive_advantage_detail", "")
     ca_summary = analysis.get("competitive_advantage_summary", "")
     key_unc    = analysis.get("key_uncertainties", [])
 
@@ -362,9 +364,6 @@ def build_swot_prompt(
         f"Size: {analysis.get('competitive_advantage_size','')}  |  "
         f"Evolution: {analysis.get('competitive_advantage_evolution','')}",
         ca_summary,
-        "",
-        "=== COMPETITIVE ADVANTAGE DETAIL ===",
-        ca_detail[:2000],
         "",
         "=== 5 FORCES SUMMARY ===",
         "\n".join(forces_summary),
@@ -476,10 +475,6 @@ def _validate_analysis(a: dict) -> dict:
     a["competitive_advantage_summary"] = (
         a.get("competitive_advantage_summary") or
         "Competitive advantage summary not available."
-    ).strip()
-    a["competitive_advantage_detail"] = (
-        a.get("competitive_advantage_detail") or
-        "Detailed competitive-advantage analysis not available."
     ).strip()
     a["competitive_advantage_sources"] = [
         str(s).strip() for s in (a.get("competitive_advantage_sources") or []) if s
