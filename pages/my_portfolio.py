@@ -949,6 +949,59 @@ def _ticker_search(query: str) -> list[tuple[str, str]]:
         except Exception:
             pass
 
+    # ── Hong Kong supplement ──────────────────────────────────────────────────
+    # EODHD's /search/ endpoint doesn't index HKEX listings (even though the
+    # /fundamentals/ endpoint fully supports them — see eodhd_adapter.py).
+    # Same two-layer pattern as Japan above:
+    #
+    # Layer 1 — Pattern match: 1-5 digit input (e.g. "700" or "0700.HK")
+    #            → instant HK ticker suggestion.
+    #
+    # Layer 2 — yfinance Search fallback for company-name queries
+    #            (e.g. "Tencent"), filtered to symbols ending in .HK.
+
+    _hk_direct = _re_pf.match(r'^0*(\d{1,5})(\.HK)?$', q.strip().upper())
+    if _hk_direct:
+        _hk_code   = _hk_direct.group(1).zfill(4)
+        _hk_ticker = f"{_hk_code}.HK"
+        if _hk_ticker not in seen:
+            seen.add(_hk_ticker)
+            _hk_name = ""
+            try:
+                import yfinance as _yf_hk_name
+                _yf_sr = _yf_hk_name.Search(_hk_ticker, max_results=3, news_count=0)
+                for _yf_q in (_yf_sr.quotes or []):
+                    if (_yf_q.get("symbol") or "").upper() == _hk_ticker:
+                        _hk_name = _yf_q.get("shortname") or _yf_q.get("longname") or ""
+                        break
+            except Exception:
+                pass
+            _hk_label = (
+                f"🇭🇰 {_hk_ticker:<10}  {_hk_name[:50]}  · HKEX"
+                if _hk_name else
+                f"🇭🇰 {_hk_ticker}  · HKEX (enter to add)"
+            )
+            out.append((_hk_label, _hk_ticker))
+
+    if len(q) >= 3 and len(out) < 10:
+        try:
+            import yfinance as _yf_hk
+            _yf_hk_results = _yf_hk.Search(q + " hong kong", max_results=8, news_count=0)
+            for _yf_item in (_yf_hk_results.quotes or []):
+                _sym = (_yf_item.get("symbol") or "").strip().upper()
+                if not _sym.endswith(".HK") or _sym in seen:
+                    continue
+                seen.add(_sym)
+                _yf_name = _yf_item.get("shortname") or _yf_item.get("longname") or ""
+                out.append((
+                    f"🇭🇰 {_sym:<10}  {_yf_name[:50]}  · HKEX",
+                    _sym,
+                ))
+                if len(out) >= 12:
+                    break
+        except Exception:
+            pass
+
     # ── Baltic direct-entry ───────────────────────────────────────────────────
     _BALTIC_PF = {"VS": ("🇱🇹", "NASDAQ Vilnius"), "TL": ("🇪🇪", "NASDAQ Tallinn"), "RG": ("🇱🇻", "NASDAQ Riga")}
     _BALTIC_ALIASES_PF = {"VSE": "VS", "VLN": "VS", "TAL": "TL", "RIG": "RG"}
