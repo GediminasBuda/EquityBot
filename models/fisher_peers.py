@@ -331,7 +331,11 @@ def suggest_peers(subject: CompanyData, max_peers: int = 6
             logger.warning("[fisher_peers] LLM not configured — no peer suggestions")
             return [], {}
         raw = llm.generate_json(
-            user_prompt, _PEER_SUGGEST_SYSTEM, max_tokens=500,
+            # 500 tokens was too tight — verbose/reasoning-heavy models (e.g.
+            # Opus) can spend most of the budget on preamble text despite
+            # "no commentary" instructions, truncating before any JSON is
+            # emitted and silently yielding zero suggested peers.
+            user_prompt, _PEER_SUGGEST_SYSTEM, max_tokens=1500,
         )
         usage = dict(getattr(llm, "last_usage", {}) or {})
     except Exception as e:
@@ -339,9 +343,17 @@ def suggest_peers(subject: CompanyData, max_peers: int = 6
         return [], {}
 
     if not isinstance(raw, dict):
+        logger.warning(
+            f"[fisher_peers] suggest_peers got non-dict JSON: {raw!r}. "
+            f"Raw response: {getattr(llm, 'last_raw_response', '')[:500]}"
+        )
         return [], usage
     peers = raw.get("peers")
     if not isinstance(peers, list):
+        logger.warning(
+            f"[fisher_peers] suggest_peers response had no 'peers' list: {raw!r}. "
+            f"Raw response: {getattr(llm, 'last_raw_response', '')[:500]}"
+        )
         return [], usage
 
     out: list[str] = []
