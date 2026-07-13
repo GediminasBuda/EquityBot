@@ -419,15 +419,24 @@ def _validate_analysis(a: dict) -> dict:
         else:
             p = {"number": n, "title": title, "score": 3,
                  "assessment": "PARTIAL", "rationale": "Insufficient data to assess."}
+        # Coerce score to a valid int 1-5 — the LLM can omit it, return None
+        # (e.g. thin/no fundamentals for the ticker), or return a string/float.
+        # A bare `p.get("score", 3)` only defaults when the key is *missing*,
+        # not when it's present but None, so downstream comparisons/sum()
+        # would crash on a None score.
+        try:
+            s = int(round(float(p.get("score"))))
+        except (TypeError, ValueError):
+            s = 3
+        p["score"] = max(1, min(5, s))
         # Normalise assessment from score if missing
         if "assessment" not in p or p["assessment"] not in ("PASS", "PARTIAL", "FAIL"):
-            s = p.get("score", 3)
-            p["assessment"] = "PASS" if s >= 4 else ("FAIL" if s <= 2 else "PARTIAL")
+            p["assessment"] = "PASS" if p["score"] >= 4 else ("FAIL" if p["score"] <= 2 else "PARTIAL")
         full_points.append(p)
     a["fisher_points"] = full_points
 
     # Recalculate total score from points (in case LLM got it wrong)
-    a["fisher_total_score"] = sum(p.get("score", 3) for p in full_points)
+    a["fisher_total_score"] = sum(p["score"] for p in full_points)
     total = a["fisher_total_score"]
     if "fisher_grade" not in a or a["fisher_grade"] not in ("A","B","C","D","F"):
         a["fisher_grade"] = ("A" if total >= 65 else "B" if total >= 55 else
