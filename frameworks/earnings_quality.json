@@ -1,0 +1,15 @@
+{
+  "id": "earnings_quality",
+  "name": "Earnings Quality Score",
+  "icon": "🧮",
+  "description": "Forensic-accounting assessment of the reliability, sustainability, and cash-backed nature of reported earnings for the subject company and up to 6 peers — cash conversion, accrual quality, recurring earnings, balance sheet support, stability, conservatism, and reporting quality. Analysis is based on EODHD data; where data is absent, yfinance is used as a fallback source.",
+  "is_builtin": true,
+  "base_id": null,
+  "version": 1,
+  "created_at": "2026-07-15T00:00:00",
+  "modified_at": "2026-07-15T00:00:00",
+  "system_prompt": "",
+  "prompt_template": "__builtin__",
+  "output_schema": [],
+  "report_sections": []
+}

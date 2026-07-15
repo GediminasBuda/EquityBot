@@ -754,7 +754,7 @@ _BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "eodhd_full", "overview_v2", "index_overview",
                 "industry_analysis", "insider_transactions",
                 "valuemeter", "short_interest",
-                "fund_fundamentals"}
+                "fund_fundamentals", "earnings_quality"}
 
 EXCHANGE_HINTS = {
     "Amsterdam (AEX)":   ".AS  e.g. WKL.AS, ASML.AS",
@@ -794,6 +794,8 @@ def _parse_intent_regex(q: str) -> dict:
         "fisher":      ["fisher", "scuttlebutt", "philip fisher"],
         "overview_v2": ["overview", "memo", "investment memo", "helmer",
                         "7 power", "seven power"],
+        "earnings_quality": ["earnings quality", "earnings quality score",
+                              "forensic accounting", "accrual", "sloan"],
     }
     for fw_id, kws in fw_hints.items():
         if any(k in q_lo for k in kws):
@@ -3467,6 +3469,142 @@ if generate_clicked and ticker_input:
                 analysis = _fund_analysis
                 extra    = {"fund_bundle": fund_bundle, "fund_type": fund_type}
 
+            elif report_type == "earnings_quality":
+                # ── Earnings Quality Score — forensic-accounting scoring ──────
+                # Subject + peers must all be fetched BEFORE the single scoring
+                # LLM call, since the score is comparative across the whole
+                # universe in one shot (unlike overview_v2, where peers are
+                # only fetched after the main LLM call for display purposes).
+                from data_sources.eodhd_only_builder import (
+                    fetch_company_data_eodhd_only,
+                )
+                from models.earnings_quality import (
+                    _earnings_quality_prompt_parts, _validate_earnings_quality,
+                    SYSTEM_PROMPT as SYS,
+                )
+
+                # Step 1: EODHD-only subject data (Japan/Baltic/empty-data fallback)
+                _prog.progress(20, text="🧮  Fetching EODHD-only data…")
+                if _is_japan:
+                    st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                elif _is_baltic:
+                    st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
+                else:
+                    st.write("🧮  Fetching EODHD bundle (fundamentals + financial statements)…")
+                    _eq_company, _eq_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    _eq_usable = bool(
+                        _eq_company.name
+                        and (_eq_company.market_cap or _eq_company.annual_financials)
+                    )
+                    if _eq_usable:
+                        company = _eq_company
+                        st.write(f"✓  EODHD endpoints used: {_eq_bundle.get('endpoints_used',0)}/9")
+                    else:
+                        st.write(
+                            f"⚠  EODHD has no data for **{ticker_input}**. "
+                            "Falling back to yfinance — report will be less detailed."
+                        )
+
+                # Step 2: Peers — user-selected peers fill slots first; LLM
+                # suggestions backfill remaining slots up to 6 total.
+                eq_peers: dict = {}
+                _eq_suggest_usage: dict = {}
+                _user_peer_tickers = [p.strip().upper() for p in peer_list if p.strip()]
+                _slots_remaining = 6 - len(_user_peer_tickers)
+
+                if _slots_remaining > 0:
+                    _prog.progress(30, text="🤝  Asking LLM to suggest peers…")
+                    if _user_peer_tickers:
+                        st.write(
+                            f"🤝  {len(_user_peer_tickers)} peer(s) supplied — "
+                            f"asking LLM to fill up to {_slots_remaining} more…"
+                        )
+                    else:
+                        st.write("🤝  No peers supplied — asking LLM for peer suggestions…")
+                    try:
+                        from models.fisher_peers import suggest_peers as _suggest_peers
+                        _llm_suggested, _eq_suggest_usage = _suggest_peers(
+                            company, max_peers=_slots_remaining,
+                        )
+                    except Exception as _se:
+                        _llm_suggested = []
+                        st.warning(f"Peer suggestion failed: {_se}")
+                    if _eq_suggest_usage:
+                        _show_token_usage(_eq_suggest_usage)
+                    _user_set = set(_user_peer_tickers)
+                    _llm_new = [t for t in _llm_suggested if t not in _user_set]
+                    _peer_tickers_to_fetch = (_user_peer_tickers + _llm_new)[:6]
+                    if _llm_new:
+                        st.write(f"💡  LLM added peers: {', '.join(_llm_new)}")
+                else:
+                    _peer_tickers_to_fetch = _user_peer_tickers[:6]
+
+                if _peer_tickers_to_fetch:
+                    _prog.progress(40, text="🔍  Fetching peer data…")
+                    st.write("🔍  Fetching peer data (EODHD or yfinance fallback)…")
+                    for pt in _peer_tickers_to_fetch:
+                        try:
+                            pd_ = None
+                            src_label = "unknown"
+                            _is_balt_peer = any(pt.upper().endswith(s)
+                                                for s in (".VS", ".TL", ".RG"))
+                            if pt.endswith(".T") or _is_balt_peer:
+                                pd_ = dm.get(pt, force_refresh=False)
+                                src_label = "yfinance (TSE)" if pt.endswith(".T") else "yfinance (Baltic)"
+                            else:
+                                try:
+                                    _eodhd_pd, _ = fetch_company_data_eodhd_only(pt)
+                                    _la = _eodhd_pd.latest_annual() if _eodhd_pd else None
+                                    if (_eodhd_pd and _eodhd_pd.name
+                                            and (_eodhd_pd.market_cap or (_la and _la.revenue))):
+                                        pd_ = _eodhd_pd
+                                        src_label = "EODHD"
+                                except Exception:
+                                    pass
+                                if pd_ is None:
+                                    pd_ = dm.get(pt, force_refresh=False)
+                                    src_label = "yfinance"
+                            la_check = pd_.latest_annual() if pd_ else None
+                            has_rev = bool(la_check and la_check.revenue)
+                            if pd_ and pd_.name and (pd_.market_cap or has_rev):
+                                eq_peers[pt] = pd_
+                                st.write(f"   ✓ {pt}: {pd_.name} [{src_label}]")
+                            else:
+                                st.write(f"   ⚠ Peer {pt} returned no usable data — skipped")
+                        except Exception as e:
+                            st.write(f"   ⚠ Peer {pt} fetch failed: {e}")
+                st.write(f"✓  {len(eq_peers)} peer(s) loaded: "
+                         f"{', '.join(eq_peers.keys()) or 'none'}")
+                _prog.progress(55, text=f"✓  {len(eq_peers)} peers")
+
+                # Step 3: Build prompt (subject + peers combined) and run LLM
+                cacheable_pfx, dynamic_prompt = _earnings_quality_prompt_parts(company, eq_peers)
+                _prog.progress(60, text="🤖  Running forensic-accounting analysis…")
+                st.write(f"🤖  Scoring {1 + len(eq_peers)} companies for earnings quality…")
+                analysis = llm.generate_json(dynamic_prompt, SYS, max_tokens=16000,
+                                             cacheable_prefix=cacheable_pfx)
+                analysis = _validate_earnings_quality(analysis, company, eq_peers)
+                score = analysis.get("subject_score", "?")
+                grade = analysis.get("subject_grade", "?")
+                pct   = analysis.get("subject_percentile", "?")
+                st.write(f"✓  Earnings Quality Score: **{score}/100** "
+                         f"(Grade {grade}, {pct}th percentile)")
+                _show_token_usage(llm.last_usage)
+                _prog.progress(85, text="✓  Analysis complete")
+
+                _prog.progress(88, text="📄  Rendering PDF…")
+                st.write("📄  Rendering PDF…")
+                import importlib, agents.pdf_earnings_quality as _eqmod
+                importlib.reload(_eqmod)
+                from agents.pdf_earnings_quality import EarningsQualityPDFGenerator
+                safe = ticker_input.replace(".", "_").replace("-", "_")
+                date = datetime.now().strftime("%Y-%m-%d")
+                pdf_path = str(OUTPUTS_DIR / f"{safe}_earnings_quality_{date}.pdf")
+                os.makedirs(OUTPUTS_DIR, exist_ok=True)
+                EarningsQualityPDFGenerator().render(company, analysis, pdf_path)
+                extra = {"score": score, "grade": grade, "percentile": pct,
+                         "peer_count": len(eq_peers)}
+
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
                 from models.generic_runner import GenericRunner
@@ -3731,6 +3869,13 @@ if st.session_state.report_result:
                        f"Grade: **{extra.get('grade','?')}**  ·  "
                        f"Recurring: ~{rm.get('recurring_pct_estimate','?')}%  ·  "
                        f"Pricing Power: {rm.get('pricing_power','?')}")
+        elif rtype == "earnings_quality":
+            st.caption(
+                f"Earnings Quality Score: **{extra.get('score','?')}/100**  ·  "
+                f"Grade: **{extra.get('grade','?')}**  ·  "
+                f"Percentile: **{extra.get('percentile','?')}**  ·  "
+                f"Peers analysed: **{extra.get('peer_count', 0)}**"
+            )
         else:
             fw_label = REPORT_TYPES.get(rtype, {}).get("short", rtype)
             st.caption(f"Framework: **{fw_label}**  ·  "
