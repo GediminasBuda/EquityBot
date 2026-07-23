@@ -1,9 +1,11 @@
 """
 industry_analysis.py — Porter's 5 Forces + Competitive Advantage framework.
 
-Generates a long-form research-style report (4,000-5,000 words for the
-5-Forces section + 1,000-1,500 words for the Competitive Advantage
-section). The LLM is given:
+Generates a research-style report (1,300-1,700 words for the 5-Forces
+section + 200-280 words for the Competitive Advantage summary — kept
+deliberately tight so reasoning-model providers like Gemini have less
+required output to complete within their completion budget). The LLM
+is given:
 
   • Full EODHD context for the subject company (10-yr financials,
     description, news, sentiment, insider, officers, country macro)
@@ -32,7 +34,7 @@ _SYSTEM_PROMPT_FALLBACK = """You are "Your Humble EquityBot" — a strategic-pla
 
 Your analytical DNA:
 - You apply Michael Porter's 5 Forces (1979) and Competitive Advantage (1985) frameworks rigorously.
-- Target length: 2,000-3,000 words across the five Porter forces, plus 500-800 words for the Competitive Advantage detail. Substantive content over filler.
+- Target length: 1,300-1,700 words across the five Porter forces, plus 200-280 words for the Competitive Advantage summary. Substantive content over filler — be concise and dense, not padded.
 - Evidence-based. Every claim should be backed by either a specific data point (margin, market share, concentration ratio, switching cost example) or a named source.
 - Cite sources inline with publication dates. Format: "(McKinsey Industry Report, 2023)" or "(Company 10-K, FY2024)".
 - Source priority: 1) Company filings (10-K, annual report, transcripts) → 2) Industry reports (McKinsey, BCG, Gartner, Forrester, IBISWorld, Statista, academic journals) → 3) Reputable industry analysts (S&P Global, Moody's, Fitch).
@@ -67,12 +69,14 @@ Return ONE valid JSON object — no markdown fences, no JSON comments, no prose
 outside the object. Every text field must contain substantive content.
 
 == TARGET LENGTHS ==
-- Executive summary:            350-500 words
-- Each force's state_2026:      250-400 words
-- Each force's historical_evolution: 150-250 words
-- Strategic implications:       150-250 words
-- Competitive advantage summary: 250-350 words
-- Total Porter-5-Forces text:   2,000-3,000 words across the five forces
+- Executive summary:            220-300 words
+- Each force's state_2026:      150-220 words
+- Each force's historical_evolution: 80-130 words
+- Strategic implications:       100-150 words
+- Competitive advantage summary: 200-280 words
+- Total Porter-5-Forces text:   1,300-1,700 words across the five forces
+Be concise and dense — every sentence should carry a data point or a
+concrete claim. Do not pad toward the upper end of a range with filler.
 
 == SOURCE & CITATION DISCIPLINE ==
 - Cite every quantitative claim inline. Format: "(Source name, year)" or
@@ -97,7 +101,7 @@ outside the object. Every text field must contain substantive content.
 == REQUIRED JSON STRUCTURE ==
 
 Field: executive_summary
-  Type: string. 350-500 words. Cover: overall attractiveness, 2015 → 2026
+  Type: string. 220-300 words. Cover: overall attractiveness, 2015 → 2026
   trajectory, key structural shifts, what this means for incumbents and
   potential entrants.
 
@@ -127,7 +131,7 @@ Field: structural_shifts
   data-handling costs for sub-€500M players").
 
 Field: strategic_implications
-  Type: string. 150-250 words. What should incumbents and entrants do now?
+  Type: string. 100-150 words. What should incumbents and entrants do now?
 
 Field: competitive_advantage_size
   Type: enum string. One of: "None", "Small", "Large".
@@ -142,7 +146,7 @@ Field: competitive_advantage_evolution
   "Strengthened", "Strengthened Materially".
 
 Field: competitive_advantage_summary
-  Type: string. 250-350 words. Apply Porter's Competitive Advantage
+  Type: string. 200-280 words. Apply Porter's Competitive Advantage
   framework (1985): cost leadership / differentiation / focus, and the
   sources and durability of the advantage. State the conclusion clearly and
   reference the 10-year evolution. Do NOT re-do the 5-Forces analysis —
@@ -155,11 +159,11 @@ Field: forces
   Type: array of 5 objects, in the SAME order as the scorecard. Each object:
     "name"                — exact force name
     "current_assessment"  — "Strong" | "Moderate" | "Weak"
-    "state_2026"          — 250-400 words. Current intensity and drivers.
+    "state_2026"          — 150-220 words. Current intensity and drivers.
                              Cite quantitative evidence (CR4, HHI, switching
                              costs, price elasticity) with sources. Use
                              specific examples from the subject's industry.
-    "historical_evolution" — 150-250 words. How has the force changed
+    "historical_evolution" — 80-130 words. How has the force changed
                              2015 → 2026? Inflection points, causes.
     "confidence_level"    — "High" | "Medium" | "Low"
     "data_gaps"           — 1-3 sentences naming concrete data gaps.
@@ -201,8 +205,9 @@ def _industry_dynamic_prompt(
         "\nReminder: return a single valid JSON object exactly as specified, "
         "with no markdown fences or JSON comments. Emit the "
         "competitive_advantage_* fields BEFORE the forces field. Target "
-        "2,000-3,000 words across the five forces and 250-350 words for the "
-        "competitive advantage summary. Cite sources inline with publication dates."
+        "1,300-1,700 words across the five forces and 200-280 words for the "
+        "competitive advantage summary — be concise and dense, not padded. "
+        "Cite sources inline with publication dates."
     )
     return "\n".join(parts)
 

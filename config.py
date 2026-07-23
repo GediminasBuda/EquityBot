@@ -92,6 +92,21 @@ GEMINI_MAX_TOKENS_MULTIPLIER = float(os.getenv("GEMINI_MAX_TOKENS_MULTIPLIER", "
 GEMINI_MAX_TOKENS_CAP        = int(os.getenv("GEMINI_MAX_TOKENS_CAP", "36000"))
 GEMINI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "300"))
 
+# Raising the token ceiling above (GEMINI_MAX_TOKENS_CAP) only gives the model
+# MORE room to spend on invisible reasoning — it does not stop the model from
+# spending an unpredictable, sometimes-total share of the budget there, which
+# is what caused Industry Analysis to return a fully empty response for GENDA
+# (9166.T) even at a 24000-token ceiling, and recurred AGAIN on a second Japan
+# ticker (Fujitsu / 6702.T) after the ceiling was raised to 36000. Google's
+# Gemini OpenAI-compatible endpoint accepts the standard "reasoning_effort"
+# param ("low" | "medium" | "high", same as OpenAI's o-series) and maps it to
+# an internal hidden-thinking-token budget — capping this directly attacks the
+# actual mechanism instead of just hoping the ceiling is big enough. "low"
+# still produces solid analytical quality for a structured-JSON extraction
+# task like this; it trades away speculative extra reasoning depth that this
+# app's prompts don't ask for anyway.
+GEMINI_REASONING_EFFORT = os.getenv("GEMINI_REASONING_EFFORT", "low")
+
 # ── Data Source Tier Control ──────────────────────────────────────────────────
 # Set to False to disable a tier (useful for testing or if a source is down)
 ENABLE_YFINANCE       = True   # Tier 1 — always on

@@ -2759,7 +2759,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(40, text="🌍  Fetching country macro from EODHD…")
                 ia_country_macro = fetch_country_macro_block(company.country)
 
-                # Step 3: Main LLM call — 2,000-3,000 word Porter analysis
+                # Step 3: Main LLM call — 1,300-1,700 word Porter analysis
                 cacheable_pfx, dynamic_prompt = _industry_prompt_parts(
                     company,
                     bundle=_ia_bundle,
@@ -2768,7 +2768,7 @@ if generate_clicked and ticker_input:
 
                 _prog.progress(55, text="🧠  Running Porter 5 Forces analysis…")
                 st.write("🧠  Running Porter 5 Forces + Competitive Advantage "
-                         "analysis (~2,000-3,000 words; typically 45-90 s)…")
+                         "analysis (~1,300-1,700 words; typically 30-75 s)…")
 
                 def _ia_run_main_call():
                     if adversarial_on:

@@ -19,6 +19,7 @@ from config import (
     LLM_PROVIDER, LLM_MODEL, ADVERSARIAL_MODE,
     KIMI_MAX_TOKENS_MULTIPLIER, KIMI_MAX_TOKENS_CAP, KIMI_REQUEST_TIMEOUT_SECONDS,
     GEMINI_MAX_TOKENS_MULTIPLIER, GEMINI_MAX_TOKENS_CAP, GEMINI_REQUEST_TIMEOUT_SECONDS,
+    GEMINI_REASONING_EFFORT,
 )
 
 logger = logging.getLogger(__name__)
@@ -203,7 +204,8 @@ class LLMClient:
                                   force_json=force_json,
                                   base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                                   api_key=GEMINI_API_KEY,
-                                  request_timeout=GEMINI_REQUEST_TIMEOUT_SECONDS)
+                                  request_timeout=GEMINI_REQUEST_TIMEOUT_SECONDS,
+                                  reasoning_effort=GEMINI_REASONING_EFFORT)
         else:
             raise ValueError(f"Unknown LLM provider: '{self.provider}'. "
                              f"Set LLM_PROVIDER=claude, openai, deepseek, kimi, or gemini in .env")
@@ -466,17 +468,20 @@ class LLMClient:
         # off mid-sentence at a flat, unscaled 1500-token budget.
         _news_max_tokens = 1500
         _news_timeout = None
+        _news_reasoning_effort = None
         if self.provider == "kimi":
             _news_max_tokens = min(int(1500 * KIMI_MAX_TOKENS_MULTIPLIER), KIMI_MAX_TOKENS_CAP)
             _news_timeout = KIMI_REQUEST_TIMEOUT_SECONDS
         elif self.provider == "gemini":
             _news_max_tokens = min(int(1500 * GEMINI_MAX_TOKENS_MULTIPLIER), GEMINI_MAX_TOKENS_CAP)
             _news_timeout = GEMINI_REQUEST_TIMEOUT_SECONDS
+            _news_reasoning_effort = GEMINI_REASONING_EFFORT
 
         return self._openai(
             summarise_prompt, "", max_tokens=_news_max_tokens, temperature=0.3,
             base_url=base_url, api_key=api_key or DEEPSEEK_API_KEY,
             request_timeout=_news_timeout,
+            reasoning_effort=_news_reasoning_effort,
         )
 
     def check_configured(self) -> tuple[bool, str]:
@@ -610,6 +615,7 @@ class LLMClient:
         base_url: str = "",
         api_key: str = "",
         request_timeout: Optional[float] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         try:
             from openai import OpenAI, RateLimitError
@@ -654,6 +660,8 @@ class LLMClient:
             kwargs["max_tokens"] = max_tokens
         if force_json:
             kwargs["response_format"] = {"type": "json_object"}
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
 
         # Retry loop: strip unsupported params reported by the API so the
         # same code works universally across gpt-4o, gpt-4.1, gpt-5.x,
@@ -699,6 +707,11 @@ class LLMClient:
                 if "temperature" in err and "temperature" in kwargs:
                     kwargs.pop("temperature")
                     logger.info("[LLMClient] Retrying without temperature (model rejected custom value)")
+                    continue
+                # Some models/endpoints reject reasoning_effort — drop it
+                if "reasoning_effort" in err and "reasoning_effort" in kwargs:
+                    kwargs.pop("reasoning_effort")
+                    logger.info("[LLMClient] Retrying without reasoning_effort (model rejected param)")
                     continue
                 raise RuntimeError(f"OpenAI API error: {e}")
 
