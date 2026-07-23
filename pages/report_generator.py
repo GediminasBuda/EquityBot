@@ -745,6 +745,19 @@ def _build_report_types() -> dict:
             "is_builtin": fw.is_builtin,
             "uses_builtin_runner": fw.uses_builtin_runner,
         }
+    # Relocate Earnings Quality Score to right after Fisher Alternatives +
+    # Peers (2026-07-23 user request). Done here rather than via
+    # FrameworkManager.set_order() because data/framework_order.json is
+    # gitignored (user-instance runtime state) and wouldn't survive a
+    # redeploy on Streamlit Cloud.
+    if "earnings_quality" in result and "fisher_peers" in result:
+        eq = result.pop("earnings_quality")
+        reordered = {}
+        for k, v in result.items():
+            reordered[k] = v
+            if k == "fisher_peers":
+                reordered["earnings_quality"] = eq
+        result = reordered
     return result
 
 REPORT_TYPES = _build_report_types()
@@ -755,6 +768,11 @@ _BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "industry_analysis", "insider_transactions",
                 "valuemeter", "short_interest",
                 "fund_fundamentals", "earnings_quality"}
+
+# Temporarily hidden from the Valuation Models picker — these need
+# significant adjustments before they're ready for use again. Framework
+# files are untouched, so re-enabling is just removing an id from this set.
+_HIDDEN_FW_IDS = {"fisher", "valuemeter"}
 
 EXCHANGE_HINTS = {
     "Amsterdam (AEX)":   ".AS  e.g. WKL.AS, ASML.AS",
@@ -1615,9 +1633,11 @@ with col_left:
     if _is_index_ticker and index_mode == "index_overview":
         _fw_options = ["index_overview"]
     elif _is_index_ticker and index_mode == "universe_screen":
-        _fw_options = [k for k in REPORT_TYPES if k != "index_overview"]
+        _fw_options = [k for k in REPORT_TYPES
+                       if k != "index_overview" and k not in _HIDDEN_FW_IDS]
     else:
-        _fw_options = [k for k in REPORT_TYPES if k != "index_overview"]
+        _fw_options = [k for k in REPORT_TYPES
+                       if k != "index_overview" and k not in _HIDDEN_FW_IDS]
 
     st.markdown(
         "#### Valuation Models"

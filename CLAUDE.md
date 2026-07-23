@@ -400,6 +400,13 @@ The PDF only showed a compact `Weighting: Cash Conversion 25% · Accrual Quality
 
 ---
 
+### Fisher Alternatives / ValueMeter hidden from the Valuation Models picker (2026-07-23)
+`fisher` (Fisher Alternatives) and `valuemeter` (ValueMeter) need significant adjustments before they're ready for use again, so they're temporarily hidden from the front-page model picker per user request. **Fix:** `_HIDDEN_FW_IDS = {"fisher", "valuemeter"}` added in `pages/report_generator.py` (near `_BUILTIN_IDS`), filtered out of `_fw_options` in the Report Framework picker block. The framework JSON files, PDF renderers, and prompt builders are untouched — Studio (`pages/model_editing.py`) calls `FrameworkManager.list()` directly and is unaffected, so both remain fully editable there. **To re-enable either model: just remove its id from `_HIDDEN_FW_IDS`.**
+
+Also relocated **Earnings Quality Score** (`earnings_quality`) to sort right after **Fisher Alternatives + Peers** (`fisher_peers`) in the picker list. `_build_report_types()` normally orders frameworks via `FrameworkManager.list()` (persisted user order from `data/framework_order.json`, falling back to alphabetical-by-name for built-ins). `data/` is gitignored (it holds per-instance runtime state like `portfolio.json`), so writing a `framework_order.json` locally would not survive a push/redeploy on Streamlit Cloud. **Fix:** the reorder is done in code instead — after building the `result` dict, `earnings_quality` is popped and reinserted immediately after `fisher_peers` — so it's part of the committed source and survives every deploy. **General rule: any front-page model ordering/visibility change must live in code (or be explicitly justified as instance-local), not in `data/framework_order.json` — that file does not survive a Streamlit Cloud redeploy.**
+
+---
+
 ## 8. Report Types
 
 ### Built-in Reports (hardcoded Python renderers)
