@@ -2770,30 +2770,51 @@ if generate_clicked and ticker_input:
                 st.write("🧠  Running Porter 5 Forces + Competitive Advantage "
                          "analysis (~2,000-3,000 words; typically 45-90 s)…")
 
-                if adversarial_on:
-                    full_prompt = cacheable_pfx + "\n\n" + dynamic_prompt
-                    adv_result = _adv_engine.run(
-                        full_prompt, IA_SYS, max_tokens=13000,
-                        report_type="overview",  # adversarial reuses overview merger
-                    )
-                    raw_analysis = adv_result.merged
-                else:
-                    raw_analysis = llm.generate_json(
+                def _ia_run_main_call():
+                    if adversarial_on:
+                        full_prompt = cacheable_pfx + "\n\n" + dynamic_prompt
+                        _adv = _adv_engine.run(
+                            full_prompt, IA_SYS, max_tokens=13000,
+                            report_type="overview",  # adversarial reuses overview merger
+                        )
+                        return _adv.merged, _adv
+                    ra = llm.generate_json(
                         dynamic_prompt, IA_SYS, max_tokens=13000,
                         cacheable_prefix=cacheable_pfx,
                     )
                     _show_token_usage(llm.last_usage)
+                    return ra, None
+
+                def _ia_is_filled(ra) -> bool:
+                    return (
+                        isinstance(ra, dict) and
+                        isinstance(ra.get("forces"), list) and
+                        len([f for f in ra["forces"]
+                             if isinstance(f, dict) and f.get("state_2026")
+                             and len(f.get("state_2026", "")) > 80]) >= 3
+                    )
+
+                raw_analysis, adv_result = _ia_run_main_call()
+
+                # "Thinking" models (Gemini/Kimi) can occasionally burn their
+                # entire completion budget on hidden reasoning and emit zero
+                # visible JSON — more likely for data/training-thin subjects
+                # (e.g. small non-US caps) even with a generous token cap.
+                # This is stochastic per-call, so a single retry often
+                # succeeds where the first attempt returned nothing at all.
+                if not _ia_is_filled(raw_analysis):
+                    logger.warning(
+                        "[IndustryAnalysis] Empty/incomplete response on first "
+                        "attempt for %s (raw len=%d) — retrying once.",
+                        ticker_input, len(getattr(llm, "last_raw_response", "") or ""),
+                    )
+                    st.write("⚠  First analysis attempt came back empty/incomplete — retrying once…")
+                    raw_analysis, adv_result = _ia_run_main_call()
 
                 # ── Diagnostics: detect empty / mostly-empty responses ──
                 _ia_raw_for_debug = getattr(llm, "last_raw_response", "") or ""
                 _ia_top_keys = list(raw_analysis.keys()) if isinstance(raw_analysis, dict) else []
-                _ia_filled = (
-                    isinstance(raw_analysis, dict) and
-                    isinstance(raw_analysis.get("forces"), list) and
-                    len([f for f in raw_analysis["forces"]
-                         if isinstance(f, dict) and f.get("state_2026")
-                         and len(f.get("state_2026", "")) > 80]) >= 3
-                )
+                _ia_filled = _ia_is_filled(raw_analysis)
                 if not raw_analysis or not _ia_top_keys or not _ia_filled:
                     # Surface a clear, actionable error with the raw LLM
                     # response so the user can see exactly what came back.
