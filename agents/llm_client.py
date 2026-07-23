@@ -311,7 +311,11 @@ class LLMClient:
         Returns plain text (markdown with **bold** section headers).
         Falls back to empty string on any error.
         """
-        grounding = _format_earnings_grounding(company)
+        try:
+            grounding = _format_earnings_grounding(company)
+        except Exception as e:
+            logger.warning(f"[LLMClient] Earnings grounding build failed, continuing without it: {e}")
+            grounding = ""
         earnings_instruction = (
             'Always include one theme called "Latest Earnings Report" — cover the most '
             'recently reported fiscal year/quarter\'s revenue, operating profit, and net '
@@ -386,12 +390,18 @@ class LLMClient:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         msg = client.messages.create(
             model=self.model,
-            max_tokens=2048,
+            max_tokens=4096,
             tools=[{"type": "web_search_20250305", "name": "web_search"}],
             messages=[{"role": "user", "content": prompt}],
         )
         # Collect all text blocks from the response
         parts = [b.text for b in msg.content if hasattr(b, "text") and b.text]
+        if not parts:
+            logger.warning(
+                f"[LLMClient] Claude web search returned no text blocks "
+                f"(stop_reason={getattr(msg, 'stop_reason', '?')}, "
+                f"block_types={[getattr(b, 'type', '?') for b in msg.content]})"
+            )
         return "\n\n".join(parts)
 
     def _deepseek_news_summary(
