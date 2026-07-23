@@ -56,6 +56,13 @@ LLM_PROVIDER     = os.getenv("LLM_PROVIDER", "claude")       # "claude" | "opena
 LLM_MODEL        = os.getenv("LLM_MODEL", "claude-sonnet-4-5")
 ADVERSARIAL_MODE = os.getenv("ADVERSARIAL_MODE", "false").lower() == "true"
 
+# Kimi/Moonshot "thinking" models can spend a large, variable share of their
+# completion budget on hidden reasoning before writing the final JSON answer,
+# so every call's requested max_tokens is scaled up before being sent — every
+# report type benefits automatically, and no other provider is affected.
+KIMI_MAX_TOKENS_MULTIPLIER = float(os.getenv("KIMI_MAX_TOKENS_MULTIPLIER", "2.5"))
+KIMI_MAX_TOKENS_CAP        = int(os.getenv("KIMI_MAX_TOKENS_CAP", "32000"))
+
 # ── Data Source Tier Control ──────────────────────────────────────────────────
 # Set to False to disable a tier (useful for testing or if a source is down)
 ENABLE_YFINANCE       = True   # Tier 1 — always on

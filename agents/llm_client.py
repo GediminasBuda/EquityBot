@@ -17,6 +17,7 @@ from typing import Optional
 from config import (
     ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, MOONSHOT_API_KEY,
     LLM_PROVIDER, LLM_MODEL, ADVERSARIAL_MODE,
+    KIMI_MAX_TOKENS_MULTIPLIER, KIMI_MAX_TOKENS_CAP,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,12 @@ class LLMClient:
                                   base_url="https://api.deepseek.com",
                                   api_key=DEEPSEEK_API_KEY)
         elif self.provider == "kimi":
-            result = self._openai(user_prompt, system_prompt, max_tokens, temperature,
+            # Every caller's requested max_tokens is a completion-budget floor
+            # for the actual answer — scale it up here (not at each call site)
+            # so every report type gets more headroom for kimi automatically.
+            _kimi_max_tokens = min(int(max_tokens * KIMI_MAX_TOKENS_MULTIPLIER),
+                                    KIMI_MAX_TOKENS_CAP)
+            result = self._openai(user_prompt, system_prompt, _kimi_max_tokens, temperature,
                                   cacheable_prefix=cacheable_prefix,
                                   force_json=force_json,
                                   base_url="https://api.moonshot.ai/v1",
