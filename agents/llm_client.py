@@ -315,9 +315,25 @@ class LLMClient:
             "Plain text with **bold** theme headers only — no other markdown, no JSON.\n\n"
             f"{headlines_block}"
         )
+        # Kimi/Gemini are "thinking" models that spend hidden reasoning tokens
+        # before the visible answer — same failure class as generate()'s
+        # dispatch branches. This method bypasses generate() entirely (it's
+        # called directly from generate_web_news()), so the multiplier/cap/
+        # timeout have to be re-applied here or the news narrative gets cut
+        # off mid-sentence at a flat, unscaled 1500-token budget.
+        _news_max_tokens = 1500
+        _news_timeout = None
+        if self.provider == "kimi":
+            _news_max_tokens = min(int(1500 * KIMI_MAX_TOKENS_MULTIPLIER), KIMI_MAX_TOKENS_CAP)
+            _news_timeout = KIMI_REQUEST_TIMEOUT_SECONDS
+        elif self.provider == "gemini":
+            _news_max_tokens = min(int(1500 * GEMINI_MAX_TOKENS_MULTIPLIER), GEMINI_MAX_TOKENS_CAP)
+            _news_timeout = GEMINI_REQUEST_TIMEOUT_SECONDS
+
         return self._openai(
-            summarise_prompt, "", max_tokens=1500, temperature=0.3,
+            summarise_prompt, "", max_tokens=_news_max_tokens, temperature=0.3,
             base_url=base_url, api_key=api_key or DEEPSEEK_API_KEY,
+            request_timeout=_news_timeout,
         )
 
     def check_configured(self) -> tuple[bool, str]:

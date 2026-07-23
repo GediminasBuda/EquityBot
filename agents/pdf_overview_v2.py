@@ -736,7 +736,7 @@ class OverviewV2PDFGenerator:
         if _uses_eodhd:
             story += self._page4_eodhd_data(company, styles)
             story.append(PageBreak())
-            story += self._page4_provenance(company, styles)
+            story += self._page4_provenance(company, styles, news_summary=news_summary)
         else:
             story += self._page4_yfinance(company, styles)
 
@@ -1091,12 +1091,16 @@ class OverviewV2PDFGenerator:
         return el
 
     # ── V2 Page 4: Field Provenance Legend ────────────────────────────────────
-    def _page4_provenance(self, company: CompanyData, styles: dict) -> list:
+    def _page4_provenance(self, company: CompanyData, styles: dict, news_summary=None) -> list:
         """
         Explicit table mapping every report field to its data source.
         For Japanese (TSE) stocks, yfinance is used instead of EODHD.
         """
         is_japan = (company.ticker or "").upper().endswith(".T")
+        _news_used = bool((news_summary or {}).get("narrative", "").strip())
+        news_row_status = ("✓ LLM web search" if _news_used else "— n/a")
+        news_row_src = ("LLM web search (native) or NewsAPI.org → LLM narrative"
+                         if _news_used else "Not used in this report")
 
         el = []
         title = "Data Provenance — yfinance (TSE)" if is_japan else "EODHD Data Provenance"
@@ -1165,7 +1169,7 @@ class OverviewV2PDFGenerator:
                 ("Recommendation + Rationale",        "LLM — yfinance signals",               "ⓘ LLM"),
                 ("Suggested Peers",                   "LLM — names; peer metrics from yfinance","ⓘ LLM names"),
                 ("Peer comparison metrics",           "yfinance (per peer)",                  chk),
-                ("News headlines",                    "Not used in this report",              "— n/a"),
+                ("News headlines",                    news_row_src,                           news_row_status),
             ]
         else:
             provenance = [
@@ -1198,7 +1202,7 @@ class OverviewV2PDFGenerator:
                 ("Fun Facts",                         "LLM — drawn from EODHD profile/financials","ⓘ LLM"),
                 ("Suggested Peers",                   "LLM — names only, peer metrics from EODHD","ⓘ LLM names"),
                 ("Peer P/E, EV/EBITDA, ROE, etc.",    "/fundamentals (per peer)",               "✓ EODHD"),
-                ("News headlines",                    "Not used in this report",                "— n/a"),
+                ("News headlines",                    news_row_src,                             news_row_status),
                 ("Macro context",                     "Not used in this report",                "— n/a"),
             ]
         for label, src, status in provenance:
