@@ -2759,7 +2759,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(40, text="🌍  Fetching country macro from EODHD…")
                 ia_country_macro = fetch_country_macro_block(company.country)
 
-                # Step 3: Main LLM call — 1,300-1,700 word Porter analysis
+                # Step 3: Main LLM call — 1,700-2,200 word Porter analysis
                 cacheable_pfx, dynamic_prompt = _industry_prompt_parts(
                     company,
                     bundle=_ia_bundle,
@@ -2768,18 +2768,18 @@ if generate_clicked and ticker_input:
 
                 _prog.progress(55, text="🧠  Running Porter 5 Forces analysis…")
                 st.write("🧠  Running Porter 5 Forces + Competitive Advantage "
-                         "analysis (~1,300-1,700 words; typically 30-75 s)…")
+                         "analysis (~1,700-2,200 words; typically 45-90 s)…")
 
                 def _ia_run_main_call():
                     if adversarial_on:
                         full_prompt = cacheable_pfx + "\n\n" + dynamic_prompt
                         _adv = _adv_engine.run(
-                            full_prompt, IA_SYS, max_tokens=13000,
+                            full_prompt, IA_SYS, max_tokens=17000,
                             report_type="overview",  # adversarial reuses overview merger
                         )
                         return _adv.merged, _adv
                     ra = llm.generate_json(
-                        dynamic_prompt, IA_SYS, max_tokens=13000,
+                        dynamic_prompt, IA_SYS, max_tokens=17000,
                         cacheable_prefix=cacheable_pfx,
                     )
                     _show_token_usage(llm.last_usage)

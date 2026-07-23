@@ -440,6 +440,11 @@ Left `GEMINI_MAX_TOKENS_CAP` at `36000` unchanged — more ceiling headroom is s
 
 **Confirmed fixed (2026-07-23):** live-tested by the user after deploy — Industry Analysis on Gemini now returns a complete, populated report. Both changes (reasoning_effort="low" + shorter word-count targets) verified working together; no further action needed unless a similar empty-JSON signature resurfaces on a different report type or provider.
 
+### Industry Analysis — word-count targets raised back up, 1,300-1,700 → 1,700-2,200 (2026-07-23)
+With the Gemini fix confirmed working, the user found the resulting report too compact and asked to raise the target length — this is explicitly the **final** length adjustment to this model per the user's request. Raised proportionally (~+30%) across all three source-of-truth locations, keeping totals internally consistent: executive summary 220-300 → 280-380 words, each force's `state_2026` 150-220 → 200-260 words, `historical_evolution` 80-130 → 140-180 words, strategic implications 100-150 → 130-190 words, competitive advantage summary 200-280 → 260-350 words, total Porter-5-Forces text 1,300-1,700 → 1,700-2,200 words (5 × (200-260 + 140-180) = 1,700-2,200, exact). Edited in `models/industry_analysis.py` (docstring, `_SYSTEM_PROMPT_FALLBACK`, `_CACHEABLE` target-lengths block and per-field descriptions, `_industry_dynamic_prompt()`'s reminder text), `frameworks/industry_analysis.json` (the live runtime `system_prompt`/`output_schema`/`description` — same "must edit both copies" rule as every prior length change to this report), and `pages/report_generator.py`'s UI progress text/comment.
+
+Also raised the main call's own `max_tokens` from `13000` to `17000` (both adversarial and non-adversarial `_ia_run_main_call()` branches) to keep headroom proportional to the larger required output — `17000 * GEMINI_MAX_TOKENS_MULTIPLIER (2.0) = 34000`, still safely under `GEMINI_MAX_TOKENS_CAP` (36000), so the "cap collapse" bug documented above does not recur. **General rule: any future change to this report's target word count must scale `max_tokens=13000`/now `17000` proportionally too — leaving it flat while lengthening required output shrinks the reasoning-model headroom margin and can reintroduce the empty-JSON failure documented above.**
+
 ---
 
 ## 8. Report Types
