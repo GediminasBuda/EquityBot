@@ -35,6 +35,20 @@ def _to_m(v) -> Optional[float]:
     return f / 1_000_000 if f is not None else None
 
 
+def _fz(v) -> Optional[float]:
+    """Like _f() but treats an exact 0 as missing.
+
+    EODHD returns the literal string "0" for valuation multiples it can't
+    compute (e.g. P/E or EV/EBITDA for a loss-making company) instead of
+    null. A real P/E or EV/EBITDA of exactly 0.0 is never meaningful, so
+    _f() silently converting "0" to 0.0 renders as a misleading "0.0x" in
+    reports instead of "n/a". Only use this for ratio fields where 0.0 is
+    never a legitimate value.
+    """
+    f = _f(v)
+    return None if f == 0 else f
+
+
 def _year_from_date(s) -> Optional[int]:
     if not s:
         return None
@@ -185,13 +199,13 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     # from the Technicals block below — SharesStats.SharesShort is null for most tickers.
 
     # ── Valuation multiples ──────────────────────────────────────────────────
-    company.pe_ratio       = _f(h.get("PERatio")) or _f(v.get("TrailingPE"))
-    company.forward_pe     = _f(v.get("ForwardPE"))
-    company.price_to_book  = _f(v.get("PriceBookMRQ"))
-    company.price_to_sales = _f(v.get("PriceSalesTTM"))
-    company.peg_ratio      = _f(h.get("PEGRatio"))
-    company.ev_sales       = _f(v.get("EnterpriseValueRevenue"))
-    company.ev_ebitda      = _f(v.get("EnterpriseValueEbitda"))
+    company.pe_ratio       = _fz(h.get("PERatio")) or _fz(v.get("TrailingPE"))
+    company.forward_pe     = _fz(v.get("ForwardPE"))
+    company.price_to_book  = _fz(v.get("PriceBookMRQ"))
+    company.price_to_sales = _fz(v.get("PriceSalesTTM"))
+    company.peg_ratio      = _fz(h.get("PEGRatio"))
+    company.ev_sales       = _fz(v.get("EnterpriseValueRevenue"))
+    company.ev_ebitda      = _fz(v.get("EnterpriseValueEbitda"))
 
     # ── Profitability TTM ────────────────────────────────────────────────────
     company.net_margin    = _f(h.get("ProfitMargin"))

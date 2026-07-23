@@ -851,21 +851,21 @@ def _try_repair_truncated_json(text: str) -> Optional[str]:
         elif ch == "," and not in_string:
             last_safe = i
 
-    # If we end inside a string, trim back to just before the last open quote
+    # If we end inside a string, trim back to the last comma that was
+    # actually outside a string (`last_safe`, tracked during the walk
+    # above) — NOT a raw rfind(",") on the text. Long-form prose (this
+    # function mainly salvages verbose analyst-style JSON text fields)
+    # routinely contains commas inside the string content itself (e.g.
+    # "Germany, France, and Italy"); a raw rfind(",") can land on one of
+    # those, cutting an already-complete field's string in half and
+    # producing JSON that still can't be repaired.
     if in_string:
-        last_quote = candidate.rfind('"', 0, len(candidate))
-        if last_quote > 0:
-            # Step back to the previous comma if any so we drop the
-            # partial key:value pair entirely
-            comma = candidate.rfind(",", 0, last_quote)
-            if comma > 0:
-                candidate = candidate[:comma]
-                depth_obj = candidate.count("{") - candidate.count("}")
-                depth_arr = candidate.count("[") - candidate.count("]")
-            else:
-                # No safe boundary — bail out
-                return None
+        if last_safe >= 0:
+            candidate = candidate[:last_safe]
+            depth_obj = candidate.count("{") - candidate.count("}")
+            depth_arr = candidate.count("[") - candidate.count("]")
         else:
+            # No safe boundary — bail out
             return None
 
     # Close open arrays and objects

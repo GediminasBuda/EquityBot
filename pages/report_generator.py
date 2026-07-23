@@ -2773,13 +2773,13 @@ if generate_clicked and ticker_input:
                 if adversarial_on:
                     full_prompt = cacheable_pfx + "\n\n" + dynamic_prompt
                     adv_result = _adv_engine.run(
-                        full_prompt, IA_SYS, max_tokens=9500,
+                        full_prompt, IA_SYS, max_tokens=13000,
                         report_type="overview",  # adversarial reuses overview merger
                     )
                     raw_analysis = adv_result.merged
                 else:
                     raw_analysis = llm.generate_json(
-                        dynamic_prompt, IA_SYS, max_tokens=9500,
+                        dynamic_prompt, IA_SYS, max_tokens=13000,
                         cacheable_prefix=cacheable_pfx,
                     )
                     _show_token_usage(llm.last_usage)
