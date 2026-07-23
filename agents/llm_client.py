@@ -15,7 +15,7 @@ import time
 from typing import Optional
 
 from config import (
-    ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY,
+    ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, MOONSHOT_API_KEY,
     LLM_PROVIDER, LLM_MODEL, ADVERSARIAL_MODE,
 )
 
@@ -94,9 +94,15 @@ class LLMClient:
                                   force_json=force_json,
                                   base_url="https://api.deepseek.com",
                                   api_key=DEEPSEEK_API_KEY)
+        elif self.provider == "kimi":
+            result = self._openai(user_prompt, system_prompt, max_tokens, temperature,
+                                  cacheable_prefix=cacheable_prefix,
+                                  force_json=force_json,
+                                  base_url="https://api.moonshot.ai/v1",
+                                  api_key=MOONSHOT_API_KEY)
         else:
             raise ValueError(f"Unknown LLM provider: '{self.provider}'. "
-                             f"Set LLM_PROVIDER=claude, openai, or deepseek in .env")
+                             f"Set LLM_PROVIDER=claude, openai, deepseek, or kimi in .env")
 
         elapsed = time.time() - start
         u = self.last_usage
@@ -210,6 +216,11 @@ class LLMClient:
                 return self._claude_web_search(prompt)
             elif self.provider == "deepseek":
                 return self._deepseek_news_summary(company_name, ticker)
+            elif self.provider == "kimi":
+                return self._deepseek_news_summary(
+                    company_name, ticker,
+                    base_url="https://api.moonshot.ai/v1", api_key=MOONSHOT_API_KEY,
+                )
         except Exception as e:
             logger.warning(f"[LLMClient] Web news search failed: {e}")
         return ""
@@ -245,11 +256,15 @@ class LLMClient:
         parts = [b.text for b in msg.content if hasattr(b, "text") and b.text]
         return "\n\n".join(parts)
 
-    def _deepseek_news_summary(self, company_name: str, ticker: str) -> str:
+    def _deepseek_news_summary(
+        self, company_name: str, ticker: str,
+        base_url: str = "https://api.deepseek.com", api_key: str = "",
+    ) -> str:
         """
-        DeepSeek has no native web-search tool, so we fetch headlines via
-        NewsAPI (news_adapter.py) and ask DeepSeek to synthesise a narrative.
-        Falls back to empty string when NewsAPI key is absent or returns nothing.
+        DeepSeek (and Kimi/Moonshot) have no native web-search tool, so we fetch
+        headlines via NewsAPI (news_adapter.py) and ask the model to synthesise
+        a narrative. Falls back to empty string when NewsAPI key is absent or
+        returns nothing.
         """
         from data_sources.news_adapter import NewsAdapter
         adapter = NewsAdapter()
@@ -277,7 +292,7 @@ class LLMClient:
         )
         return self._openai(
             summarise_prompt, "", max_tokens=1500, temperature=0.3,
-            base_url="https://api.deepseek.com", api_key=DEEPSEEK_API_KEY,
+            base_url=base_url, api_key=api_key or DEEPSEEK_API_KEY,
         )
 
     def check_configured(self) -> tuple[bool, str]:
@@ -287,7 +302,8 @@ class LLMClient:
         key = self._api_key()
         if not key:
             provider_label = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY",
-                              "deepseek": "DEEPSEEK_API_KEY"}.get(self.provider, "API_KEY")
+                              "deepseek": "DEEPSEEK_API_KEY",
+                              "kimi": "MOONSHOT_API_KEY"}.get(self.provider, "API_KEY")
             return False, (
                 f"No API key found for '{self.provider}'. "
                 f"Add {provider_label} to your .env file."
@@ -416,7 +432,10 @@ class LLMClient:
 
         key = api_key or OPENAI_API_KEY
         if not key:
-            provider_hint = "DEEPSEEK_API_KEY" if base_url else "OPENAI_API_KEY"
+            provider_hint = {
+                "https://api.deepseek.com": "DEEPSEEK_API_KEY",
+                "https://api.moonshot.ai/v1": "MOONSHOT_API_KEY",
+            }.get(base_url, "OPENAI_API_KEY" if not base_url else "API_KEY")
             raise RuntimeError(
                 f"{provider_hint} not set. Add it to .env."
             )
@@ -486,6 +505,8 @@ class LLMClient:
             return OPENAI_API_KEY
         elif self.provider == "deepseek":
             return DEEPSEEK_API_KEY
+        elif self.provider == "kimi":
+            return MOONSHOT_API_KEY
         return ""
 
 

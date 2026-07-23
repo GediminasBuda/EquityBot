@@ -43,6 +43,7 @@ CACHE_TTL_HOURS = 24
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
 DEEPSEEK_API_KEY     = os.getenv("DEEPSEEK_API_KEY", "")
+MOONSHOT_API_KEY      = os.getenv("MOONSHOT_API_KEY", "")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 FRED_API_KEY         = os.getenv("FRED_API_KEY", "")
 FMP_API_KEY          = os.getenv("FMP_API_KEY", "")
@@ -51,7 +52,7 @@ SIMFIN_API_KEY       = os.getenv("SIMFIN_API_KEY",  "")
 NEWS_API_KEY         = os.getenv("NEWS_API_KEY",    "")
 
 # ── LLM Provider ─────────────────────────────────────────────────────────────
-LLM_PROVIDER     = os.getenv("LLM_PROVIDER", "claude")       # "claude" | "openai"
+LLM_PROVIDER     = os.getenv("LLM_PROVIDER", "claude")       # "claude" | "openai" | "deepseek" | "kimi"
 LLM_MODEL        = os.getenv("LLM_MODEL", "claude-sonnet-4-5")
 ADVERSARIAL_MODE = os.getenv("ADVERSARIAL_MODE", "false").lower() == "true"
 
