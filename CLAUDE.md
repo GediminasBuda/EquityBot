@@ -438,6 +438,8 @@ That pushback was correct. **Raising `GEMINI_MAX_TOKENS_CAP` was treating the sy
 
 Left `GEMINI_MAX_TOKENS_CAP` at `36000` unchanged — more ceiling headroom is still harmless now that hidden-reasoning consumption is directly bounded by `reasoning_effort="low"`, it just isn't the load-bearing fix anymore. **General rule: for any "thinking"/reasoning-model provider, prefer capping reasoning effort directly (`reasoning_effort` or the provider's equivalent thinking-budget parameter) over indefinitely raising `max_tokens` — a token ceiling only bounds the *sum* of hidden reasoning + visible output, it does not stop the model from allocating an unpredictable, sometimes-total share of that sum to the invisible part. If a future report type shows the same "empty JSON, placeholder defaults everywhere, SWOT/other-small-calls still work" signature on Gemini/Kimi, check `reasoning_effort` and prompt length before touching the token cap again.**
 
+**Confirmed fixed (2026-07-23):** live-tested by the user after deploy — Industry Analysis on Gemini now returns a complete, populated report. Both changes (reasoning_effort="low" + shorter word-count targets) verified working together; no further action needed unless a similar empty-JSON signature resurfaces on a different report type or provider.
+
 ---
 
 ## 8. Report Types
