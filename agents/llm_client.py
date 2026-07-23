@@ -434,7 +434,7 @@ class LLMClient:
         request_timeout: Optional[float] = None,
     ) -> str:
         try:
-            from openai import OpenAI
+            from openai import OpenAI, RateLimitError
         except ImportError:
             raise ImportError("Run: pip install openai")
 
@@ -478,8 +478,13 @@ class LLMClient:
 
         # Retry loop: strip unsupported params reported by the API so the
         # same code works universally across gpt-4o, gpt-4.1, gpt-5.x,
-        # o-series, DeepSeek, and any future models without hardcoding lists.
-        for _attempt in range(3):
+        # o-series, DeepSeek, Kimi, and any future models without hardcoding
+        # lists. Also backs off and retries on 429 "rate limit / overloaded"
+        # responses — these are transient (e.g. Moonshot's kimi-k3 returning
+        # "engine is currently overloaded") and normally succeed a few
+        # seconds later, so failing immediately wastes an otherwise-fine run.
+        _rate_limit_attempts = 0
+        for _attempt in range(6):
             try:
                 resp = client.chat.completions.create(**kwargs)
                 if resp.usage:
@@ -492,6 +497,17 @@ class LLMClient:
                                                                    "cached_tokens", 0) or 0,
                     }
                 return resp.choices[0].message.content
+            except RateLimitError as e:
+                if _rate_limit_attempts < 3:
+                    _wait = 10 * (2 ** _rate_limit_attempts)   # 10s, 20s, 40s
+                    _rate_limit_attempts += 1
+                    logger.warning(
+                        f"[LLMClient] Rate limited / overloaded, retrying in {_wait}s "
+                        f"(attempt {_rate_limit_attempts}/3): {e}"
+                    )
+                    time.sleep(_wait)
+                    continue
+                raise RuntimeError(f"OpenAI API error: {e}")
             except Exception as e:
                 err = str(e)
                 # Some models reject max_tokens — swap to max_completion_tokens
