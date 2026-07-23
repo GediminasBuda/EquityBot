@@ -27,7 +27,7 @@ from reportlab.platypus import (
 
 from config import LLM_PROVIDER, LLM_MODEL
 from data_sources.base import CompanyData
-from models.earnings_quality import EQ_WEIGHTS, EQ_DIMENSION_LABELS
+from models.earnings_quality import EQ_WEIGHTS, EQ_DIMENSION_LABELS, EQ_DIMENSION_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -410,6 +410,23 @@ class EarningsQualityPDFGenerator:
             "from the scores above within this analyzed universe.",
             styles["body_small"],
         ))
+        flow.append(Spacer(1, 5*mm))
+        flow += self._methodology_block(styles)
+        return flow
+
+    # ── Methodology — how each dimension score is calculated ────────────
+    def _methodology_block(self, styles: dict) -> list:
+        flow = [section_title("Methodology — How Each Dimension Is Scored", styles)]
+        flow.append(Spacer(1, 1*mm))
+        for i, k in enumerate(EQ_WEIGHTS.keys(), start=1):
+            label = EQ_DIMENSION_LABELS[k]
+            weight = EQ_WEIGHTS[k] * 100
+            desc = EQ_DIMENSION_DESCRIPTIONS.get(k, "")
+            flow.append(Paragraph(
+                f'<b>{i}. {label} ({weight:.0f}%):</b> {desc}',
+                styles["body_small"],
+            ))
+            flow.append(Spacer(1, 1.5*mm))
         return flow
 
     # ── Detail block (subject or peer) ──────────────────────────────────

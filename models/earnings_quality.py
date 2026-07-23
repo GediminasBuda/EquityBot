@@ -47,6 +47,42 @@ EQ_DIMENSION_LABELS = {
     "management_reporting_quality": "Mgmt Reporting Quality",
 }
 
+# Plain-English "how this score is calculated" text per dimension, shown in
+# the PDF (page 1, under the quality grade table) so the reader can see
+# exactly what drives each subscore. Kept in sync with the scoring
+# instructions given to the LLM in _EQ_CACHEABLE below — if you change the
+# wording or inputs of a dimension there, update its entry here too.
+EQ_DIMENSION_DESCRIPTIONS = {
+    "cash_conversion":
+        "Operating Cash Flow / Net Income, Free Cash Flow / Net Income, the "
+        "multi-year cash conversion trend, and CFO consistency — measures how "
+        "much of reported profit actually shows up as cash.",
+    "accrual_quality":
+        "Sloan Accrual Ratio = (Net Income − Operating Cash Flow) / Total "
+        "Assets, plus working-capital accruals — the degree to which earnings "
+        "are supported by cash rather than accounting estimates.",
+    "recurring_earnings":
+        "Frequency and magnitude of restructuring charges, impairments, "
+        "acquisition costs, litigation adjustments, and recurring \"one-time\" "
+        "items, with margin volatility used as supporting evidence.",
+    "balance_sheet_support":
+        "Receivables growth vs. revenue growth, inventory growth vs. revenue "
+        "growth, deferred revenue trends, goodwill intensity (goodwill + "
+        "intangibles / total assets), capitalized assets, and working-capital "
+        "quality.",
+    "earnings_stability":
+        "Five-year stability of gross margin, operating margin, ROIC/ROE, "
+        "EPS, and operating cash flow.",
+    "accounting_conservatism":
+        "Revenue recognition practices, capitalization policies (R&amp;D / "
+        "software), depreciation assumptions, write-down history, and "
+        "effective tax-rate consistency (tax provision / pre-tax income).",
+    "management_reporting_quality":
+        "Gap between reported and underlying/adjusted earnings, dilution "
+        "(shares outstanding trend), dividend and buyback behaviour relative "
+        "to FCF, and guidance/estimate reliability where evident.",
+}
+
 
 SYSTEM_PROMPT = """You are a value-quality forensic accounting analyst combining the \
 approaches of Warren Buffett (owner earnings), Richard Sloan (accrual anomaly), \
