@@ -44,6 +44,7 @@ ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
 DEEPSEEK_API_KEY     = os.getenv("DEEPSEEK_API_KEY", "")
 MOONSHOT_API_KEY      = os.getenv("MOONSHOT_API_KEY", "")
+GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY", "")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 FRED_API_KEY         = os.getenv("FRED_API_KEY", "")
 FMP_API_KEY          = os.getenv("FMP_API_KEY", "")
@@ -52,7 +53,7 @@ SIMFIN_API_KEY       = os.getenv("SIMFIN_API_KEY",  "")
 NEWS_API_KEY         = os.getenv("NEWS_API_KEY",    "")
 
 # ── LLM Provider ─────────────────────────────────────────────────────────────
-LLM_PROVIDER     = os.getenv("LLM_PROVIDER", "claude")       # "claude" | "openai" | "deepseek" | "kimi"
+LLM_PROVIDER     = os.getenv("LLM_PROVIDER", "claude")       # "claude" | "openai" | "deepseek" | "kimi" | "gemini"
 LLM_MODEL        = os.getenv("LLM_MODEL", "claude-sonnet-4-5")
 ADVERSARIAL_MODE = os.getenv("ADVERSARIAL_MODE", "false").lower() == "true"
 
@@ -70,6 +71,14 @@ KIMI_MAX_TOKENS_CAP        = int(os.getenv("KIMI_MAX_TOKENS_CAP", "16000"))
 # until the hosting platform kills the process outright — this way it fails
 # with a catchable, loggable error and a message shown in the Streamlit UI.
 KIMI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("KIMI_REQUEST_TIMEOUT_SECONDS", "240"))
+
+# Gemini 2.5 Pro is also a "thinking" model (hidden reasoning tokens before
+# the final answer) — same failure class as Kimi above, so it gets the same
+# two safety nets pre-emptively rather than discovering the truncation/silent-
+# kill failure mode again via a live test.
+GEMINI_MAX_TOKENS_MULTIPLIER = float(os.getenv("GEMINI_MAX_TOKENS_MULTIPLIER", "2.0"))
+GEMINI_MAX_TOKENS_CAP        = int(os.getenv("GEMINI_MAX_TOKENS_CAP", "16000"))
+GEMINI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "240"))
 
 # ── Data Source Tier Control ──────────────────────────────────────────────────
 # Set to False to disable a tier (useful for testing or if a source is down)
