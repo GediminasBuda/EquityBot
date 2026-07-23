@@ -3,7 +3,7 @@ earnings_quality.py — Earnings Quality Score model.
 
 Forensic-accounting assessment of the reliability, sustainability, and
 cash-backed nature of reported earnings for the subject company and up to
-6 peers, combining the approaches of Buffett (owner earnings), Sloan
+3 peers, combining the approaches of Buffett (owner earnings), Sloan
 (accrual anomaly), Schilit (Financial Shenanigans), Mauboussin (capital
 allocation) and Quality Investing (Novy-Marx, Asness).
 
@@ -72,7 +72,7 @@ Objective: Assign every company in the universe below an Earnings Quality Score 
 reported earnings.
 
 Universe: The subject company plus its peer group (manually supplied or \
-LLM-suggested, max 6 peers), analyzed together using the latest fiscal year plus \
+LLM-suggested, max 3 peers), analyzed together using the latest fiscal year plus \
 the previous five years wherever available. Score every company provided in the \
 COMPANIES DATA section — do not skip any, and do not invent additional companies.
 

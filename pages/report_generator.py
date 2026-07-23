@@ -3506,11 +3506,20 @@ if generate_clicked and ticker_input:
                         )
 
                 # Step 2: Peers — user-selected peers fill slots first; LLM
-                # suggestions backfill remaining slots up to 6 total.
+                # suggestions backfill remaining slots up to 3 total. Kept
+                # tighter than the other report types' 6-peer cap since every
+                # extra peer here adds a full company's worth of forensic-
+                # accounting scoring to the single combined LLM call.
                 eq_peers: dict = {}
                 _eq_suggest_usage: dict = {}
                 _user_peer_tickers = [p.strip().upper() for p in peer_list if p.strip()]
-                _slots_remaining = 6 - len(_user_peer_tickers)
+                if len(_user_peer_tickers) > 3:
+                    st.info(
+                        f"ℹ️  Earnings Quality analyzes up to 3 peers — using the first 3 "
+                        f"of the {len(_user_peer_tickers)} supplied."
+                    )
+                    _user_peer_tickers = _user_peer_tickers[:3]
+                _slots_remaining = 3 - len(_user_peer_tickers)
 
                 if _slots_remaining > 0:
                     _prog.progress(30, text="🤝  Asking LLM to suggest peers…")
@@ -3533,11 +3542,11 @@ if generate_clicked and ticker_input:
                         _show_token_usage(_eq_suggest_usage)
                     _user_set = set(_user_peer_tickers)
                     _llm_new = [t for t in _llm_suggested if t not in _user_set]
-                    _peer_tickers_to_fetch = (_user_peer_tickers + _llm_new)[:6]
+                    _peer_tickers_to_fetch = (_user_peer_tickers + _llm_new)[:3]
                     if _llm_new:
                         st.write(f"💡  LLM added peers: {', '.join(_llm_new)}")
                 else:
-                    _peer_tickers_to_fetch = _user_peer_tickers[:6]
+                    _peer_tickers_to_fetch = _user_peer_tickers[:3]
 
                 if _peer_tickers_to_fetch:
                     _prog.progress(40, text="🔍  Fetching peer data…")

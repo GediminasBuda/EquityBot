@@ -76,8 +76,13 @@ KIMI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("KIMI_REQUEST_TIMEOUT_SECONDS", "24
 # the final answer) — same failure class as Kimi above, so it gets the same
 # two safety nets pre-emptively rather than discovering the truncation/silent-
 # kill failure mode again via a live test.
+# Cap must stay comfortably above the largest base max_tokens any caller
+# requests (Earnings Quality requests 16000) — if a caller's base value is
+# >= cap / multiplier, the multiplier is silently defeated (min() just
+# returns the cap, unscaled), which is exactly what caused Earnings Quality
+# to return a fully empty/unparseable response on gemini-3.1-pro-preview.
 GEMINI_MAX_TOKENS_MULTIPLIER = float(os.getenv("GEMINI_MAX_TOKENS_MULTIPLIER", "2.0"))
-GEMINI_MAX_TOKENS_CAP        = int(os.getenv("GEMINI_MAX_TOKENS_CAP", "16000"))
+GEMINI_MAX_TOKENS_CAP        = int(os.getenv("GEMINI_MAX_TOKENS_CAP", "24000"))
 GEMINI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "240"))
 
 # ── Data Source Tier Control ──────────────────────────────────────────────────
