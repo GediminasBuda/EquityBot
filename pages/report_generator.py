@@ -2411,7 +2411,7 @@ if generate_clicked and ticker_input:
                 st.write("📰  Searching web for current news…")
                 try:
                     _news_narrative = llm.generate_web_news(
-                        company.name or ticker_input, ticker_input
+                        company.name or ticker_input, ticker_input, company=company
                     )
                     if _news_narrative:
                         _news_summary = {"narrative": _news_narrative}

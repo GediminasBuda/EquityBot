@@ -24,6 +24,91 @@ from config import (
 logger = logging.getLogger(__name__)
 
 
+def _eq_b(v) -> str:
+    if v is None:
+        return "n/a"
+    return f"{v/1000:.1f}B" if abs(v) >= 1000 else f"{v:.1f}M"
+
+
+def _eq_pct(v) -> str:
+    return f"{v*100:+.1f}%" if v is not None else "n/a"
+
+
+def _eq_pct_plain(v) -> str:
+    return f"{v*100:.1f}%" if v is not None else "n/a"
+
+
+def _format_earnings_grounding(company) -> str:
+    """
+    Build a verified-figures block from the company's own fetched financial
+    data (latest reported fiscal year + YoY deltas + forward consensus),
+    so the news-narrative prompt has accurate revenue/profit numbers to
+    anchor on instead of relying solely on the model's own knowledge or
+    on NewsAPI headlines that rarely carry the actual reported figures.
+
+    Returns "" if no usable annual data is available (e.g. thin-data ticker).
+    """
+    if company is None:
+        return ""
+    try:
+        years = company.sorted_years()
+    except Exception:
+        return ""
+    if not years:
+        return ""
+
+    cur = company.currency or ""
+    latest = company.annual_financials.get(years[0])
+    prior = company.annual_financials.get(years[1]) if len(years) > 1 else None
+    if latest is None:
+        return ""
+
+    def _yoy(curr, prev):
+        if curr is None or prev in (None, 0):
+            return None
+        return (curr - prev) / abs(prev)
+
+    lines = [
+        f"Most recently reported fiscal year: FY{latest.year} "
+        f"(currency: {cur}).",
+        f"  Revenue: {_eq_b(latest.revenue)} "
+        f"(YoY: {_eq_pct(_yoy(latest.revenue, prior.revenue if prior else None))})",
+        f"  Operating profit / EBIT: {_eq_b(latest.ebit)} "
+        f"(YoY: {_eq_pct(_yoy(latest.ebit, prior.ebit if prior else None))})",
+        f"  Net income: {_eq_b(latest.net_income)} "
+        f"(YoY: {_eq_pct(_yoy(latest.net_income, prior.net_income if prior else None))})",
+    ]
+    if latest.ebit_margin is not None:
+        lines.append(f"  Operating margin: {_eq_pct_plain(latest.ebit_margin)}")
+    if latest.net_margin is not None:
+        lines.append(f"  Net margin: {_eq_pct_plain(latest.net_margin)}")
+
+    ttm_rev = getattr(company, "ttm_revenue", None)
+    ttm_ni  = getattr(company, "ttm_net_income", None)
+    ttm_date = getattr(company, "ttm_last_quarter_date", None)
+    if ttm_rev is not None or ttm_ni is not None:
+        lines.append(
+            f"Trailing twelve months (through {ttm_date or 'most recent quarter'}): "
+            f"Revenue {_eq_b(ttm_rev)}, Net income {_eq_b(ttm_ni)}."
+        )
+
+    fe = getattr(company, "forward_estimates", None)
+    if fe is not None and (fe.revenue is not None or fe.eps_diluted is not None):
+        lines.append(
+            f"Analyst consensus forecast for FY{fe.year}: "
+            f"Revenue {_eq_b(fe.revenue)}"
+            + (f" ({_eq_pct(fe.revenue_growth_yoy)} YoY)" if fe.revenue_growth_yoy is not None else "")
+            + (f", EPS {fe.eps_diluted:.2f}" if fe.eps_diluted is not None else "")
+            + "."
+        )
+
+    next_ed = getattr(company, "next_earnings_date", None)
+    if next_ed:
+        lines.append(f"Next scheduled earnings date: {next_ed}.")
+
+    return "\n".join(lines)
+
+
 class LLMClient:
     """
     Single interface to any configured LLM provider.
@@ -205,7 +290,7 @@ class LLMClient:
             )
             return {}
 
-    def generate_web_news(self, company_name: str, ticker: str) -> str:
+    def generate_web_news(self, company_name: str, ticker: str, company=None) -> str:
         """
         Search the web for recent news about the company and return a
         narrative analyst-style overview (plain markdown text).
@@ -214,13 +299,39 @@ class LLMClient:
           - OpenAI: Responses API with web_search_preview tool
           - Claude: messages API with web_search_20250305 tool
 
+        `company` (CompanyData, optional): when supplied, the company's own
+        latest reported fiscal-year figures (revenue, operating profit, net
+        income, YoY deltas, forward consensus) are handed to the model as a
+        verified-figures block, and the model is explicitly told to include
+        a dedicated "Latest Earnings Report" theme built from them —
+        web search alone often misses exact reported numbers or is limited
+        by the model's training cutoff, so this guarantees the section is
+        grounded in the actual data already fetched for the report.
+
         Returns plain text (markdown with **bold** section headers).
         Falls back to empty string on any error.
         """
+        grounding = _format_earnings_grounding(company)
+        earnings_instruction = (
+            'Always include one theme called "Latest Earnings Report" — cover the most '
+            'recently reported fiscal year/quarter\'s revenue, operating profit, and net '
+            'income, each with its year-over-year % change, plus forward guidance for the '
+            'next fiscal year and the market/stock-price reaction to the results if you can '
+            'find it via search. '
+            + (
+                f'Use these VERIFIED figures as the source of truth for revenue/profit/YoY '
+                f'numbers (do not contradict them; you may add color from search on top of '
+                f'them, e.g. market reaction, guidance detail, analyst commentary):\n{grounding}\n\n'
+                if grounding else
+                'No pre-verified figures were supplied — search for and cite the company\'s '
+                'actual reported figures from its most recent earnings release. '
+            )
+        )
         prompt = (
             f'Search the web for recent news about {company_name} ({ticker}). '
             f'Write a senior equity analyst narrative overview — organised into 3-5 themes '
-            f'(e.g. "Financial performance", "Strategic moves & M&A", "Insider activity"). '
+            f'(e.g. "Latest Earnings Report", "Strategic moves & M&A", "Insider activity"). '
+            f'{earnings_instruction}'
             f'Format: each theme as **Theme name** on its own line, then 2-4 continuous '
             f'prose sentences — NO bullet points, NO numbered lists, NO citation brackets like [1]. '
             f'Include specific dates (e.g. "In March 2026...") and numbers inline in the prose. '
@@ -234,17 +345,19 @@ class LLMClient:
             elif self.provider == "claude":
                 return self._claude_web_search(prompt)
             elif self.provider == "deepseek":
-                return self._deepseek_news_summary(company_name, ticker)
+                return self._deepseek_news_summary(company_name, ticker, grounding=grounding)
             elif self.provider == "kimi":
                 return self._deepseek_news_summary(
                     company_name, ticker,
                     base_url="https://api.moonshot.ai/v1", api_key=MOONSHOT_API_KEY,
+                    grounding=grounding,
                 )
             elif self.provider == "gemini":
                 return self._deepseek_news_summary(
                     company_name, ticker,
                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                     api_key=GEMINI_API_KEY,
+                    grounding=grounding,
                 )
         except Exception as e:
             logger.warning(f"[LLMClient] Web news search failed: {e}")
@@ -284,36 +397,56 @@ class LLMClient:
     def _deepseek_news_summary(
         self, company_name: str, ticker: str,
         base_url: str = "https://api.deepseek.com", api_key: str = "",
+        grounding: str = "",
     ) -> str:
         """
-        DeepSeek (and Kimi/Moonshot) have no native web-search tool, so we fetch
-        headlines via NewsAPI (news_adapter.py) and ask the model to synthesise
-        a narrative. Falls back to empty string when NewsAPI key is absent or
-        returns nothing.
+        DeepSeek (and Kimi/Moonshot/Gemini) have no native web-search tool, so
+        we fetch headlines via NewsAPI (news_adapter.py) and ask the model to
+        synthesise a narrative. `grounding`, when supplied, is the company's
+        own verified latest-earnings figures (see _format_earnings_grounding)
+        — NewsAPI headlines routinely lack the actual reported revenue/profit
+        numbers, so this is what lets the "Latest Earnings Report" theme be
+        accurate for these providers instead of vague or invented.
+
+        Falls back to empty string only when BOTH headlines and grounding
+        data are unavailable — grounding alone is enough to write a
+        financial-performance theme even if NewsAPI returns nothing.
         """
         from data_sources.news_adapter import NewsAdapter
         adapter = NewsAdapter()
         articles = adapter.fetch_company_news(company_name, ticker, max_articles=12)
         headlines_block = adapter.format_for_prompt(articles)
-        if not headlines_block:
+        if not headlines_block and not grounding:
             logger.warning(
-                "[LLMClient] DeepSeek news: NewsAPI returned no articles "
-                f"for {company_name} ({ticker}). "
-                "Add NEWS_API_KEY to Streamlit secrets to enable news."
+                "[LLMClient] News fallback: no NewsAPI articles and no "
+                f"verified financials for {company_name} ({ticker}). "
+                "Add NEWS_API_KEY to Streamlit secrets to enable headline-based news."
             )
             return ""
 
+        source_block = (
+            (f"VERIFIED LATEST EARNINGS FIGURES (use these exact numbers for the "
+              f"\"Latest Earnings Report\" theme — do not alter them):\n{grounding}\n\n"
+             if grounding else "")
+            + (f"RECENT NEWS HEADLINES:\n{headlines_block}" if headlines_block
+               else "No recent news headlines were found — base the narrative on the "
+                    "verified earnings figures above only.")
+        )
         summarise_prompt = (
-            f"Based on the following recent news headlines about {company_name} ({ticker}), "
+            f"Based on the following information about {company_name} ({ticker}), "
             "write a senior equity analyst narrative overview organised into 3-5 themes "
-            '(e.g. "Financial performance", "Strategic moves & M&A", "Insider activity"). '
+            '(e.g. "Latest Earnings Report", "Strategic moves & M&A", "Insider activity"). '
+            'Always include a "Latest Earnings Report" theme covering the most recent '
+            "fiscal year/quarter's revenue, operating profit, and net income with their "
+            "year-over-year % changes, plus forward guidance if available — use the "
+            "verified figures below as the source of truth for these numbers. "
             "Format: each theme as **Theme name** on its own line, then 2-4 continuous "
             "prose sentences — NO bullet points, NO numbered lists, NO citation brackets. "
             "Include specific dates and numbers inline in the prose. "
             "Write each theme as ONE flowing paragraph, not fragmented lines. "
             "Do NOT include a document title or heading at the top. "
             "Plain text with **bold** theme headers only — no other markdown, no JSON.\n\n"
-            f"{headlines_block}"
+            f"{source_block}"
         )
         # Kimi/Gemini are "thinking" models that spend hidden reasoning tokens
         # before the visible answer — same failure class as generate()'s
