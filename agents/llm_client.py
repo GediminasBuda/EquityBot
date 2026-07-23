@@ -17,7 +17,7 @@ from typing import Optional
 from config import (
     ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, MOONSHOT_API_KEY,
     LLM_PROVIDER, LLM_MODEL, ADVERSARIAL_MODE,
-    KIMI_MAX_TOKENS_MULTIPLIER, KIMI_MAX_TOKENS_CAP,
+    KIMI_MAX_TOKENS_MULTIPLIER, KIMI_MAX_TOKENS_CAP, KIMI_REQUEST_TIMEOUT_SECONDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,7 +105,8 @@ class LLMClient:
                                   cacheable_prefix=cacheable_prefix,
                                   force_json=force_json,
                                   base_url="https://api.moonshot.ai/v1",
-                                  api_key=MOONSHOT_API_KEY)
+                                  api_key=MOONSHOT_API_KEY,
+                                  request_timeout=KIMI_REQUEST_TIMEOUT_SECONDS)
         else:
             raise ValueError(f"Unknown LLM provider: '{self.provider}'. "
                              f"Set LLM_PROVIDER=claude, openai, deepseek, or kimi in .env")
@@ -430,6 +431,7 @@ class LLMClient:
         force_json: bool = False,
         base_url: str = "",
         api_key: str = "",
+        request_timeout: Optional[float] = None,
     ) -> str:
         try:
             from openai import OpenAI
@@ -446,7 +448,8 @@ class LLMClient:
                 f"{provider_hint} not set. Add it to .env."
             )
 
-        client = OpenAI(api_key=key, **({"base_url": base_url} if base_url else {}))
+        client = OpenAI(api_key=key, **({"base_url": base_url} if base_url else {}),
+                        **({"timeout": request_timeout} if request_timeout else {}))
         # Prepend cacheable_prefix to user_prompt — OpenAI has no server-side
         # prompt caching via content blocks, so we just concatenate both parts
         # into one message. The full schema + instructions + data all arrive together.

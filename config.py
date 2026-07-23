@@ -60,8 +60,16 @@ ADVERSARIAL_MODE = os.getenv("ADVERSARIAL_MODE", "false").lower() == "true"
 # completion budget on hidden reasoning before writing the final JSON answer,
 # so every call's requested max_tokens is scaled up before being sent — every
 # report type benefits automatically, and no other provider is affected.
+# Cap kept moderate (not the original 32000): a single un-timed-out blocking
+# call that runs many minutes can get the whole Streamlit Cloud worker killed
+# by the platform with no Python traceback at all (silent "app collapse").
 KIMI_MAX_TOKENS_MULTIPLIER = float(os.getenv("KIMI_MAX_TOKENS_MULTIPLIER", "2.5"))
-KIMI_MAX_TOKENS_CAP        = int(os.getenv("KIMI_MAX_TOKENS_CAP", "32000"))
+KIMI_MAX_TOKENS_CAP        = int(os.getenv("KIMI_MAX_TOKENS_CAP", "16000"))
+# Hard ceiling on how long a single Kimi API call may block. Without this the
+# openai SDK's own default (very long) lets a slow/hung "thinking" call run
+# until the hosting platform kills the process outright — this way it fails
+# with a catchable, loggable error and a message shown in the Streamlit UI.
+KIMI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("KIMI_REQUEST_TIMEOUT_SECONDS", "240"))
 
 # ── Data Source Tier Control ──────────────────────────────────────────────────
 # Set to False to disable a tier (useful for testing or if a source is down)
