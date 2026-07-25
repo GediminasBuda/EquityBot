@@ -45,6 +45,7 @@ OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
 DEEPSEEK_API_KEY     = os.getenv("DEEPSEEK_API_KEY", "")
 MOONSHOT_API_KEY      = os.getenv("MOONSHOT_API_KEY", "")
 GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY", "")
+XAI_API_KEY            = os.getenv("XAI_API_KEY", "")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 FRED_API_KEY         = os.getenv("FRED_API_KEY", "")
 FMP_API_KEY          = os.getenv("FMP_API_KEY", "")
@@ -53,7 +54,7 @@ SIMFIN_API_KEY       = os.getenv("SIMFIN_API_KEY",  "")
 NEWS_API_KEY         = os.getenv("NEWS_API_KEY",    "")
 
 # ── LLM Provider ─────────────────────────────────────────────────────────────
-LLM_PROVIDER     = os.getenv("LLM_PROVIDER", "claude")       # "claude" | "openai" | "deepseek" | "kimi" | "gemini"
+LLM_PROVIDER     = os.getenv("LLM_PROVIDER", "claude")       # "claude" | "openai" | "deepseek" | "kimi" | "gemini" | "xai"
 LLM_MODEL        = os.getenv("LLM_MODEL", "claude-sonnet-4-5")
 ADVERSARIAL_MODE = os.getenv("ADVERSARIAL_MODE", "false").lower() == "true"
 
@@ -106,6 +107,19 @@ GEMINI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS",
 # task like this; it trades away speculative extra reasoning depth that this
 # app's prompts don't ask for anyway.
 GEMINI_REASONING_EFFORT = os.getenv("GEMINI_REASONING_EFFORT", "low")
+
+# xAI's Grok (e.g. grok-4.5) is routed through the same generic "thinking model"
+# safety-net pattern as Kimi/Gemini pre-emptively, rather than waiting to
+# rediscover the same truncation/silent-timeout bugs via a live test — see the
+# Kimi and Gemini history above for the failure modes these constants prevent.
+# XAI_REASONING_EFFORT defaults to "" (not sent) because it is unconfirmed
+# whether grok-4.5 accepts the OpenAI-style reasoning_effort param — the
+# _openai() retry loop already drops the param automatically if the API
+# rejects it, so setting this later (via env/secret) is safe either way.
+XAI_MAX_TOKENS_MULTIPLIER = float(os.getenv("XAI_MAX_TOKENS_MULTIPLIER", "2.0"))
+XAI_MAX_TOKENS_CAP        = int(os.getenv("XAI_MAX_TOKENS_CAP", "36000"))
+XAI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("XAI_REQUEST_TIMEOUT_SECONDS", "300"))
+XAI_REASONING_EFFORT = os.getenv("XAI_REASONING_EFFORT", "")
 
 # ── Data Source Tier Control ──────────────────────────────────────────────────
 # Set to False to disable a tier (useful for testing or if a source is down)

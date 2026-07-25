@@ -16,10 +16,13 @@ from typing import Optional
 
 from config import (
     ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, MOONSHOT_API_KEY, GEMINI_API_KEY,
+    XAI_API_KEY,
     LLM_PROVIDER, LLM_MODEL, ADVERSARIAL_MODE,
     KIMI_MAX_TOKENS_MULTIPLIER, KIMI_MAX_TOKENS_CAP, KIMI_REQUEST_TIMEOUT_SECONDS,
     GEMINI_MAX_TOKENS_MULTIPLIER, GEMINI_MAX_TOKENS_CAP, GEMINI_REQUEST_TIMEOUT_SECONDS,
     GEMINI_REASONING_EFFORT,
+    XAI_MAX_TOKENS_MULTIPLIER, XAI_MAX_TOKENS_CAP, XAI_REQUEST_TIMEOUT_SECONDS,
+    XAI_REASONING_EFFORT,
 )
 
 logger = logging.getLogger(__name__)
@@ -206,9 +209,22 @@ class LLMClient:
                                   api_key=GEMINI_API_KEY,
                                   request_timeout=GEMINI_REQUEST_TIMEOUT_SECONDS,
                                   reasoning_effort=GEMINI_REASONING_EFFORT)
+        elif self.provider == "xai":
+            # Same rationale as the kimi/gemini branches above — grok-4.5 is
+            # also a "thinking" model that may spend hidden reasoning tokens
+            # before the final answer.
+            _xai_max_tokens = min(int(max_tokens * XAI_MAX_TOKENS_MULTIPLIER),
+                                  XAI_MAX_TOKENS_CAP)
+            result = self._openai(user_prompt, system_prompt, _xai_max_tokens, temperature,
+                                  cacheable_prefix=cacheable_prefix,
+                                  force_json=force_json,
+                                  base_url="https://api.x.ai/v1",
+                                  api_key=XAI_API_KEY,
+                                  request_timeout=XAI_REQUEST_TIMEOUT_SECONDS,
+                                  reasoning_effort=XAI_REASONING_EFFORT)
         else:
             raise ValueError(f"Unknown LLM provider: '{self.provider}'. "
-                             f"Set LLM_PROVIDER=claude, openai, deepseek, kimi, or gemini in .env")
+                             f"Set LLM_PROVIDER=claude, openai, deepseek, kimi, gemini, or xai in .env")
 
         elapsed = time.time() - start
         u = self.last_usage
@@ -365,6 +381,12 @@ class LLMClient:
                     api_key=GEMINI_API_KEY,
                     grounding=grounding,
                 )
+            elif self.provider == "xai":
+                return self._deepseek_news_summary(
+                    company_name, ticker,
+                    base_url="https://api.x.ai/v1", api_key=XAI_API_KEY,
+                    grounding=grounding,
+                )
         except Exception as e:
             logger.warning(f"[LLMClient] Web news search failed: {e}")
         return ""
@@ -476,6 +498,10 @@ class LLMClient:
             _news_max_tokens = min(int(1500 * GEMINI_MAX_TOKENS_MULTIPLIER), GEMINI_MAX_TOKENS_CAP)
             _news_timeout = GEMINI_REQUEST_TIMEOUT_SECONDS
             _news_reasoning_effort = GEMINI_REASONING_EFFORT
+        elif self.provider == "xai":
+            _news_max_tokens = min(int(1500 * XAI_MAX_TOKENS_MULTIPLIER), XAI_MAX_TOKENS_CAP)
+            _news_timeout = XAI_REQUEST_TIMEOUT_SECONDS
+            _news_reasoning_effort = XAI_REASONING_EFFORT
 
         return self._openai(
             summarise_prompt, "", max_tokens=_news_max_tokens, temperature=0.3,
@@ -493,7 +519,8 @@ class LLMClient:
             provider_label = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY",
                               "deepseek": "DEEPSEEK_API_KEY",
                               "kimi": "MOONSHOT_API_KEY",
-                              "gemini": "GEMINI_API_KEY"}.get(self.provider, "API_KEY")
+                              "gemini": "GEMINI_API_KEY",
+                              "xai": "XAI_API_KEY"}.get(self.provider, "API_KEY")
             return False, (
                 f"No API key found for '{self.provider}'. "
                 f"Add {provider_label} to your .env file."
@@ -628,6 +655,7 @@ class LLMClient:
                 "https://api.deepseek.com": "DEEPSEEK_API_KEY",
                 "https://api.moonshot.ai/v1": "MOONSHOT_API_KEY",
                 "https://generativelanguage.googleapis.com/v1beta/openai/": "GEMINI_API_KEY",
+                "https://api.x.ai/v1": "XAI_API_KEY",
             }.get(base_url, "OPENAI_API_KEY" if not base_url else "API_KEY")
             raise RuntimeError(
                 f"{provider_hint} not set. Add it to .env."
@@ -726,6 +754,8 @@ class LLMClient:
             return MOONSHOT_API_KEY
         elif self.provider == "gemini":
             return GEMINI_API_KEY
+        elif self.provider == "xai":
+            return XAI_API_KEY
         return ""
 
 
