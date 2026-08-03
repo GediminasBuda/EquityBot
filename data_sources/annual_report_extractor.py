@@ -52,6 +52,7 @@ KEYWORDS: list[str] = [
     "booking", "backlog", "performance obligation",
     "annual recurring revenue", "ARR", "deferred revenue", "unearned revenue",
     "geograph", "disaggregat", "region", "rest of world", "rest of the world",
+    "revenue by country", "net sales by country", "sales by country",
     "net revenue retention", "dollar-based net retention",
     "key operating metrics", "key business metrics",
 ]
