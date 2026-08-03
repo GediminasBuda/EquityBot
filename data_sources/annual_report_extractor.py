@@ -19,24 +19,39 @@ logger = logging.getLogger(__name__)
 
 # Keyword set for Demand Strength: customer counts + commercial momentum.
 #
-# Prefer word STEMS over exact phrases wherever a concept has multiple common
-# surface forms (noun/adjective, singular/plural) — a plain substring match on
-# a stem catches all of them for free. Exact multi-word phrases are brittle:
-# e.g. "geographic" (adjective) does NOT match a filing that instead writes
-# "geography of revenues" (noun form) — a real miss found in Duolingo's 10-K,
-# which cost the excerpt this entire disclosure even after two rounds of
-# keyword tuning. "geograph" as a stem matches geography/geographic/
-# geographical/geographies all at once. Reach for a stem first; only keep a
-# full phrase when the concept is conventionally always phrased that way
-# (e.g. "monthly active user", which safely matches the plural "users" too
-# since there's no trailing anchor on the match).
+# Two generalizable lessons learned from real misses (Duolingo, then Amazon),
+# both worth keeping in mind for any future capability's own keyword list:
+#
+# 1. Prefer word STEMS over exact multi-word phrases wherever a qualifier word
+#    is optional or variable. "remaining performance obligation" never matched
+#    Amazon's 10-K, which instead writes "we have performance obligations ...
+#    commitments not yet recognized were approximately $244 billion" — no
+#    "remaining" adjacent at all. "performance obligation" (stem, no qualifier)
+#    matches both phrasings. Likewise "geographic" (adjective) doesn't match a
+#    filing that writes "geography of revenues" (noun form) — "geograph"
+#    matches every surface form at once. Reach for the shortest distinctive
+#    stem first; only keep a full phrase when the concept is conventionally
+#    always phrased that way (e.g. "monthly active user", which still safely
+#    matches the plural "users" since there's no trailing anchor on the match).
+#
+# 2. For breakdown-style disclosures (geographic mix, segment mix, etc.), the
+#    prose describing the table varies enormously between filers — Duolingo
+#    writes "geography of revenues", Amazon writes "Net sales are attributed
+#    to countries..." with no "geographic"/"geography" anywhere nearby. But
+#    the actual TABLE ROW LABELS converge much more reliably across unrelated
+#    companies (both of the above tables use "Rest of World" as the catch-all
+#    row) — matching on the structural label is often a more universal signal
+#    than matching on whatever prose happens to introduce it. Apply this same
+#    idea to future capabilities: if a keyword phrase search is missing an
+#    otherwise well-known disclosure, check whether the underlying table has a
+#    conventional row/column label worth matching on directly instead.
 KEYWORDS: list[str] = [
     "monthly active user", "daily active user", "MAU", "DAU",
     "subscriber", "paying customer", "paid customer", "customer count",
     "net customer", "enterprise customer", "active customer", "total customer",
-    "booking", "backlog", "remaining performance obligation",
-    "annual recurring revenue", "ARR",
-    "geograph", "disaggregat", "region",
+    "booking", "backlog", "performance obligation",
+    "annual recurring revenue", "ARR", "deferred revenue", "unearned revenue",
+    "geograph", "disaggregat", "region", "rest of world", "rest of the world",
     "net revenue retention", "dollar-based net retention",
     "key operating metrics", "key business metrics",
 ]
