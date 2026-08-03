@@ -1866,38 +1866,70 @@ with col_right:
         with st.expander("📄 Optional: upload 10-K / annual report (PDF)"):
             st.caption(
                 "Improves the Customer Count / Commercial Momentum tables. "
-                "If nothing is uploaded, EquityBot automatically fetches the "
-                "latest 10-K from SEC EDGAR for US-listed tickers."
+                "Upload multiple years' reports to widen genuine (non-recalled) "
+                "historical coverage — each PDF is excerpted separately and "
+                "labeled by filename. If nothing is uploaded, EquityBot "
+                "automatically fetches the latest 10-K from SEC EDGAR for "
+                "US-listed tickers."
             )
-            _gq_uploaded = st.file_uploader(
-                "Upload annual report",
+            _gq_uploaded_files = st.file_uploader(
+                "Upload annual report(s)",
                 type=["pdf"],
                 key="gq_annual_report_upload",
                 label_visibility="collapsed",
+                accept_multiple_files=True,
             )
-            if _gq_uploaded is not None:
-                _gq_upload_key = f"{_gq_uploaded.name}_{_gq_uploaded.size}"
+            if _gq_uploaded_files:
+                _gq_upload_key = "|".join(
+                    f"{f.name}_{f.size}" for f in _gq_uploaded_files
+                )
                 if st.session_state.get("_gq_upload_key") != _gq_upload_key:
-                    with st.spinner(f"📂 Parsing **{_gq_uploaded.name}**…"):
-                        try:
-                            import importlib
-                            import data_sources.annual_report_extractor as _are_mod
-                            importlib.reload(_are_mod)
-                            from data_sources.annual_report_extractor import (
-                                extract_text_from_pdf_full as _gq_extract_pdf,
-                                extract_relevant_excerpts as _gq_extract_excerpts,
-                            )
-                            _gq_file_bytes = _gq_uploaded.read()
-                            _gq_full_text = _gq_extract_pdf(_gq_file_bytes)
-                            _gq_excerpt = (
-                                _gq_extract_excerpts(_gq_full_text) if _gq_full_text else ""
-                            )
-                        except Exception as _gqe:
-                            _gq_excerpt = ""
-                            st.error(f"File parse error: {_gqe}")
+                    with st.spinner(
+                        f"📂 Parsing {len(_gq_uploaded_files)} file(s)…"
+                    ):
+                        import importlib
+                        import data_sources.annual_report_extractor as _are_mod
+                        importlib.reload(_are_mod)
+                        from data_sources.annual_report_extractor import (
+                            extract_text_from_pdf_full as _gq_extract_pdf,
+                            extract_relevant_excerpts as _gq_extract_excerpts,
+                        )
+                        # Each report typically only discloses ~1-2 trailing
+                        # years verbatim (standard MD&A convention) — a
+                        # per-file budget shared across however many files
+                        # were uploaded keeps the combined excerpt from
+                        # growing unbounded while still letting several
+                        # years' worth of genuine (non-recalled) data through.
+                        _gq_per_file_budget = max(
+                            10_000, 40_000 // max(1, len(_gq_uploaded_files))
+                        )
+                        _gq_parts = []
+                        _gq_sources = []
+                        for _gq_f in _gq_uploaded_files:
+                            try:
+                                _gq_file_bytes = _gq_f.read()
+                                _gq_full_text = _gq_extract_pdf(_gq_file_bytes)
+                                _gq_piece = (
+                                    _gq_extract_excerpts(
+                                        _gq_full_text,
+                                        max_total_chars=_gq_per_file_budget,
+                                    )
+                                    if _gq_full_text else ""
+                                )
+                            except Exception as _gqe:
+                                _gq_piece = ""
+                                st.error(f"{_gq_f.name}: parse error — {_gqe}")
+                            if _gq_piece:
+                                _gq_parts.append(
+                                    f"=== {_gq_f.name} ===\n{_gq_piece}"
+                                )
+                                _gq_sources.append(_gq_f.name)
+                        _gq_excerpt = "\n\n".join(_gq_parts)
                     st.session_state["_gq_upload_key"] = _gq_upload_key
                     st.session_state["_gq_annual_report_excerpt"] = _gq_excerpt
-                    st.session_state["_gq_annual_report_source"] = _gq_uploaded.name
+                    st.session_state["_gq_annual_report_source"] = (
+                        ", ".join(_gq_sources) if _gq_sources else None
+                    )
 
                 if st.session_state.get("_gq_annual_report_excerpt"):
                     st.success(
@@ -1905,7 +1937,7 @@ with col_right:
                         f"{len(st.session_state['_gq_annual_report_excerpt']):,} relevant chars extracted"
                     )
                 else:
-                    st.warning("⚠ Could not extract relevant text from this PDF.")
+                    st.warning("⚠ Could not extract relevant text from these PDF(s).")
 
             if st.session_state.get("_gq_annual_report_excerpt"):
                 if st.button("✕ Clear and use EDGAR auto-fetch instead", key="gq_clear_upload"):
