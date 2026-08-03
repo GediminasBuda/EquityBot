@@ -3732,6 +3732,8 @@ if generate_clicked and ticker_input:
                 from data_sources.eodhd_only_builder import (
                     fetch_company_data_eodhd_only,
                 )
+                import importlib, models.growth_quality as _gqmodel
+                importlib.reload(_gqmodel)
                 from models.growth_quality import (
                     _growth_quality_prompt_parts, _validate_growth_quality,
                     SYSTEM_PROMPT as SYS, GQ_CAPABILITY_META,
