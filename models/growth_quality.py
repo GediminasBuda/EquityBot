@@ -122,7 +122,10 @@ each row's "values" list has exactly one entry per year. Candidate metrics \
 count.
 
 2. "momentum_table": same shape as customers_table. Candidate metrics (include \
-only those disclosed): "Bookings", "ARR", "Backlog", "Geographic Revenue Mix".
+only those disclosed): "Bookings", "ARR", "Backlog". If the company discloses a \
+geographic revenue breakdown (e.g. United States vs. Rest of World, or a \
+regional split), include it as multiple rows per the breakdown-metric rule \
+below — do not try to fit it into one row called "Geographic Revenue Mix".
 
 3. "discussion": an array of exactly 5 objects, each {"question": "...", \
 "answer": "..."}, addressing IN THIS EXACT ORDER:
@@ -175,6 +178,14 @@ def _build_gq_cacheable() -> str:
         "all — omit the row instead of filling it entirely with \"Data "
         "unavailable\". This keeps the report focused on data that actually "
         "exists and avoids wasting space/output on empty rows.\n"
+        "- Breakdown-style metrics (a disclosed total split across 2+ "
+        "categories — geographic mix, segment mix, product-line mix, revenue "
+        "type mix, etc.) do not fit in a single table row. Represent each "
+        "component as its own row with a specific, self-explanatory name (e.g. "
+        "\"United States Revenue\", \"Rest of World Revenue\", \"US % of Total "
+        "Revenue\" — not a single ambiguous row named after the breakdown as a "
+        "whole). This applies to every table in every capability, not just the "
+        "examples named above.\n"
         "- This is Phase 1 (Build the Evidence) only. Do NOT include any score, "
         "grade, or rating field anywhere in your response.\n"
         "- Write in English, professional institutional-equity-research tone. "

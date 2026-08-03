@@ -18,14 +18,25 @@ import re
 logger = logging.getLogger(__name__)
 
 # Keyword set for Demand Strength: customer counts + commercial momentum.
+#
+# Prefer word STEMS over exact phrases wherever a concept has multiple common
+# surface forms (noun/adjective, singular/plural) — a plain substring match on
+# a stem catches all of them for free. Exact multi-word phrases are brittle:
+# e.g. "geographic" (adjective) does NOT match a filing that instead writes
+# "geography of revenues" (noun form) — a real miss found in Duolingo's 10-K,
+# which cost the excerpt this entire disclosure even after two rounds of
+# keyword tuning. "geograph" as a stem matches geography/geographic/
+# geographical/geographies all at once. Reach for a stem first; only keep a
+# full phrase when the concept is conventionally always phrased that way
+# (e.g. "monthly active user", which safely matches the plural "users" too
+# since there's no trailing anchor on the match).
 KEYWORDS: list[str] = [
     "monthly active user", "daily active user", "MAU", "DAU",
     "subscriber", "paying customer", "paid customer", "customer count",
     "net customer", "enterprise customer", "active customer", "total customer",
-    "bookings", "backlog", "remaining performance obligation",
+    "booking", "backlog", "remaining performance obligation",
     "annual recurring revenue", "ARR",
-    "geographic", "disaggregation of revenue", "revenue by region",
-    "revenue by geography",
+    "geograph", "disaggregat", "region",
     "net revenue retention", "dollar-based net retention",
     "key operating metrics", "key business metrics",
 ]
