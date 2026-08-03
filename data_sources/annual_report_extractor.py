@@ -129,11 +129,20 @@ def extract_relevant_excerpts(
     for kw in keywords:
         # Short keywords (MAU, DAU, ARR) are common substrings of unrelated
         # words in dense accounting text ("ARR" inside "arrangement",
-        # "warranty", "carrying value", etc.) — require word boundaries to
-        # avoid flooding the excerpt budget with false-positive noise.
-        # Longer phrases are distinctive enough that this isn't a risk.
+        # "warranty", "carrying value", etc.) — require a word boundary
+        # before the keyword to avoid flooding the excerpt budget with
+        # false-positive noise. Longer phrases are distinctive enough that
+        # this isn't a risk.
+        #
+        # Trailing boundary must allow an optional "s": filings almost
+        # always write these as plurals glued directly onto the acronym —
+        # "MAUs", "DAUs" — with no space or hyphen before the "s", so a
+        # bare trailing \b (found via Spotify's 20-F: "751 million MAUs")
+        # never matches at all, silently making the MAU/DAU keywords dead
+        # weight in every filing that doesn't happen to write the bare
+        # singular form.
         if len(kw) <= 5:
-            pattern = r"\b" + re.escape(kw) + r"\b"
+            pattern = r"\b" + re.escape(kw) + r"s?\b"
         else:
             pattern = re.escape(kw)
         for m in re.finditer(pattern, full_text, flags=re.IGNORECASE):
