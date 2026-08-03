@@ -25,6 +25,7 @@ KEYWORDS: list[str] = [
     "bookings", "backlog", "remaining performance obligation",
     "annual recurring revenue", "ARR",
     "geographic", "disaggregation of revenue", "revenue by region",
+    "revenue by geography",
     "net revenue retention", "dollar-based net retention",
     "key operating metrics", "key business metrics",
 ]
@@ -82,11 +83,17 @@ def extract_relevant_excerpts(
     full_text: str,
     keywords: list[str] | None = None,
     window_chars: int = 1500,
-    max_total_chars: int = 20_000,
+    max_total_chars: int = 40_000,
 ) -> str:
     """Find every keyword hit in full_text, take a window of surrounding text
-    around each, merge overlapping windows, and concatenate in document order
-    up to a hard length cap. Returns "" if no keywords match or input is empty."""
+    around each, and merge overlapping windows. Merged windows with more
+    keyword hits packed into them (e.g. a "Key Operating Metrics" table that
+    mentions MAU/DAU/bookings/subscribers all in one place) are prioritized
+    over isolated single-hit windows (e.g. a stray "geographic" mention in a
+    risk-factor paragraph) when trimming to the hard length cap — a dense
+    cluster is a much stronger signal of an actual metrics/data table than a
+    single scattered mention. Final output is restored to document order for
+    readability. Returns "" if no keywords match or input is empty."""
     if not full_text:
         return ""
     keywords = keywords if keywords is not None else KEYWORDS
@@ -94,7 +101,15 @@ def extract_relevant_excerpts(
     spans: list[tuple[int, int]] = []
     text_len = len(full_text)
     for kw in keywords:
-        pattern = re.escape(kw)
+        # Short keywords (MAU, DAU, ARR) are common substrings of unrelated
+        # words in dense accounting text ("ARR" inside "arrangement",
+        # "warranty", "carrying value", etc.) — require word boundaries to
+        # avoid flooding the excerpt budget with false-positive noise.
+        # Longer phrases are distinctive enough that this isn't a risk.
+        if len(kw) <= 5:
+            pattern = r"\b" + re.escape(kw) + r"\b"
+        else:
+            pattern = re.escape(kw)
         for m in re.finditer(pattern, full_text, flags=re.IGNORECASE):
             start = max(0, m.start() - window_chars // 2)
             end = min(text_len, m.end() + window_chars // 2)
@@ -105,26 +120,33 @@ def extract_relevant_excerpts(
 
     spans.sort()
     merged: list[list[int]] = []
+    hit_counts: list[int] = []
     for start, end in spans:
         if merged and start <= merged[-1][1]:
             merged[-1][1] = max(merged[-1][1], end)
+            hit_counts[-1] += 1
         else:
             merged.append([start, end])
+            hit_counts.append(1)
 
-    parts = []
+    priority_order = sorted(range(len(merged)), key=lambda i: hit_counts[i], reverse=True)
+
+    selected: list[list[int]] = []
     total = 0
-    for start, end in merged:
-        chunk = full_text[start:end].strip()
-        if not chunk:
-            continue
-        if total + len(chunk) > max_total_chars:
+    for i in priority_order:
+        start, end = merged[i]
+        if total + (end - start) > max_total_chars:
             remaining = max_total_chars - total
             if remaining <= 0:
                 break
-            chunk = chunk[:remaining]
-        parts.append(chunk)
-        total += len(chunk)
+            end = start + remaining
+        selected.append([start, end])
+        total += (end - start)
         if total >= max_total_chars:
             break
+
+    selected.sort()
+    parts = [full_text[start:end].strip() for start, end in selected]
+    parts = [p for p in parts if p]
 
     return "\n\n[...]\n\n".join(parts)
