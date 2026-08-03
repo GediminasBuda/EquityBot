@@ -218,27 +218,8 @@ def _pct(v) -> str:
 
 # ── Verified revenue table (Python-computed, ground truth) ──────────────
 
-def _revenue_table(company: CompanyData, styles: dict) -> Table:
-    rows_data = compute_revenue_table(company)
-    header = [Paragraph(h, styles["table_header"]) for h in
-              ["Fiscal Year", "Revenue", "YoY Growth", "3Y CAGR", "5Y CAGR",
-               "Organic Revenue Growth"]]
-    rows = [header]
-    for r in rows_data:
-        rows.append([
-            Paragraph(str(r["year"]), styles["table_cell"]),
-            Paragraph(_fmt_b(r["revenue"]), styles["table_cell"]),
-            Paragraph(_pct(r["yoy"]), styles["table_cell"]),
-            Paragraph(_pct(r["cagr3"]), styles["table_cell"]),
-            Paragraph(_pct(r["cagr5"]), styles["table_cell"]),
-            Paragraph("Data unavailable", styles["table_cell"]),
-        ])
-    if len(rows) == 1:
-        rows.append([Paragraph("Data unavailable", styles["table_cell"])] * 6)
-
-    t = Table(rows, colWidths=[CW*0.13, CW*0.16, CW*0.16, CW*0.13, CW*0.13, CW*0.29],
-               repeatRows=1)
-    t.setStyle(TableStyle([
+def _table_style() -> TableStyle:
+    return TableStyle([
         ('BACKGROUND', (0,0), (-1,0), LBLUE),
         ('LINEBELOW', (0,0), (-1,0), 0.8, NAVY),
         ('LINEBELOW', (0,1), (-1,-1), 0.4, BORDER),
@@ -247,43 +228,79 @@ def _revenue_table(company: CompanyData, styles: dict) -> Table:
         ('LEFTPADDING', (0,0), (-1,-1), 5),
         ('RIGHTPADDING', (0,0), (-1,-1), 5),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
+    ])
+
+
+def _metric_rows_table(years: list[str], metric_rows: list[tuple[str, list[str]]],
+                        styles: dict, label_frac: float = 0.20) -> Table:
+    """Shared builder: metrics as rows (left label column), fiscal years as
+    column headers across the top — used by both the verified Revenue table
+    and the LLM-built Customers/Commercial Momentum tables so every table in
+    the report shares one visual layout."""
+    header = [Paragraph("Metric", styles["table_header"])] + \
+             [Paragraph(y, styles["table_header"]) for y in years]
+    rows = [header]
+    for label, values in metric_rows:
+        rows.append([Paragraph(label, styles["table_label"])] +
+                    [Paragraph(v, styles["table_cell"]) for v in values])
+
+    n = len(years)
+    first_w = CW * label_frac
+    other_w = (CW - first_w) / max(n, 1)
+    col_widths = [first_w] + [other_w] * n
+
+    t = Table(rows, colWidths=col_widths, repeatRows=1)
+    t.setStyle(_table_style())
     return t
+
+
+def _revenue_table(company: CompanyData, styles: dict) -> Table | None:
+    """
+    Verified Revenue / YoY / CAGR table, computed in Python from real
+    reported financials (never LLM output). Metrics that have no data at
+    all across the whole history (e.g. 3Y/5Y CAGR when fewer than 3-5 years
+    of history exist) are dropped entirely rather than shown as a row of
+    "n/a" — and if there is no revenue history at all, the whole table (and
+    its section) is skipped.
+    """
+    rows_data = compute_revenue_table(company)
+    if not rows_data:
+        return None
+
+    candidates = [
+        ("Revenue", [_fmt_b(r["revenue"]) for r in rows_data],
+         any(r["revenue"] is not None for r in rows_data)),
+        ("YoY Growth", [_pct(r["yoy"]) for r in rows_data],
+         any(r["yoy"] is not None for r in rows_data)),
+        ("3Y CAGR", [_pct(r["cagr3"]) for r in rows_data],
+         any(r["cagr3"] is not None for r in rows_data)),
+        ("5Y CAGR", [_pct(r["cagr5"]) for r in rows_data],
+         any(r["cagr5"] is not None for r in rows_data)),
+    ]
+    metric_rows = [(label, values) for label, values, has_data in candidates if has_data]
+    if not metric_rows:
+        return None
+
+    years = [str(r["year"]) for r in rows_data]
+    return _metric_rows_table(years, metric_rows, styles)
 
 
 # ── Generic LLM-built table renderer (customers_table / momentum_table) ─
 
 def _render_generic_table(table: dict, styles: dict) -> Table | None:
-    cols = table.get("columns") or []
+    """
+    Renders an LLM-built {"years": [...], "rows": [{"metric","values"}]}
+    table. Returns None (skip entirely — no section is rendered) when there
+    are no rows, i.e. the company discloses none of that table's candidate
+    metrics — avoids wasting a page on an all-"Data unavailable" grid.
+    """
+    years = table.get("years") or []
     rows_data = table.get("rows") or []
-    if not cols:
+    if not years or not rows_data:
         return None
 
-    header = [Paragraph(c, styles["table_header"]) for c in cols]
-    rows = [header]
-    for r in rows_data:
-        rows.append([Paragraph(str(cell), styles["table_cell"]) for cell in r])
-    if len(rows) == 1:
-        rows.append([Paragraph("Data unavailable", styles["table_cell"])] +
-                    [Paragraph("", styles["table_cell"])] * (len(cols) - 1))
-
-    n = len(cols)
-    first_w = CW * 0.16
-    other_w = (CW - first_w) / max(n - 1, 1)
-    col_widths = [first_w] + [other_w] * (n - 1)
-
-    t = Table(rows, colWidths=col_widths, repeatRows=1)
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), LBLUE),
-        ('LINEBELOW', (0,0), (-1,0), 0.8, NAVY),
-        ('LINEBELOW', (0,1), (-1,-1), 0.4, BORDER),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-        ('LEFTPADDING', (0,0), (-1,-1), 5),
-        ('RIGHTPADDING', (0,0), (-1,-1), 5),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
-    return t
+    metric_rows = [(r.get("metric") or "", r.get("values") or []) for r in rows_data]
+    return _metric_rows_table(years, metric_rows, styles, label_frac=0.24)
 
 
 def _render_discussion(discussion: list[dict], styles: dict) -> list:
@@ -363,11 +380,13 @@ class GrowthQualityPDFGenerator:
         flow.append(Paragraph(meta["question"], styles["cap_question"]))
 
         if cap_id == "demand_strength":
-            flow.append(Paragraph("Revenue (verified, computed from reported financials)",
-                                   styles["table_label"]))
-            flow.append(Spacer(1, 1*mm))
-            flow.append(_revenue_table(subject, styles))
-            flow.append(Spacer(1, 3*mm))
+            rev_t = _revenue_table(subject, styles)
+            if rev_t:
+                flow.append(Paragraph("Revenue (verified, computed from reported financials)",
+                                       styles["table_label"]))
+                flow.append(Spacer(1, 1*mm))
+                flow.append(rev_t)
+                flow.append(Spacer(1, 3*mm))
 
             cust_t = _render_generic_table(cap_data.get("customers_table") or {}, styles)
             if cust_t:

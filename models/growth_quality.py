@@ -99,17 +99,30 @@ For the "demand_strength" key, return the following, covering approximately the 
 last ten fiscal years (or since IPO if shorter) wherever the company plausibly \
 discloses the data, oldest fiscal year first:
 
-1. "customers_table": an object {"columns": [...], "rows": [[...], ...]} with \
-columns exactly ["Fiscal Year", "Customer Count", "Net Customer Additions", \
-"Enterprise Customers", "Active Users", "Subscribers"] and one row per fiscal \
-year. Use whichever of these the company actually discloses — not every company \
-discloses all five. Write exactly "Data unavailable" in any cell you cannot \
-support with real disclosed figures. Never invent a customer count.
+Tables are laid out with metrics as ROWS and fiscal years as COLUMNS (years \
+across the top, metric names down the left side) — use exactly the same fiscal \
+years, in the same oldest-to-newest order, as the verified revenue table in the \
+data block below, so every table in this report lines up on the same year \
+columns.
 
-2. "momentum_table": an object {"columns": [...], "rows": [[...], ...]} with \
-columns exactly ["Fiscal Year", "Bookings", "ARR", "Backlog", \
-"Geographic Revenue Mix"] and one row per fiscal year. Same "Data unavailable" \
-rule applies.
+Only include a row for a metric the company actually discloses in at least one \
+of those years. If a metric is never disclosed at all across the whole history \
+(e.g. this company has never reported a customer count), OMIT that row entirely \
+— do not include a row filled entirely with "Data unavailable". Within a row \
+you do keep, individual years the company didn't disclose that specific metric \
+for should still read exactly "Data unavailable". If literally none of a \
+table's metrics are disclosed by this company, return an empty "rows" list for \
+that table — do not invent placeholder rows.
+
+1. "customers_table": an object {"years": [...], "rows": [{"metric": "...", \
+"values": [...]}, ...]} where "years" is the same year list described above and \
+each row's "values" list has exactly one entry per year. Candidate metrics \
+(include only those disclosed): "Customer Count", "Net Customer Additions", \
+"Enterprise Customers", "Active Users", "Subscribers". Never invent a customer \
+count.
+
+2. "momentum_table": same shape as customers_table. Candidate metrics (include \
+only those disclosed): "Bookings", "ARR", "Backlog", "Geographic Revenue Mix".
 
 3. "discussion": an array of exactly 5 objects, each {"question": "...", \
 "answer": "..."}, addressing IN THIS EXACT ORDER:
@@ -133,8 +146,10 @@ score, grade, or rating of any kind.
 def _build_gq_cacheable() -> str:
     schema_example = ",\n".join(
         f'    "{cap_id}": {{\n'
-        f'      "customers_table": {{"columns": [...], "rows": [[...]]}},\n'
-        f'      "momentum_table": {{"columns": [...], "rows": [[...]]}},\n'
+        f'      "customers_table": {{"years": [...], "rows": '
+        f'[{{"metric": "...", "values": [...]}}]}},\n'
+        f'      "momentum_table": {{"years": [...], "rows": '
+        f'[{{"metric": "...", "values": [...]}}]}},\n'
         f'      "discussion": [{{"question": "...", "answer": "..."}}, ...],\n'
         f'      "why_it_matters": "..."\n'
         f'    }}'
@@ -156,6 +171,10 @@ def _build_gq_cacheable() -> str:
         "never invent numbers.\n"
         "- Where a data point is genuinely not available to you, write exactly "
         "\"Data unavailable\" — never estimate.\n"
+        "- Never include a table row for a metric that is never disclosed at "
+        "all — omit the row instead of filling it entirely with \"Data "
+        "unavailable\". This keeps the report focused on data that actually "
+        "exists and avoids wasting space/output on empty rows.\n"
         "- This is Phase 1 (Build the Evidence) only. Do NOT include any score, "
         "grade, or rating field anywhere in your response.\n"
         "- Write in English, professional institutional-equity-research tone. "
@@ -180,7 +199,7 @@ def compute_revenue_table(company: CompanyData, max_years: int = 10) -> list[dic
     company.annual_financials. Growth rates are None when the required
     historical revenue figure isn't available.
     """
-    years = list(reversed(company.sorted_years()[:max_years]))
+    years = get_history_years(company, max_years=max_years)
     rows = []
     for i, y in enumerate(years):
         af = company.annual_financials.get(y)
@@ -209,6 +228,13 @@ def compute_revenue_table(company: CompanyData, max_years: int = 10) -> list[dic
 
         rows.append({"year": y, "revenue": rev, "yoy": yoy, "cagr3": cagr3, "cagr5": cagr5})
     return rows
+
+
+def get_history_years(company: CompanyData, max_years: int = 10) -> list[int]:
+    """Chronological (oldest-first) fiscal years used across every GQS table,
+    so the Revenue table (Python-computed) and the LLM's own tables (Customers,
+    Commercial Momentum) all line up on identical year columns."""
+    return list(reversed(company.sorted_years()[:max_years]))
 
 
 def _b(v) -> str:
@@ -245,6 +271,9 @@ def format_growth_financials(company: CompanyData) -> str:
             c3_s = f"{r['cagr3']*100:.1f}%" if r["cagr3"] is not None else "n/a"
             c5_s = f"{r['cagr5']*100:.1f}%" if r["cagr5"] is not None else "n/a"
             lines.append(f"  {r['year']:<12} {_b(r['revenue']):>12} {yoy_s:>12} {c3_s:>10} {c5_s:>10}")
+        years = [r["year"] for r in rows]
+        lines.append(f"\nUse exactly these fiscal years, in this order, as the column headers "
+                     f"for the customers_table and momentum_table: {years}")
     else:
         lines.append("\nVERIFIED REVENUE HISTORY: no historical revenue data available for this ticker.")
 
@@ -263,25 +292,44 @@ def _growth_quality_prompt_parts(subject: CompanyData) -> tuple[str, str]:
 
 # ── Validation helpers ──────────────────────────────────────────────────────
 
-def _coerce_table(v) -> dict:
+def _is_missing(v) -> bool:
+    if v is None:
+        return True
+    s = str(v).strip().lower()
+    return s in ("", "data unavailable", "n/a", "na", "none", "-", "null")
+
+
+def _coerce_metric_table(v, years: list[int]) -> dict:
+    """
+    Coerce an LLM-returned {"years": [...], "rows": [{"metric","values"}]}
+    table. Rows with zero real data across every year are dropped here as a
+    safety net (the prompt already instructs the model to omit them) — if a
+    table ends up with no rows at all, the PDF renderer skips it entirely
+    rather than showing an empty grid.
+    """
+    year_labels = [str(y) for y in years]
     if not isinstance(v, dict):
-        return {"columns": [], "rows": []}
-    cols_raw = v.get("columns")
-    cols = [str(c) for c in cols_raw] if isinstance(cols_raw, list) else []
+        return {"years": year_labels, "rows": []}
     rows_raw = v.get("rows")
     rows = []
     if isinstance(rows_raw, list):
         for r in rows_raw:
-            if not isinstance(r, list):
+            if not isinstance(r, dict):
                 continue
-            row = [str(cell) if cell not in (None, "") else "Data unavailable" for cell in r]
-            if cols:
-                if len(row) < len(cols):
-                    row = row + ["Data unavailable"] * (len(cols) - len(row))
-                elif len(row) > len(cols):
-                    row = row[:len(cols)]
-            rows.append(row)
-    return {"columns": cols, "rows": rows}
+            metric = str(r.get("metric") or "").strip()
+            if not metric:
+                continue
+            vals_raw = r.get("values")
+            vals = list(vals_raw) if isinstance(vals_raw, list) else []
+            if len(vals) < len(year_labels):
+                vals = vals + [None] * (len(year_labels) - len(vals))
+            elif len(vals) > len(year_labels):
+                vals = vals[:len(year_labels)]
+            vals = [("Data unavailable" if _is_missing(x) else str(x)) for x in vals]
+            if all(_is_missing(x) for x in vals):
+                continue
+            rows.append({"metric": metric, "values": vals})
+    return {"years": year_labels, "rows": rows}
 
 
 def _coerce_discussion(v, sub_questions: list[str]) -> list[dict]:
@@ -307,13 +355,14 @@ def _validate_growth_quality(analysis: dict, subject: CompanyData) -> dict:
         analysis = {}
     caps_raw = analysis.get("capabilities")
     caps_raw = caps_raw if isinstance(caps_raw, dict) else {}
+    years = get_history_years(subject)
 
     capabilities = {}
     for cap_id, meta in GQ_CAPABILITY_META.items():
         raw = caps_raw.get(cap_id) if isinstance(caps_raw.get(cap_id), dict) else {}
         capabilities[cap_id] = {
-            "customers_table": _coerce_table(raw.get("customers_table")),
-            "momentum_table": _coerce_table(raw.get("momentum_table")),
+            "customers_table": _coerce_metric_table(raw.get("customers_table"), years),
+            "momentum_table": _coerce_metric_table(raw.get("momentum_table"), years),
             "discussion": _coerce_discussion(raw.get("discussion"), meta["sub_questions"]),
             "why_it_matters": (str(raw.get("why_it_matters")).strip()
                                 if raw.get("why_it_matters") else
