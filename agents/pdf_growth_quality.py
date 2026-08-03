@@ -303,6 +303,26 @@ def _render_generic_table(table: dict, styles: dict) -> Table | None:
     return _metric_rows_table(years, metric_rows, styles, label_frac=0.24)
 
 
+def _table_has_unverified(table: dict) -> bool:
+    """True if any cell in an LLM-built table carries the "~" unverified/
+    recalled-from-general-knowledge marker (see models/growth_quality.py's
+    tilde-prefix rule) — used to decide whether to render the legend."""
+    for row in (table.get("rows") or []):
+        for v in (row.get("values") or []):
+            if isinstance(v, str) and v.strip().startswith("~"):
+                return True
+    return False
+
+
+def _unverified_legend(styles: dict) -> Paragraph:
+    return Paragraph(
+        "~ figures are recalled from general knowledge, not sourced from the "
+        "verified financial data or annual-report excerpt used in this report.",
+        ParagraphStyle("gq_legend", fontName=OBLIQUE_FONT, fontSize=7,
+                       textColor=HexColor("#888888"), leading=9),
+    )
+
+
 def _render_discussion(discussion: list[dict], styles: dict) -> list:
     flow = []
     for item in discussion:
@@ -388,18 +408,24 @@ class GrowthQualityPDFGenerator:
                 flow.append(rev_t)
                 flow.append(Spacer(1, 3*mm))
 
-            cust_t = _render_generic_table(cap_data.get("customers_table") or {}, styles)
+            cust_table = cap_data.get("customers_table") or {}
+            cust_t = _render_generic_table(cust_table, styles)
             if cust_t:
                 flow.append(Paragraph("Customers", styles["table_label"]))
                 flow.append(Spacer(1, 1*mm))
                 flow.append(cust_t)
+                if _table_has_unverified(cust_table):
+                    flow.append(_unverified_legend(styles))
                 flow.append(Spacer(1, 3*mm))
 
-            mom_t = _render_generic_table(cap_data.get("momentum_table") or {}, styles)
+            mom_table = cap_data.get("momentum_table") or {}
+            mom_t = _render_generic_table(mom_table, styles)
             if mom_t:
                 flow.append(Paragraph("Commercial Momentum", styles["table_label"]))
                 flow.append(Spacer(1, 1*mm))
                 flow.append(mom_t)
+                if _table_has_unverified(mom_table):
+                    flow.append(_unverified_legend(styles))
                 flow.append(Spacer(1, 3*mm))
 
         discussion = cap_data.get("discussion") or []
