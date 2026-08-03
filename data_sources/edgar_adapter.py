@@ -174,6 +174,12 @@ class EdgarAdapter:
                     break
         return cik
 
+    def resolve_cik(self, ticker: str) -> Optional[str]:
+        """Public wrapper around _resolve_cik(), for use by other modules
+        (e.g. data_sources/edgar_filing_fetcher.py) that need a CIK without
+        pulling in the full XBRL-facts fetching machinery."""
+        return self._resolve_cik(ticker)
+
     def _fetch_company_facts(self, cik: str) -> Optional[dict]:
         """Fetch all XBRL facts for a company from SEC EDGAR."""
         if cik in self._cik_facts_cache:

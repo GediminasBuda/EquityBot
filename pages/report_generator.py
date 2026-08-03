@@ -1857,6 +1857,63 @@ with col_right:
             "1y": 12, "2y": 24, "5y": 60,
         }[_period_choice]
 
+    # Growth Quality Score: optional manual annual-report upload. Improves the
+    # Customer Count / Commercial Momentum tables, which otherwise rely solely
+    # on an automatic SEC EDGAR 10-K fetch (US tickers only) at generation time.
+    # Always shown (not just when auto-fetch fails) so a manual upload can
+    # override EDGAR for any ticker, US or not.
+    if report_type == "growth_quality":
+        with st.expander("📄 Optional: upload 10-K / annual report (PDF)"):
+            st.caption(
+                "Improves the Customer Count / Commercial Momentum tables. "
+                "If nothing is uploaded, EquityBot automatically fetches the "
+                "latest 10-K from SEC EDGAR for US-listed tickers."
+            )
+            _gq_uploaded = st.file_uploader(
+                "Upload annual report",
+                type=["pdf"],
+                key="gq_annual_report_upload",
+                label_visibility="collapsed",
+            )
+            if _gq_uploaded is not None:
+                _gq_upload_key = f"{_gq_uploaded.name}_{_gq_uploaded.size}"
+                if st.session_state.get("_gq_upload_key") != _gq_upload_key:
+                    with st.spinner(f"📂 Parsing **{_gq_uploaded.name}**…"):
+                        try:
+                            import importlib
+                            import data_sources.annual_report_extractor as _are_mod
+                            importlib.reload(_are_mod)
+                            from data_sources.annual_report_extractor import (
+                                extract_text_from_pdf_full as _gq_extract_pdf,
+                                extract_relevant_excerpts as _gq_extract_excerpts,
+                            )
+                            _gq_file_bytes = _gq_uploaded.read()
+                            _gq_full_text = _gq_extract_pdf(_gq_file_bytes)
+                            _gq_excerpt = (
+                                _gq_extract_excerpts(_gq_full_text) if _gq_full_text else ""
+                            )
+                        except Exception as _gqe:
+                            _gq_excerpt = ""
+                            st.error(f"File parse error: {_gqe}")
+                    st.session_state["_gq_upload_key"] = _gq_upload_key
+                    st.session_state["_gq_annual_report_excerpt"] = _gq_excerpt
+                    st.session_state["_gq_annual_report_source"] = _gq_uploaded.name
+
+                if st.session_state.get("_gq_annual_report_excerpt"):
+                    st.success(
+                        f"✓ Using **{st.session_state.get('_gq_annual_report_source')}** — "
+                        f"{len(st.session_state['_gq_annual_report_excerpt']):,} relevant chars extracted"
+                    )
+                else:
+                    st.warning("⚠ Could not extract relevant text from this PDF.")
+
+            if st.session_state.get("_gq_annual_report_excerpt"):
+                if st.button("✕ Clear and use EDGAR auto-fetch instead", key="gq_clear_upload"):
+                    st.session_state["_gq_annual_report_excerpt"] = None
+                    st.session_state["_gq_annual_report_source"] = None
+                    st.session_state["_gq_upload_key"] = None
+                    st.rerun()
+
     # Adversarial mode — needs both Claude and OpenAI keys
     _adv_available = bool(
         os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("OPENAI_API_KEY")
@@ -3701,7 +3758,35 @@ if generate_clicked and ticker_input:
                             "Falling back to yfinance — report will be less detailed."
                         )
 
-                cacheable_pfx, dynamic_prompt = _growth_quality_prompt_parts(company)
+                _gq_manual_excerpt = st.session_state.get("_gq_annual_report_excerpt")
+                if _gq_manual_excerpt:
+                    annual_report_excerpts = _gq_manual_excerpt
+                    annual_report_source = st.session_state.get(
+                        "_gq_annual_report_source", "uploaded file"
+                    )
+                    st.write(f"📄  Using uploaded annual report: {annual_report_source}")
+                else:
+                    try:
+                        from data_sources.edgar_filing_fetcher import get_10k_excerpts
+                        annual_report_excerpts = get_10k_excerpts(
+                            ticker_input, force_refresh=force_refresh
+                        ) or ""
+                    except Exception as _gq_edgar_err:
+                        annual_report_excerpts = ""
+                        logger.warning(f"[growth_quality] EDGAR 10-K fetch failed: {_gq_edgar_err}")
+                    annual_report_source = "SEC EDGAR (auto)" if annual_report_excerpts else None
+                    if annual_report_excerpts:
+                        st.write("📄  Found relevant 10-K excerpts via SEC EDGAR")
+                    else:
+                        st.write(
+                            "📄  No 10-K excerpts found (non-US ticker, EDGAR miss, or "
+                            "no annual report uploaded above) — Customer/Momentum tables "
+                            "will use whatever data is otherwise available."
+                        )
+
+                cacheable_pfx, dynamic_prompt = _growth_quality_prompt_parts(
+                    company, annual_report_excerpts
+                )
                 _prog.progress(55, text="🤖  Building growth-quality evidence base…")
                 st.write(f"🤖  Analyzing capability 1 of {len(GQ_CAPABILITY_META)} "
                          f"(Phase 1 — Build the Evidence)…")
@@ -3723,7 +3808,8 @@ if generate_clicked and ticker_input:
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
                 GrowthQualityPDFGenerator().render(company, analysis, pdf_path)
                 extra = {"capabilities_completed": analysis.get("capabilities_completed"),
-                         "capabilities_total": analysis.get("capabilities_total")}
+                         "capabilities_total": analysis.get("capabilities_total"),
+                         "annual_report_source": annual_report_source}
 
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────

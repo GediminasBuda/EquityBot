@@ -280,11 +280,28 @@ def format_growth_financials(company: CompanyData) -> str:
     return "\n".join(lines)
 
 
-def _growth_quality_prompt_parts(subject: CompanyData) -> tuple[str, str]:
+def format_annual_report_excerpts(excerpt_text: str) -> str:
+    """Wrap a pre-extracted 10-K/annual-report excerpt block for inclusion in
+    the dynamic prompt. Returns "" (no-op) if no excerpt text is available."""
+    if not excerpt_text or not excerpt_text.strip():
+        return ""
+    return (
+        "\n\n10-K ANNUAL REPORT EXCERPTS (verbatim, ground-truth — prioritize "
+        "over any other knowledge; use only this text for operating metrics "
+        "not already covered by the verified revenue history above, such as "
+        "customer/user counts, geographic revenue mix, bookings, and ARR):\n"
+        + excerpt_text.strip()
+    )
+
+
+def _growth_quality_prompt_parts(
+    subject: CompanyData, annual_report_excerpts: str = ""
+) -> tuple[str, str]:
     """Return (cacheable_prefix, dynamic_content) for a single-company GQS run."""
     dynamic = (
         f"SUBJECT COMPANY TICKER: {subject.ticker}\n\n"
         + format_growth_financials(subject)
+        + format_annual_report_excerpts(annual_report_excerpts)
         + "\n\nAnalyze the capabilities listed above for this company and return the JSON."
     )
     return _GQ_CACHEABLE, dynamic

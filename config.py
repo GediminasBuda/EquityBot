@@ -39,6 +39,10 @@ FRAMEWORKS_DIR.mkdir(exist_ok=True)
 # Cache TTL: how many hours before data is considered stale and re-fetched
 CACHE_TTL_HOURS = 24
 
+# Annual report (10-K) excerpt cache TTL, in days — filings are annual events,
+# so this is much longer-lived than the main financial-data cache above.
+ANNUAL_REPORT_CACHE_TTL_DAYS = 30
+
 # ── API Keys ──────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
