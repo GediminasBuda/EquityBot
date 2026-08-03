@@ -58,6 +58,17 @@ KEYWORDS: list[str] = [
 ]
 
 
+def _keyword_pattern(kw: str) -> str:
+    """Regex pattern for a single keyword. Shared by extract_relevant_excerpts
+    and the fast PDF pre-scan so both agree on what counts as a "hit" — short
+    keywords (MAU, DAU, ARR) require a word boundary plus an optional
+    trailing "s" (filings glue plurals directly onto the acronym, e.g.
+    "MAUs"); longer phrases are distinctive enough to match as-is."""
+    if len(kw) <= 5:
+        return r"\b" + re.escape(kw) + r"s?\b"
+    return re.escape(kw)
+
+
 def strip_html_to_text(html: str) -> str:
     """Convert a 10-K's primary HTML document to plain text, keeping table
     content (operating-metrics/revenue-mix data is frequently tabular)."""
@@ -78,16 +89,99 @@ def strip_html_to_text(html: str) -> str:
     return "\n".join(lines)
 
 
-def extract_text_from_pdf_full(data: bytes, max_pages: int = 250, max_chars: int = 400_000) -> str:
+# Above this page count, pdfplumber's per-page layout analysis (needed for
+# clean table extraction) becomes slow enough across the WHOLE document to
+# risk tripping a platform-level request timeout — confirmed when uploading
+# Nintendo's annual report (a large "integrated report" style PDF with many
+# photo/graphics-heavy pages) caused the Streamlit app to silently reset
+# mid-upload, the same failure signature documented elsewhere in this
+# codebase for other long blocking calls. Below this threshold the full scan
+# is fast enough that the optimization below isn't worth the complexity.
+_FAST_SCAN_PAGE_THRESHOLD = 30
+# Pages of buffer to include on each side of a candidate page, so a table or
+# sentence that spans a page break isn't cut off mid-thought.
+_PAGE_CONTEXT_BUFFER = 1
+
+
+def _scan_pdf_candidate_pages(
+    data: bytes, keywords: list[str], max_pages: int
+) -> tuple[set[int], int]:
+    """Fast first pass over a PDF (PyPDF2, no layout analysis) to find which
+    pages contain any keyword hit at all — used to avoid running pdfplumber's
+    much slower per-page layout analysis across an entire large document when
+    only a handful of pages actually matter.
+
+    Returns (candidate_page_indices, total_chars_extracted). The char count
+    lets the caller detect a failed/garbled extraction (e.g. a scanned,
+    image-only PDF that PyPDF2 can't read at all) and fall back to scanning
+    every page instead of trusting a false "no matches" result."""
+    candidates: set[int] = set()
+    total_chars = 0
+    try:
+        import PyPDF2
+        reader = PyPDF2.PdfReader(io.BytesIO(data))
+        patterns = [re.compile(_keyword_pattern(kw), re.IGNORECASE) for kw in keywords]
+        for i, page in enumerate(reader.pages[:max_pages]):
+            try:
+                text = page.extract_text() or ""
+            except Exception:
+                continue
+            total_chars += len(text)
+            if any(p.search(text) for p in patterns):
+                candidates.add(i)
+    except Exception as e:
+        logger.warning(f"[annual_report_extractor] Fast PDF pre-scan failed: {e}")
+    return candidates, total_chars
+
+
+def extract_text_from_pdf_full(
+    data: bytes,
+    max_pages: int = 250,
+    max_chars: int = 400_000,
+    keywords: list[str] | None = None,
+) -> str:
     """Extract text from a full annual-report PDF (pdfplumber, PyPDF2 fallback).
     Sized for a whole filing rather than utils/file_parser.py's 20-page cap,
-    which exists for the unrelated Gravity Taxers universe-upload feature."""
+    which exists for the unrelated Gravity Taxers universe-upload feature.
+
+    For documents above _FAST_SCAN_PAGE_THRESHOLD pages, runs a fast PyPDF2
+    pre-scan first to find which pages actually contain a keyword hit, then
+    only runs pdfplumber's slower, layout-aware extraction on those pages
+    (plus a page of buffer on each side) — preserving pdfplumber's better
+    table-layout fidelity exactly where the target disclosures live, while
+    keeping total processing time bounded regardless of document length."""
+    keywords = keywords if keywords is not None else KEYWORDS
+
     try:
         import pdfplumber
         with pdfplumber.open(io.BytesIO(data)) as pdf:
+            page_count = len(pdf.pages)
+            pages_to_scan: set[int] | None = None
+            if page_count > _FAST_SCAN_PAGE_THRESHOLD:
+                candidates, prescan_chars = _scan_pdf_candidate_pages(
+                    data, keywords, max_pages
+                )
+                # A near-empty pre-scan usually means PyPDF2 couldn't read
+                # this PDF at all (e.g. scanned/image-only pages) rather than
+                # a genuine "no keyword matches" — don't trust it in that
+                # case, fall back to scanning every page with pdfplumber.
+                if prescan_chars >= 500:
+                    expanded: set[int] = set()
+                    for p in candidates:
+                        for d in range(-_PAGE_CONTEXT_BUFFER, _PAGE_CONTEXT_BUFFER + 1):
+                            if 0 <= p + d < page_count:
+                                expanded.add(p + d)
+                    pages_to_scan = expanded
+
+            indices = (
+                sorted(pages_to_scan) if pages_to_scan is not None
+                else list(range(min(page_count, max_pages)))
+            )
             pages = []
-            for page in pdf.pages[:max_pages]:
-                text = page.extract_text() or ""
+            for i in indices:
+                if i >= len(pdf.pages):
+                    continue
+                text = pdf.pages[i].extract_text() or ""
                 pages.append(text)
             result = "\n".join(pages)
             if result.strip():
@@ -141,24 +235,7 @@ def extract_relevant_excerpts(
     spans: list[tuple[int, int, str]] = []
     text_len = len(full_text)
     for kw in keywords:
-        # Short keywords (MAU, DAU, ARR) are common substrings of unrelated
-        # words in dense accounting text ("ARR" inside "arrangement",
-        # "warranty", "carrying value", etc.) — require a word boundary
-        # before the keyword to avoid flooding the excerpt budget with
-        # false-positive noise. Longer phrases are distinctive enough that
-        # this isn't a risk.
-        #
-        # Trailing boundary must allow an optional "s": filings almost
-        # always write these as plurals glued directly onto the acronym —
-        # "MAUs", "DAUs" — with no space or hyphen before the "s", so a
-        # bare trailing \b (found via Spotify's 20-F: "751 million MAUs")
-        # never matches at all, silently making the MAU/DAU keywords dead
-        # weight in every filing that doesn't happen to write the bare
-        # singular form.
-        if len(kw) <= 5:
-            pattern = r"\b" + re.escape(kw) + r"s?\b"
-        else:
-            pattern = re.escape(kw)
+        pattern = _keyword_pattern(kw)
         for m in re.finditer(pattern, full_text, flags=re.IGNORECASE):
             start = max(0, m.start() - window_chars // 2)
             end = min(text_len, m.end() + window_chars // 2)
