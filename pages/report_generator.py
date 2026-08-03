@@ -758,6 +758,16 @@ def _build_report_types() -> dict:
             if k == "fisher_peers":
                 reordered["earnings_quality"] = eq
         result = reordered
+    # Growth Quality Score sorts right after Earnings Quality Score
+    # (2026-08-03 user request), same code-based-reorder pattern as above.
+    if "growth_quality" in result and "earnings_quality" in result:
+        gq = result.pop("growth_quality")
+        reordered = {}
+        for k, v in result.items():
+            reordered[k] = v
+            if k == "earnings_quality":
+                reordered["growth_quality"] = gq
+        result = reordered
     return result
 
 REPORT_TYPES = _build_report_types()
@@ -767,7 +777,7 @@ _BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "eodhd_full", "overview_v2", "index_overview",
                 "industry_analysis", "insider_transactions",
                 "valuemeter", "short_interest",
-                "fund_fundamentals", "earnings_quality"}
+                "fund_fundamentals", "earnings_quality", "growth_quality"}
 
 # Temporarily hidden from the Valuation Models picker — these need
 # significant adjustments before they're ready for use again. Framework
@@ -814,6 +824,8 @@ def _parse_intent_regex(q: str) -> dict:
                         "7 power", "seven power"],
         "earnings_quality": ["earnings quality", "earnings quality score",
                               "forensic accounting", "accrual", "sloan"],
+        "growth_quality": ["growth quality", "growth quality score", "gqs",
+                            "compounder", "demand strength"],
     }
     for fw_id, kws in fw_hints.items():
         if any(k in q_lo for k in kws):
@@ -3655,6 +3667,64 @@ if generate_clicked and ticker_input:
                 extra = {"score": score, "grade": grade, "percentile": pct,
                          "peer_count": len(eq_peers)}
 
+            elif report_type == "growth_quality":
+                # ── Growth Quality Score — Phase 1: Build the Evidence ────────
+                # Single-company only (no peers) for capability 1. Mirrors the
+                # EODHD-then-yfinance fetch pattern used by Earnings Quality's
+                # Step 1, without its peer-fetching Step 2.
+                from data_sources.eodhd_only_builder import (
+                    fetch_company_data_eodhd_only,
+                )
+                from models.growth_quality import (
+                    _growth_quality_prompt_parts, _validate_growth_quality,
+                    SYSTEM_PROMPT as SYS, GQ_CAPABILITY_META,
+                )
+
+                _prog.progress(25, text="🌱  Fetching EODHD-only data…")
+                if _is_japan:
+                    st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                elif _is_baltic:
+                    st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
+                else:
+                    st.write("🌱  Fetching EODHD bundle (fundamentals + financial statements)…")
+                    _gq_company, _gq_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    _gq_usable = bool(
+                        _gq_company.name
+                        and (_gq_company.market_cap or _gq_company.annual_financials)
+                    )
+                    if _gq_usable:
+                        company = _gq_company
+                        st.write(f"✓  EODHD endpoints used: {_gq_bundle.get('endpoints_used',0)}/9")
+                    else:
+                        st.write(
+                            f"⚠  EODHD has no data for **{ticker_input}**. "
+                            "Falling back to yfinance — report will be less detailed."
+                        )
+
+                cacheable_pfx, dynamic_prompt = _growth_quality_prompt_parts(company)
+                _prog.progress(55, text="🤖  Building growth-quality evidence base…")
+                st.write(f"🤖  Analyzing capability 1 of {len(GQ_CAPABILITY_META)} "
+                         f"(Phase 1 — Build the Evidence)…")
+                analysis = llm.generate_json(dynamic_prompt, SYS, max_tokens=6000,
+                                             cacheable_prefix=cacheable_pfx)
+                analysis = _validate_growth_quality(analysis, company)
+                st.write("✓  Evidence base built — no scoring in Phase 1")
+                _show_token_usage(llm.last_usage)
+                _prog.progress(85, text="✓  Analysis complete")
+
+                _prog.progress(88, text="📄  Rendering PDF…")
+                st.write("📄  Rendering PDF…")
+                import importlib, agents.pdf_growth_quality as _gqmod
+                importlib.reload(_gqmod)
+                from agents.pdf_growth_quality import GrowthQualityPDFGenerator
+                safe = ticker_input.replace(".", "_").replace("-", "_")
+                date = datetime.now().strftime("%Y-%m-%d")
+                pdf_path = str(OUTPUTS_DIR / f"{safe}_growth_quality_{date}.pdf")
+                os.makedirs(OUTPUTS_DIR, exist_ok=True)
+                GrowthQualityPDFGenerator().render(company, analysis, pdf_path)
+                extra = {"capabilities_completed": analysis.get("capabilities_completed"),
+                         "capabilities_total": analysis.get("capabilities_total")}
+
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
                 from models.generic_runner import GenericRunner
@@ -3925,6 +3995,12 @@ if st.session_state.report_result:
                 f"Grade: **{extra.get('grade','?')}**  ·  "
                 f"Percentile: **{extra.get('percentile','?')}**  ·  "
                 f"Peers analysed: **{extra.get('peer_count', 0)}**"
+            )
+        elif rtype == "growth_quality":
+            st.caption(
+                f"Growth Quality Score — Phase 1 (Build the Evidence)  ·  "
+                f"Capabilities covered: **{extra.get('capabilities_completed','?')}/"
+                f"{extra.get('capabilities_total','?')}**  ·  No scoring yet"
             )
         else:
             fw_label = REPORT_TYPES.get(rtype, {}).get("short", rtype)
