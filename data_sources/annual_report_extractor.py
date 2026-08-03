@@ -119,13 +119,26 @@ def extract_relevant_excerpts(
     over isolated single-hit windows (e.g. a stray "geographic" mention in a
     risk-factor paragraph) when trimming to the hard length cap — a dense
     cluster is a much stronger signal of an actual metrics/data table than a
-    single scattered mention. Final output is restored to document order for
-    readability. Returns "" if no keywords match or input is empty."""
+    single scattered mention.
+
+    Pure hit-density ranking has a failure mode: a keyword that is genuinely
+    disclosed but only mentioned once in the whole document (e.g. a
+    "Revenue by country" footnote table, mentioned in exactly one place) can
+    be ranked dead last and fall entirely outside max_total_chars, crowded
+    out by a keyword that happens to recur dozens of times in unrelated
+    prose elsewhere (e.g. "subscriber" mentioned throughout the MD&A). After
+    the density-based fill, a bounded top-up pass guarantees every distinct
+    matched keyword has at least one representative window included, so a
+    rare-but-real disclosure is never silently dropped just because it isn't
+    repeated.
+
+    Final output is restored to document order for readability. Returns ""
+    if no keywords match or input is empty."""
     if not full_text:
         return ""
     keywords = keywords if keywords is not None else KEYWORDS
 
-    spans: list[tuple[int, int]] = []
+    spans: list[tuple[int, int, str]] = []
     text_len = len(full_text)
     for kw in keywords:
         # Short keywords (MAU, DAU, ARR) are common substrings of unrelated
@@ -149,25 +162,29 @@ def extract_relevant_excerpts(
         for m in re.finditer(pattern, full_text, flags=re.IGNORECASE):
             start = max(0, m.start() - window_chars // 2)
             end = min(text_len, m.end() + window_chars // 2)
-            spans.append((start, end))
+            spans.append((start, end, kw))
 
     if not spans:
         return ""
 
-    spans.sort()
+    spans.sort(key=lambda s: s[0])
     merged: list[list[int]] = []
     hit_counts: list[int] = []
-    for start, end in spans:
+    kw_hits: list[set] = []
+    for start, end, kw in spans:
         if merged and start <= merged[-1][1]:
             merged[-1][1] = max(merged[-1][1], end)
             hit_counts[-1] += 1
+            kw_hits[-1].add(kw)
         else:
             merged.append([start, end])
             hit_counts.append(1)
+            kw_hits.append({kw})
 
     priority_order = sorted(range(len(merged)), key=lambda i: hit_counts[i], reverse=True)
 
-    selected: list[list[int]] = []
+    selected: list[int] = []
+    trimmed_ends: dict[int, int] = {}
     total = 0
     for i in priority_order:
         start, end = merged[i]
@@ -176,13 +193,56 @@ def extract_relevant_excerpts(
             if remaining <= 0:
                 break
             end = start + remaining
-        selected.append([start, end])
+            trimmed_ends[i] = end
+        selected.append(i)
         total += (end - start)
         if total >= max_total_chars:
             break
 
+    # Top-up pass: guarantee every keyword that matched anywhere in the
+    # document has at least one window in the final selection, bounded by a
+    # secondary budget so a long tail of rare keywords can't blow up the
+    # output size. Each missing keyword's single densest not-yet-selected
+    # window is added.
+    selected_set = set(selected)
+    covered_keywords: set = set()
+    for i in selected_set:
+        covered_keywords |= kw_hits[i]
+    all_keywords_present: set = set().union(*kw_hits) if kw_hits else set()
+    missing_keywords = all_keywords_present - covered_keywords
+
+    if missing_keywords:
+        top_up_cap = max_total_chars // 4
+        top_up_used = 0
+        best_for_kw: dict[str, int] = {}
+        for i, kws in enumerate(kw_hits):
+            if i in selected_set:
+                continue
+            for kw in kws & missing_keywords:
+                if kw not in best_for_kw or hit_counts[i] > hit_counts[best_for_kw[kw]]:
+                    best_for_kw[kw] = i
+
+        for i in sorted(set(best_for_kw.values()), key=lambda x: hit_counts[x], reverse=True):
+            if i in selected_set:
+                continue
+            start, end = merged[i]
+            size = end - start
+            if top_up_used + size > top_up_cap:
+                remaining = top_up_cap - top_up_used
+                if remaining <= 0:
+                    break
+                end = start + remaining
+                trimmed_ends[i] = end
+            selected.append(i)
+            selected_set.add(i)
+            top_up_used += (end - start)
+
     selected.sort()
-    parts = [full_text[start:end].strip() for start, end in selected]
+    parts = []
+    for i in selected:
+        start, end = merged[i]
+        end = trimmed_ends.get(i, end)
+        parts.append(full_text[start:end].strip())
     parts = [p for p in parts if p]
 
     return "\n\n[...]\n\n".join(parts)
