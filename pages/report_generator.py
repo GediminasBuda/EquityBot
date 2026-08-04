@@ -1858,19 +1858,20 @@ with col_right:
         }[_period_choice]
 
     # Growth Quality Score: optional manual annual-report upload. Improves the
-    # Customer Count / Commercial Momentum tables, which otherwise rely solely
-    # on an automatic SEC EDGAR 10-K fetch (US tickers only) at generation time.
-    # Always shown (not just when auto-fetch fails) so a manual upload can
-    # override EDGAR for any ticker, US or not.
+    # LLM-built tables (Customers / Commercial Momentum / Unit Economics),
+    # which otherwise rely solely on an automatic SEC EDGAR 10-K fetch (US
+    # tickers only) at generation time. Always shown (not just when
+    # auto-fetch fails) so a manual upload can override EDGAR for any
+    # ticker, US or not.
     if report_type == "growth_quality":
         with st.expander("📄 Optional: upload 10-K / annual report (PDF)"):
             st.caption(
-                "Improves the Customer Count / Commercial Momentum tables. "
-                "Upload multiple years' reports to widen genuine (non-recalled) "
-                "historical coverage — each PDF is excerpted separately and "
-                "labeled by filename. If nothing is uploaded, EquityBot "
-                "automatically fetches the latest 10-K from SEC EDGAR for "
-                "US-listed tickers."
+                "Improves the Customer Count / Commercial Momentum / Unit "
+                "Economics tables. Upload multiple years' reports to widen "
+                "genuine (non-recalled) historical coverage — each PDF is "
+                "excerpted separately and labeled by filename. If nothing is "
+                "uploaded, EquityBot automatically fetches the latest 10-K "
+                "from SEC EDGAR for US-listed tickers."
             )
             _gq_uploaded_files = st.file_uploader(
                 "Upload annual report(s)",
@@ -3822,9 +3823,9 @@ if generate_clicked and ticker_input:
                     company, annual_report_excerpts
                 )
                 _prog.progress(55, text="🤖  Building growth-quality evidence base…")
-                st.write(f"🤖  Analyzing capability 1 of {len(GQ_CAPABILITY_META)} "
+                st.write(f"🤖  Analyzing {len(GQ_CAPABILITY_META)} capabilities "
                          f"(Phase 1 — Build the Evidence)…")
-                analysis = llm.generate_json(dynamic_prompt, SYS, max_tokens=6000,
+                analysis = llm.generate_json(dynamic_prompt, SYS, max_tokens=10000,
                                              cacheable_prefix=cacheable_pfx)
                 analysis = _validate_growth_quality(analysis, company)
                 st.write("✓  Evidence base built — no scoring in Phase 1")

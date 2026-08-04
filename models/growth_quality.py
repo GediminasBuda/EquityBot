@@ -52,6 +52,25 @@ GQ_CAPABILITY_META = {
             "Is the company gaining market relevance?",
             "Is demand cyclical or structural?",
         ],
+        "tables": ["customers_table", "momentum_table"],
+        "table_labels": {
+            "customers_table": "Customers",
+            "momentum_table": "Commercial Momentum",
+        },
+    },
+    "economic_engine": {
+        "number": 2,
+        "title": "Economic Engine",
+        "question": "Does each additional customer create increasing economic value?",
+        "sub_questions": [
+            "Are unit economics improving?",
+            "Is profitability emerging naturally?",
+            "Is scale improving economics?",
+        ],
+        "tables": ["unit_economics_table"],
+        "table_labels": {
+            "unit_economics_table": "Unit Economics",
+        },
     },
 }
 
@@ -143,21 +162,84 @@ above supports — or contradicts — the existence of durable, structural deman
 for this company's products. This is evidence-gathering only: do NOT assign a \
 score, grade, or rating of any kind.
 """,
+    "economic_engine": """\
+CAPABILITY 2 — ECONOMIC ENGINE
+Question: Does each additional customer create increasing economic value?
+
+A verified Gross Margin / EBITDA Margin / Operating Margin / Gross Profit Growth \
+table (computed from the company's own reported financials) is already provided \
+to you in the data block below — treat those figures as ground truth, do not \
+recompute or contradict them, and do not repeat them in your JSON response.
+
+For the "economic_engine" key, return the following, covering approximately the \
+last ten fiscal years (or since IPO if shorter) wherever the company plausibly \
+discloses or you can reliably derive the data, oldest fiscal year first, using \
+exactly the same fiscal years and order as the verified revenue table in the \
+data block below.
+
+Only include a row for a metric the company actually discloses, or that you can \
+reliably derive, in at least one of those years. If a metric is never available \
+at all across the whole history (e.g. this company has never disclosed CAC or \
+LTV, common outside subscription/SaaS businesses), OMIT that row entirely — do \
+not include a row filled entirely with "Data unavailable". If literally none of \
+this table's metrics are available for this company, return an empty "rows" \
+list — do not invent placeholder rows.
+
+1. "unit_economics_table": an object {"years": [...], "rows": [{"metric": "...", \
+"values": [...]}, ...]} where "years" is the same year list described above and \
+each row's "values" list has exactly one entry per year. Candidate metrics \
+(include only those disclosed or reliably derivable — never invent a figure): \
+"Contribution Margin", "Gross Profit per Customer", "LTV", "CAC", "LTV/CAC", \
+"CAC Payback (months)", "Revenue per Customer", "Revenue per Employee". Derive \
+"Gross Profit per Customer" and "Revenue per Customer" by dividing the verified \
+Gross Profit / Revenue figures by whatever customer or subscriber count is \
+disclosed elsewhere in this report (e.g. Capability 1's customers_table) — show \
+your derived figure rather than a raw disclosure, and prefix it with a tilde if \
+the underlying customer count itself was tilde-marked. Derive "Revenue per \
+Employee" from the verified revenue figures and the employee count supplied in \
+the data block (current year is verified; prior years may use your own \
+recalled knowledge, tilde-prefixed). LTV, CAC, LTV/CAC and CAC Payback are \
+usually disclosed only by subscription/SaaS-style businesses — if this company \
+has never disclosed or discussed these, omit those rows entirely rather than \
+guessing.
+
+2. "discussion": an array of exactly 3 objects, each {"question": "...", \
+"answer": "..."}, addressing IN THIS EXACT ORDER:
+   a. Are unit economics improving?
+   b. Is profitability emerging naturally?
+   c. Is scale improving economics?
+Each answer should be 60-120 words, cite specific numbers from the data \
+provided, and discuss both positive and negative evidence — do not present only \
+a bullish case.
+
+3. "why_it_matters": a single 100-180 word paragraph explaining how the evidence \
+above supports — or contradicts — the existence of an economic engine where \
+each additional customer creates increasing economic value for this company. \
+This is evidence-gathering only: do NOT assign a score, grade, or rating of any \
+kind.
+""",
 }
 
 
 def _build_gq_cacheable() -> str:
-    schema_example = ",\n".join(
-        f'    "{cap_id}": {{\n'
-        f'      "customers_table": {{"years": [...], "rows": '
-        f'[{{"metric": "...", "values": [...]}}]}},\n'
-        f'      "momentum_table": {{"years": [...], "rows": '
-        f'[{{"metric": "...", "values": [...]}}]}},\n'
-        f'      "discussion": [{{"question": "...", "answer": "..."}}, ...],\n'
-        f'      "why_it_matters": "..."\n'
-        f'    }}'
-        for cap_id in GQ_CAPABILITY_ORDER
-    )
+    def _cap_schema(cap_id: str) -> str:
+        tables_json = ",\n".join(
+            f'      "{t}": {{"years": [...], "rows": '
+            f'[{{"metric": "...", "values": [...]}}]}}'
+            for t in GQ_CAPABILITY_META[cap_id]["tables"]
+        )
+        return (
+            f'    "{cap_id}": {{\n'
+            f'{tables_json},\n'
+            f'      "discussion": [{{"question": "...", "answer": "..."}}, ...],\n'
+            f'      "why_it_matters": "..."\n'
+            f'    }}'
+        )
+
+    schema_example = ",\n".join(_cap_schema(cap_id) for cap_id in GQ_CAPABILITY_ORDER)
+    all_table_names = [
+        t for cap_id in GQ_CAPABILITY_ORDER for t in GQ_CAPABILITY_META[cap_id]["tables"]
+    ]
     parts = [
         "Objective: build the historical-evidence base for the capabilities listed "
         "below, for the single subject company supplied in the data block. This is "
@@ -174,15 +256,15 @@ def _build_gq_cacheable() -> str:
         "History, and any 10-K/20-F Annual Report Excerpts) — figures "
         "explicitly present there are ground truth: always prefer them, and "
         "never contradict them.\n"
-        "- For customer/user-count and commercial-momentum metrics "
-        "(customers_table, momentum_table only) in a fiscal year NOT covered "
-        "by those verified blocks — e.g. a single annual report excerpt "
-        "typically only states the most recent 1-2 years verbatim, per "
-        "standard SEC MD&A practice — you may still supply a value from your "
-        "own general knowledge, but you MUST prefix it with a tilde (\"~\") "
-        "to mark it as recalled/unverified rather than sourced from the data "
-        "provided (e.g. \"~480 million\"). Never prefix a figure with \"~\" "
-        "if it IS present in the verified data blocks.\n"
+        f"- For the LLM-built tables ({', '.join(all_table_names)} only) in a "
+        "fiscal year NOT covered by those verified blocks — e.g. a single "
+        "annual report excerpt typically only states the most recent 1-2 "
+        "years verbatim, per standard SEC MD&A practice — you may still "
+        "supply a value from your own general knowledge, but you MUST prefix "
+        "it with a tilde (\"~\") to mark it as recalled/unverified rather "
+        "than sourced from the data provided (e.g. \"~480 million\"). Never "
+        "prefix a figure with \"~\" if it IS present in the verified data "
+        "blocks.\n"
         "- If you have no reliable knowledge at all for a cell (verified or "
         "otherwise), write exactly \"Data unavailable\" — do not guess just "
         "to fill a cell.\n"
@@ -253,6 +335,38 @@ def compute_revenue_table(company: CompanyData, max_years: int = 10) -> list[dic
     return rows
 
 
+def compute_profitability_table(company: CompanyData, max_years: int = 10) -> list[dict]:
+    """
+    Return a chronological (oldest-first) list of
+    {"year", "gross_margin", "ebitda_margin", "operating_margin",
+    "gross_profit_growth"} dicts computed from company.annual_financials.
+    Growth rate is None when the required historical gross-profit figure
+    isn't available. Feeds capability 2 (Economic Engine) the same way
+    compute_revenue_table() feeds capability 1 (Demand Strength).
+    """
+    years = get_history_years(company, max_years=max_years)
+    rows = []
+    for i, y in enumerate(years):
+        af = company.annual_financials.get(y)
+        gp = af.gross_profit if af else None
+
+        gp_growth = None
+        if i > 0 and gp is not None:
+            prev = company.annual_financials.get(years[i - 1])
+            prev_gp = prev.gross_profit if prev else None
+            if prev_gp:
+                gp_growth = (gp / prev_gp) - 1
+
+        rows.append({
+            "year": y,
+            "gross_margin": af.gross_margin if af else None,
+            "ebitda_margin": af.ebitda_margin if af else None,
+            "operating_margin": af.ebit_margin if af else None,
+            "gross_profit_growth": gp_growth,
+        })
+    return rows
+
+
 def get_history_years(company: CompanyData, max_years: int = 10) -> list[int]:
     """Chronological (oldest-first) fiscal years used across every GQS table,
     so the Revenue table (Python-computed) and the LLM's own tables (Customers,
@@ -296,9 +410,27 @@ def format_growth_financials(company: CompanyData) -> str:
             lines.append(f"  {r['year']:<12} {_b(r['revenue']):>12} {yoy_s:>12} {c3_s:>10} {c5_s:>10}")
         years = [r["year"] for r in rows]
         lines.append(f"\nUse exactly these fiscal years, in this order, as the column headers "
-                     f"for the customers_table and momentum_table: {years}")
+                     f"for every LLM-built table in this report: {years}")
     else:
         lines.append("\nVERIFIED REVENUE HISTORY: no historical revenue data available for this ticker.")
+
+    prof_rows = compute_profitability_table(company)
+    if prof_rows and any(
+        r["gross_margin"] is not None or r["ebitda_margin"] is not None
+        or r["operating_margin"] is not None for r in prof_rows
+    ):
+        lines.append(f"\nVERIFIED PROFITABILITY HISTORY (oldest to newest, computed from "
+                      f"reported financials — treat as ground truth):")
+        header = (f"  {'Fiscal Year':<12} {'Gross Margin':>13} {'EBITDA Margin':>14} "
+                  f"{'Oper. Margin':>13} {'GP Growth':>11}")
+        lines.append(header)
+        lines.append("  " + "-" * len(header))
+        for r in prof_rows:
+            gm_s = f"{r['gross_margin']*100:.1f}%" if r["gross_margin"] is not None else "n/a"
+            em_s = f"{r['ebitda_margin']*100:.1f}%" if r["ebitda_margin"] is not None else "n/a"
+            om_s = f"{r['operating_margin']*100:.1f}%" if r["operating_margin"] is not None else "n/a"
+            gg_s = f"{r['gross_profit_growth']*100:.1f}%" if r["gross_profit_growth"] is not None else "n/a"
+            lines.append(f"  {r['year']:<12} {gm_s:>13} {em_s:>14} {om_s:>13} {gg_s:>11}")
 
     return "\n".join(lines)
 
@@ -403,14 +535,14 @@ def _validate_growth_quality(analysis: dict, subject: CompanyData) -> dict:
     capabilities = {}
     for cap_id, meta in GQ_CAPABILITY_META.items():
         raw = caps_raw.get(cap_id) if isinstance(caps_raw.get(cap_id), dict) else {}
-        capabilities[cap_id] = {
-            "customers_table": _coerce_metric_table(raw.get("customers_table"), years),
-            "momentum_table": _coerce_metric_table(raw.get("momentum_table"), years),
-            "discussion": _coerce_discussion(raw.get("discussion"), meta["sub_questions"]),
-            "why_it_matters": (str(raw.get("why_it_matters")).strip()
-                                if raw.get("why_it_matters") else
-                                "Insufficient data was returned by the model for this section."),
-        }
+        cap_out = {}
+        for table_name in meta.get("tables", []):
+            cap_out[table_name] = _coerce_metric_table(raw.get(table_name), years)
+        cap_out["discussion"] = _coerce_discussion(raw.get("discussion"), meta["sub_questions"])
+        cap_out["why_it_matters"] = (str(raw.get("why_it_matters")).strip()
+                                      if raw.get("why_it_matters") else
+                                      "Insufficient data was returned by the model for this section.")
+        capabilities[cap_id] = cap_out
 
     analysis["capabilities"] = capabilities
     analysis["phase"] = "Phase 1 — Building the Evidence"

@@ -55,6 +55,13 @@ KEYWORDS: list[str] = [
     "revenue by country", "net sales by country", "sales by country",
     "net revenue retention", "dollar-based net retention",
     "key operating metrics", "key business metrics",
+    # Capability 2 (Economic Engine) — unit economics. Same stems-over-exact-
+    # phrases rule as above: "acquisition cost" (not "customer acquisition
+    # cost") also matches "cost to acquire a customer", "cost of acquiring
+    # customers", etc.
+    "acquisition cost", "CAC", "lifetime value", "LTV",
+    "contribution margin", "unit economics", "payback period",
+    "gross margin", "operating leverage", "per employee",
 ]
 
 

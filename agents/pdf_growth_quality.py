@@ -6,9 +6,11 @@ Memo V2 / Earnings Quality Score (agents/pdf_earnings_quality.py) — copied
 verbatim per design requirement, with only the subtitle literal changed.
 
 Phase 1 (Build the Evidence) only: renders, per capability, a verified
-precomputed table (Python-derived, e.g. Revenue/YoY/CAGR), the LLM-built
-customers/momentum tables, the discussion Q&A, and the "why it matters"
-paragraph. No scoring is rendered yet — that arrives in a later phase.
+precomputed table (Python-derived, e.g. Revenue/YoY/CAGR, or Gross/EBITDA/
+Operating Margin), the LLM-built tables declared in that capability's own
+GQ_CAPABILITY_META["tables"] (e.g. Customers/Momentum, or Unit Economics),
+the discussion Q&A, and the "why it matters" paragraph. No scoring is
+rendered yet — that arrives in a later phase.
 
 Rendering is capability-agnostic: it iterates models.growth_quality's
 GQ_CAPABILITY_META/GQ_CAPABILITY_ORDER, so adding capabilities 2-8 later
@@ -34,7 +36,7 @@ from config import LLM_PROVIDER, LLM_MODEL
 from data_sources.base import CompanyData
 from models.growth_quality import (
     GQ_CAPABILITY_META, GQ_CAPABILITY_ORDER, GQ_CAPABILITIES_TOTAL,
-    compute_revenue_table,
+    compute_revenue_table, compute_profitability_table,
 )
 
 logger = logging.getLogger(__name__)
@@ -285,7 +287,36 @@ def _revenue_table(company: CompanyData, styles: dict) -> Table | None:
     return _metric_rows_table(years, metric_rows, styles)
 
 
-# ── Generic LLM-built table renderer (customers_table / momentum_table) ─
+def _profitability_table(company: CompanyData, styles: dict) -> Table | None:
+    """
+    Verified Gross/EBITDA/Operating Margin + Gross Profit Growth table,
+    computed in Python from real reported financials (never LLM output) —
+    feeds Capability 2 (Economic Engine) the same way _revenue_table() feeds
+    Capability 1 (Demand Strength).
+    """
+    rows_data = compute_profitability_table(company)
+    if not rows_data:
+        return None
+
+    candidates = [
+        ("Gross Margin", [_pct(r["gross_margin"]) for r in rows_data],
+         any(r["gross_margin"] is not None for r in rows_data)),
+        ("EBITDA Margin", [_pct(r["ebitda_margin"]) for r in rows_data],
+         any(r["ebitda_margin"] is not None for r in rows_data)),
+        ("Operating Margin", [_pct(r["operating_margin"]) for r in rows_data],
+         any(r["operating_margin"] is not None for r in rows_data)),
+        ("Gross Profit Growth", [_pct(r["gross_profit_growth"]) for r in rows_data],
+         any(r["gross_profit_growth"] is not None for r in rows_data)),
+    ]
+    metric_rows = [(label, values) for label, values, has_data in candidates if has_data]
+    if not metric_rows:
+        return None
+
+    years = [str(r["year"]) for r in rows_data]
+    return _metric_rows_table(years, metric_rows, styles)
+
+
+# ── Generic LLM-built table renderer (customers_table / momentum_table / …) ─
 
 def _render_generic_table(table: dict, styles: dict) -> Table | None:
     """
@@ -399,32 +430,33 @@ class GrowthQualityPDFGenerator:
         flow.append(Paragraph(f"Capability {meta['number']}: {meta['title']}", styles["cap_title"]))
         flow.append(Paragraph(meta["question"], styles["cap_question"]))
 
+        # Verified, Python-computed table (never LLM output) — one per
+        # capability, keyed by cap_id since each capability's ground-truth
+        # metrics come from a different deterministic calculation.
+        verified_table, verified_label = None, None
         if cap_id == "demand_strength":
-            rev_t = _revenue_table(subject, styles)
-            if rev_t:
-                flow.append(Paragraph("Revenue (verified, computed from reported financials)",
-                                       styles["table_label"]))
-                flow.append(Spacer(1, 1*mm))
-                flow.append(rev_t)
-                flow.append(Spacer(1, 3*mm))
+            verified_table = _revenue_table(subject, styles)
+            verified_label = "Revenue (verified, computed from reported financials)"
+        elif cap_id == "economic_engine":
+            verified_table = _profitability_table(subject, styles)
+            verified_label = "Profitability (verified, computed from reported financials)"
+        if verified_table:
+            flow.append(Paragraph(verified_label, styles["table_label"]))
+            flow.append(Spacer(1, 1*mm))
+            flow.append(verified_table)
+            flow.append(Spacer(1, 3*mm))
 
-            cust_table = cap_data.get("customers_table") or {}
-            cust_t = _render_generic_table(cust_table, styles)
-            if cust_t:
-                flow.append(Paragraph("Customers", styles["table_label"]))
+        # LLM-built tables — generic over whatever table names this
+        # capability declares in GQ_CAPABILITY_META["tables"].
+        for table_name in meta.get("tables", []):
+            table = cap_data.get(table_name) or {}
+            t = _render_generic_table(table, styles)
+            if t:
+                label = meta.get("table_labels", {}).get(table_name, table_name)
+                flow.append(Paragraph(label, styles["table_label"]))
                 flow.append(Spacer(1, 1*mm))
-                flow.append(cust_t)
-                if _table_has_unverified(cust_table):
-                    flow.append(_unverified_legend(styles))
-                flow.append(Spacer(1, 3*mm))
-
-            mom_table = cap_data.get("momentum_table") or {}
-            mom_t = _render_generic_table(mom_table, styles)
-            if mom_t:
-                flow.append(Paragraph("Commercial Momentum", styles["table_label"]))
-                flow.append(Spacer(1, 1*mm))
-                flow.append(mom_t)
-                if _table_has_unverified(mom_table):
+                flow.append(t)
+                if _table_has_unverified(table):
                     flow.append(_unverified_legend(styles))
                 flow.append(Spacer(1, 3*mm))
 
