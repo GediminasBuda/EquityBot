@@ -87,6 +87,20 @@ GQ_CAPABILITY_META = {
             "opex_detail_table": "Operating Expense Detail",
         },
     },
+    "capital_allocation": {
+        "number": 4,
+        "title": "Capital Allocation",
+        "question": "Does management allocate capital intelligently?",
+        "sub_questions": [
+            "Is management creating value?",
+            "Are investments producing measurable returns?",
+            "Is dilution justified?",
+        ],
+        "tables": ["capital_deployment_table"],
+        "table_labels": {
+            "capital_deployment_table": "Capital Deployment (SBC, Acquisitions)",
+        },
+    },
 }
 
 GQ_CAPABILITY_ORDER = list(GQ_CAPABILITY_META.keys())
@@ -282,6 +296,55 @@ a bullish case.
 above supports — or contradicts — the existence of operating leverage where \
 scale makes this company structurally stronger over time. This is \
 evidence-gathering only: do NOT assign a score, grade, or rating of any kind.
+""",
+    "capital_allocation": """\
+CAPABILITY 4 — CAPITAL ALLOCATION
+Question: Does management allocate capital intelligently?
+
+A verified R&D Spending / CapEx / Share Count / Dilution / ROIC / FCF Conversion / \
+Cash Balance table (computed from the company's own reported financials) is already \
+provided to you in the data block below — treat those figures as ground truth, do \
+not recompute or contradict them, and do not repeat them in your JSON response.
+
+For the "capital_allocation" key, return the following, covering approximately the \
+last ten fiscal years (or since IPO if shorter) wherever the company plausibly \
+discloses or you can reliably estimate the data, oldest fiscal year first, using \
+exactly the same fiscal years and order as the verified revenue table in the data \
+block below.
+
+Only include a row for a metric the company actually discloses, or that you can \
+reliably estimate, in at least one of those years. If a metric is never available \
+at all across the whole history (e.g. this company has never made an acquisition), \
+OMIT that row entirely — do not include a row filled entirely with "Data \
+unavailable". If literally none of this table's metrics are available for this \
+company, return an empty "rows" list — do not invent placeholder rows.
+
+1. "capital_deployment_table": an object {"years": [...], "rows": [{"metric": "...", \
+"values": [...]}, ...]} where "years" is the same year list described above and \
+each row's "values" list has exactly one entry per year. Candidate metrics \
+(include only those disclosed or reliably estimable — never invent a figure): \
+"Stock-Based Compensation", "Cash Paid for Acquisitions", "Acquired Revenue \
+(disclosed or estimated)", "Return on Acquisitions (if estimable)". R&D Spending, \
+CapEx, Share Count, Dilution, ROIC, FCF Conversion and Cash Balance are already \
+covered by the verified table in the data block and must not be repeated here — do \
+not add rows for them. "Return on Acquisitions" should only be populated when the \
+company's own disclosures (or credible outside analysis in your general knowledge) \
+give enough to estimate acquired revenue/earnings against the price paid — \
+otherwise omit the row entirely rather than guessing at a return figure.
+
+2. "discussion": an array of exactly 3 objects, each {"question": "...", \
+"answer": "..."}, addressing IN THIS EXACT ORDER:
+   a. Is management creating value?
+   b. Are investments producing measurable returns?
+   c. Is dilution justified?
+Each answer should be 60-120 words, cite specific numbers from the data \
+provided, and discuss both positive and negative evidence — do not present only \
+a bullish case.
+
+3. "why_it_matters": a single 100-180 word paragraph explaining how the evidence \
+above supports — or contradicts — the case that management allocates capital \
+intelligently on behalf of shareholders. This is evidence-gathering only: do NOT \
+assign a score, grade, or rating of any kind.
 """,
 }
 
@@ -491,6 +554,72 @@ def compute_operating_leverage_table(company: CompanyData, max_years: int = 10) 
     return rows
 
 
+def compute_capital_allocation_table(company: CompanyData, max_years: int = 10) -> list[dict]:
+    """
+    Return a chronological (oldest-first) list of
+    {"year", "rd", "capex", "shares_outstanding", "dilution", "roic",
+    "fcf_conversion", "cash"} dicts computed from company.annual_financials.
+    Feeds capability 4 (Capital Allocation) the same way
+    compute_operating_leverage_table() feeds capability 3 (Operating
+    Leverage).
+
+    - "dilution" is the YoY % change in diluted share count (positive =
+      share count grew i.e. dilution; negative = net buybacks).
+    - "roic" = NOPAT / invested capital, where NOPAT = EBIT * (1 - effective
+      tax rate) and invested capital = total_debt + total_equity - cash.
+      None unless EBIT, tax_provision, a positive income_before_tax (needed
+      for a meaningful effective tax rate), total_debt, total_equity and cash
+      are all available, and invested capital is positive.
+    - "fcf_conversion" = FCF / net_income. None unless net_income is
+      positive — a GAAP loss makes the ratio not meaningful.
+    """
+    years = get_history_years(company, max_years=max_years)
+    rows = []
+    for i, y in enumerate(years):
+        af = company.annual_financials.get(y)
+        # getattr() defends against stale AnnualFinancials class instances
+        # still in memory from before this field was added (see CLAUDE.md
+        # "AttributeError on ttm_revenue for cached objects").
+        rd = getattr(af, "research_development", None) if af else None
+        capex = af.capex if af else None
+        shares = af.shares_outstanding if af else None
+        cash = af.cash if af else None
+
+        dilution = None
+        if i > 0 and shares is not None:
+            prev = company.annual_financials.get(years[i - 1])
+            prev_shares = prev.shares_outstanding if prev else None
+            if prev_shares:
+                dilution = (shares / prev_shares) - 1
+
+        roic = None
+        if (af and af.ebit is not None and af.income_before_tax is not None
+                and af.income_before_tax > 0 and af.tax_provision is not None
+                and af.total_debt is not None and af.total_equity is not None
+                and cash is not None):
+            tax_rate = af.tax_provision / af.income_before_tax
+            nopat = af.ebit * (1 - tax_rate)
+            invested_capital = af.total_debt + af.total_equity - cash
+            if invested_capital > 0:
+                roic = nopat / invested_capital
+
+        fcf_conversion = None
+        if af and af.fcf is not None and af.net_income is not None and af.net_income > 0:
+            fcf_conversion = af.fcf / af.net_income
+
+        rows.append({
+            "year": y,
+            "rd": rd,
+            "capex": capex,
+            "shares_outstanding": shares,
+            "dilution": dilution,
+            "roic": roic,
+            "fcf_conversion": fcf_conversion,
+            "cash": cash,
+        })
+    return rows
+
+
 def get_history_years(company: CompanyData, max_years: int = 10) -> list[int]:
     """Chronological (oldest-first) fiscal years used across every GQS table,
     so the Revenue table (Python-computed) and the LLM's own tables (Customers,
@@ -582,6 +711,30 @@ def format_growth_financials(company: CompanyData) -> str:
                      if r["incremental_fcf_margin"] is not None else "n/a")
             lines.append(f"  {r['year']:<12} {sga_s:>9} {rd_s:>8} {opex_s:>9} "
                          f"{iom_s:>11} {iem_s:>15} {ifm_s:>12}")
+
+    capalloc_rows = compute_capital_allocation_table(company)
+    if capalloc_rows and any(
+        r["rd"] is not None or r["capex"] is not None or r["shares_outstanding"] is not None
+        or r["dilution"] is not None or r["roic"] is not None or r["fcf_conversion"] is not None
+        or r["cash"] is not None
+        for r in capalloc_rows
+    ):
+        lines.append(f"\nVERIFIED CAPITAL ALLOCATION HISTORY (oldest to newest, computed from "
+                      f"reported financials — treat as ground truth):")
+        header = (f"  {'Fiscal Year':<12} {'R&D':>10} {'CapEx':>10} {'Shares(M)':>10} "
+                  f"{'Dilution':>9} {'ROIC':>7} {'FCF Conv.':>10} {'Cash':>10}")
+        lines.append(header)
+        lines.append("  " + "-" * len(header))
+        for r in capalloc_rows:
+            rd_s = _b(r["rd"]) if r["rd"] is not None else "n/a"
+            capex_s = _b(r["capex"]) if r["capex"] is not None else "n/a"
+            shares_s = f"{r['shares_outstanding']:.1f}" if r["shares_outstanding"] is not None else "n/a"
+            dil_s = f"{r['dilution']*100:.1f}%" if r["dilution"] is not None else "n/a"
+            roic_s = f"{r['roic']*100:.1f}%" if r["roic"] is not None else "n/a"
+            fcfc_s = f"{r['fcf_conversion']*100:.0f}%" if r["fcf_conversion"] is not None else "n/a"
+            cash_s = _b(r["cash"]) if r["cash"] is not None else "n/a"
+            lines.append(f"  {r['year']:<12} {rd_s:>10} {capex_s:>10} {shares_s:>10} "
+                         f"{dil_s:>9} {roic_s:>7} {fcfc_s:>10} {cash_s:>10}")
 
     return "\n".join(lines)
 

@@ -37,7 +37,7 @@ from data_sources.base import CompanyData
 from models.growth_quality import (
     GQ_CAPABILITY_META, GQ_CAPABILITY_ORDER, GQ_CAPABILITIES_TOTAL,
     compute_revenue_table, compute_profitability_table,
-    compute_operating_leverage_table,
+    compute_operating_leverage_table, compute_capital_allocation_table,
 )
 
 logger = logging.getLogger(__name__)
@@ -350,6 +350,44 @@ def _operating_leverage_table(company: CompanyData, styles: dict) -> Table | Non
     return _metric_rows_table(years, metric_rows, styles)
 
 
+def _capital_allocation_table(company: CompanyData, styles: dict) -> Table | None:
+    """
+    Verified R&D Spending / CapEx / Share Count / Dilution / ROIC / FCF
+    Conversion / Cash Balance table, computed in Python from real reported
+    financials (never LLM output) — feeds Capability 4 (Capital Allocation)
+    the same way _operating_leverage_table() feeds Capability 3 (Operating
+    Leverage).
+    """
+    rows_data = compute_capital_allocation_table(company)
+    if not rows_data:
+        return None
+
+    candidates = [
+        ("R&D Spending", [_fmt_b(r["rd"]) for r in rows_data],
+         any(r["rd"] is not None for r in rows_data)),
+        ("CapEx", [_fmt_b(r["capex"]) for r in rows_data],
+         any(r["capex"] is not None for r in rows_data)),
+        ("Share Count (M)",
+         [f"{r['shares_outstanding']:.1f}" if r["shares_outstanding"] is not None else "n/a"
+          for r in rows_data],
+         any(r["shares_outstanding"] is not None for r in rows_data)),
+        ("Dilution (YoY)", [_pct(r["dilution"]) for r in rows_data],
+         any(r["dilution"] is not None for r in rows_data)),
+        ("ROIC", [_pct(r["roic"]) for r in rows_data],
+         any(r["roic"] is not None for r in rows_data)),
+        ("FCF Conversion", [_pct(r["fcf_conversion"]) for r in rows_data],
+         any(r["fcf_conversion"] is not None for r in rows_data)),
+        ("Cash Balance", [_fmt_b(r["cash"]) for r in rows_data],
+         any(r["cash"] is not None for r in rows_data)),
+    ]
+    metric_rows = [(label, values) for label, values, has_data in candidates if has_data]
+    if not metric_rows:
+        return None
+
+    years = [str(r["year"]) for r in rows_data]
+    return _metric_rows_table(years, metric_rows, styles)
+
+
 # ── Generic LLM-built table renderer (customers_table / momentum_table / …) ─
 
 def _render_generic_table(table: dict, styles: dict) -> Table | None:
@@ -477,6 +515,9 @@ class GrowthQualityPDFGenerator:
         elif cap_id == "operating_leverage":
             verified_table = _operating_leverage_table(subject, styles)
             verified_label = "Operating Leverage (verified, computed from reported financials)"
+        elif cap_id == "capital_allocation":
+            verified_table = _capital_allocation_table(subject, styles)
+            verified_label = "Capital Allocation (verified, computed from reported financials)"
         if verified_table:
             flow.append(Paragraph(verified_label, styles["table_label"]))
             flow.append(Spacer(1, 1*mm))

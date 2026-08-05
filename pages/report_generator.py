@@ -3825,7 +3825,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(55, text="🤖  Building growth-quality evidence base…")
                 st.write(f"🤖  Analyzing {len(GQ_CAPABILITY_META)} capabilities "
                          f"(Phase 1 — Build the Evidence)…")
-                analysis = llm.generate_json(dynamic_prompt, SYS, max_tokens=14000,
+                analysis = llm.generate_json(dynamic_prompt, SYS, max_tokens=17000,
                                              cacheable_prefix=cacheable_pfx)
                 analysis = _validate_growth_quality(analysis, company)
                 st.write("✓  Evidence base built — no scoring in Phase 1")
