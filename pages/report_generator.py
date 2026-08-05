@@ -3950,6 +3950,77 @@ if generate_clicked and ticker_input:
                 except Exception as _gp_edgar_err:
                     logger.warning(f"[growth_pricing] EDGAR extension failed: {_gp_edgar_err}")
 
+                # Step 2: Peers — user-selected peers fill slots first; LLM
+                # suggestions (reusing models.fisher_peers.suggest_peers, a
+                # generic ticker-suggestion helper, not Fisher-specific)
+                # backfill remaining slots up to 5 total. Every comparison
+                # metric is computed in Python — the LLM only picks tickers.
+                _gp_peers: dict = {}
+                _gp_user_peer_tickers = [t.strip().upper() for t in peer_list if t.strip()]
+                if len(_gp_user_peer_tickers) > 5:
+                    st.info(f"Using the first 5 of {len(_gp_user_peer_tickers)} peers supplied "
+                            "(Growth Pricing & Peers compares up to 5 peers).")
+                    _gp_user_peer_tickers = _gp_user_peer_tickers[:5]
+                _gp_slots_remaining = 5 - len(_gp_user_peer_tickers)
+
+                if _gp_slots_remaining > 0:
+                    _prog.progress(45, text="🤝  Asking LLM to suggest peers…")
+                    st.write("🤝  Asking LLM to suggest peers…")
+                    try:
+                        from models.fisher_peers import suggest_peers as _gp_suggest_peers
+                        _gp_llm_suggested, _gp_suggest_usage = _gp_suggest_peers(
+                            company, max_peers=_gp_slots_remaining,
+                        )
+                    except Exception as _gp_se:
+                        _gp_llm_suggested, _gp_suggest_usage = [], {}
+                        st.warning(f"Peer suggestion failed: {_gp_se}")
+                    if _gp_suggest_usage:
+                        _show_token_usage(_gp_suggest_usage)
+                    _gp_user_set = set(_gp_user_peer_tickers)
+                    _gp_llm_new = [t for t in _gp_llm_suggested if t not in _gp_user_set]
+                    _gp_peer_tickers_to_fetch = (_gp_user_peer_tickers + _gp_llm_new)[:5]
+                    if _gp_llm_new:
+                        st.write(f"💡  LLM added peers: {', '.join(_gp_llm_new)}")
+                else:
+                    _gp_peer_tickers_to_fetch = _gp_user_peer_tickers[:5]
+
+                if _gp_peer_tickers_to_fetch:
+                    _prog.progress(50, text="🔍  Fetching peer data…")
+                    st.write("🔍  Fetching peer data (EODHD or yfinance fallback)…")
+                    for _gp_pt in _gp_peer_tickers_to_fetch:
+                        try:
+                            _gp_pd = None
+                            _gp_src_label = "unknown"
+                            _gp_is_balt_peer = any(_gp_pt.upper().endswith(s)
+                                                    for s in (".VS", ".TL", ".RG"))
+                            if _gp_pt.endswith(".T") or _gp_is_balt_peer:
+                                _gp_pd = dm.get(_gp_pt, force_refresh=False)
+                                _gp_src_label = "yfinance (TSE)" if _gp_pt.endswith(".T") else "yfinance (Baltic)"
+                            else:
+                                try:
+                                    _gp_eodhd_pd, _ = fetch_company_data_eodhd_only(_gp_pt)
+                                    _gp_la = _gp_eodhd_pd.latest_annual() if _gp_eodhd_pd else None
+                                    if (_gp_eodhd_pd and _gp_eodhd_pd.name
+                                            and (_gp_eodhd_pd.market_cap or (_gp_la and _gp_la.revenue))):
+                                        _gp_pd = _gp_eodhd_pd
+                                        _gp_src_label = "EODHD"
+                                except Exception:
+                                    pass
+                                if _gp_pd is None:
+                                    _gp_pd = dm.get(_gp_pt, force_refresh=False)
+                                    _gp_src_label = "yfinance"
+                            _gp_la_check = _gp_pd.latest_annual() if _gp_pd else None
+                            _gp_has_rev = bool(_gp_la_check and _gp_la_check.revenue)
+                            if _gp_pd and _gp_pd.name and (_gp_pd.market_cap or _gp_has_rev):
+                                _gp_peers[_gp_pt] = _gp_pd
+                                st.write(f"   ✓ {_gp_pt}: {_gp_pd.name} [{_gp_src_label}]")
+                            else:
+                                st.write(f"   ⚠ Peer {_gp_pt} returned no usable data — skipped")
+                        except Exception as _gp_pe:
+                            st.write(f"   ⚠ Peer {_gp_pt} fetch failed: {_gp_pe}")
+                st.write(f"✓  {len(_gp_peers)} peer(s) loaded: "
+                         f"{', '.join(_gp_peers.keys()) or 'none'}")
+
                 cacheable_pfx, dynamic_prompt, _gp_tables = _growth_pricing_prompt_parts(company)
                 _prog.progress(60, text="🤖  Writing pricing narrative…")
                 st.write("🤖  Analyzing what growth expectations are priced in…")
@@ -3969,8 +4040,11 @@ if generate_clicked and ticker_input:
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_growth_pricing_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
-                GrowthPricingPDFGenerator().render(company, analysis, pdf_path)
-                extra = {"years_covered": len(_gp_tables.get("years", []))}
+                GrowthPricingPDFGenerator().render(company, analysis, pdf_path, peers=_gp_peers)
+                extra = {
+                    "years_covered": len(_gp_tables.get("years", [])),
+                    "peer_count": len(_gp_peers),
+                }
 
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
@@ -4255,7 +4329,7 @@ if st.session_state.report_result:
             st.caption(
                 f"Growth Pricing & Peers  ·  "
                 f"{extra.get('years_covered','?')} fiscal year(s) of history covered  ·  "
-                f"Peer comparison: planned future phase"
+                f"{extra.get('peer_count', 0)} peer(s) compared"
             )
         else:
             fw_label = REPORT_TYPES.get(rtype, {}).get("short", rtype)

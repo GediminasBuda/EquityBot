@@ -10,8 +10,10 @@ Renders: a current/forward-looking snapshot, then three dimensions (Revenue
 (years as columns, never LLM output) followed by the LLM's grounded
 narrative for that dimension — then a verified Rule of 40 table (Revenue
 Growth vs. EBITDA/FCF/Net Margin, static explanatory text, no LLM narrative)
-— and finally a closing "What's Priced In?" synthesis section. No scoring.
-Peer comparison is a planned future phase and is not rendered here.
+— then a verified Peer Comparison table (subject + up to 5 peers, most-
+recent-data snapshot across 7 metrics, static explanatory text, no LLM
+narrative) — and finally a closing "What's Priced In?" synthesis section.
+No scoring.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from config import LLM_PROVIDER, LLM_MODEL
 from data_sources.base import CompanyData
 from models.growth_pricing import (
     compute_revenue_gp_table, compute_earnings_table, compute_cash_flow_table,
-    compute_current_snapshot, compute_rule_of_40_table,
+    compute_current_snapshot, compute_rule_of_40_table, compute_peer_comparison_table,
 )
 
 logger = logging.getLogger(__name__)
@@ -361,6 +363,38 @@ def _rule_of_40_table(company: CompanyData, styles: dict) -> Table | None:
     return _metric_rows_table(years, metric_rows, styles)
 
 
+def _peer_comparison_table(subject: CompanyData, peers: dict, styles: dict) -> Table | None:
+    """Subject + up to 5 peers as columns, 7 most-recent-data metrics as
+    rows (Sales 3Y CAGR, P/E, PEG, EV/Gross Profit, EV/Sales, Rule of 40
+    with EBITDA Margin, Rule of 40 with Net Margin)."""
+    rows_data = compute_peer_comparison_table(subject, peers)
+    if not rows_data:
+        return None
+
+    candidates = [
+        ("Sales 3Y CAGR", [_pct(r["sales_cagr3"]) for r in rows_data],
+         any(r["sales_cagr3"] is not None for r in rows_data)),
+        ("P/E", [_x(r["pe_ratio"]) for r in rows_data],
+         any(r["pe_ratio"] is not None for r in rows_data)),
+        ("PEG Ratio", [_num(r["peg_ratio"]) for r in rows_data],
+         any(r["peg_ratio"] is not None for r in rows_data)),
+        ("EV / Gross Profit", [_x(r["ev_gross_profit"]) for r in rows_data],
+         any(r["ev_gross_profit"] is not None for r in rows_data)),
+        ("EV / Sales", [_x(r["ev_sales"]) for r in rows_data],
+         any(r["ev_sales"] is not None for r in rows_data)),
+        ("Rule of 40 (+ EBITDA Margin)", [_pct(r["rule40_ebitda"]) for r in rows_data],
+         any(r["rule40_ebitda"] is not None for r in rows_data)),
+        ("Rule of 40 (+ Net Margin)", [_pct(r["rule40_net"]) for r in rows_data],
+         any(r["rule40_net"] is not None for r in rows_data)),
+    ]
+    metric_rows = [(label, values) for label, values, has_data in candidates if has_data]
+    if not metric_rows:
+        return None
+
+    columns = [f"{r['ticker']}*" if r["is_subject"] else r["ticker"] for r in rows_data]
+    return _metric_rows_table(columns, metric_rows, styles, label_frac=0.28)
+
+
 def _snapshot_table(company: CompanyData, styles: dict) -> Table | None:
     """Current/forward-looking snapshot — Metric/Value layout (not
     years-as-columns), since Forward P/E and standard PEG Ratio only exist
@@ -396,11 +430,13 @@ def _snapshot_table(company: CompanyData, styles: dict) -> Table | None:
 class GrowthPricingPDFGenerator:
     """Renders the Growth Pricing & Peers PDF: current/forward snapshot,
     then three dimensions (Revenue & Gross Profit, Earnings, Cash Flow),
-    each a verified table followed by the LLM's grounded narrative, and a
-    closing 'What's Priced In?' synthesis. No scoring. Peer comparison is a
-    planned future phase and is not rendered here."""
+    each a verified table followed by the LLM's grounded narrative, a
+    verified Rule of 40 table, a verified Peer Comparison table (subject +
+    up to 5 peers), and a closing 'What's Priced In?' synthesis. No scoring."""
 
-    def render(self, subject: CompanyData, analysis: dict, output_path: str) -> None:
+    def render(self, subject: CompanyData, analysis: dict, output_path: str,
+               peers: dict | None = None) -> None:
+        peers = peers or {}
         report_date = datetime.utcnow().strftime("%Y-%m-%d")
         styles = _styles()
 
@@ -478,6 +514,25 @@ class GrowthPricingPDFGenerator:
             story.append(r40_table)
             story.append(Spacer(1, 3*mm))
 
+        peer_table = _peer_comparison_table(subject, peers, styles)
+        if peer_table:
+            story.append(PageBreak())
+            story.append(Paragraph("Peer Comparison", styles["dim_title"]))
+            story.append(Paragraph(
+                "How does this pricing compare to peers of similar scale and business model? "
+                "The table below places the subject company (marked *) alongside up to five "
+                "peers — selected by the user and/or suggested by the LLM — across the same "
+                "most-recent-data metrics: 3-year Sales CAGR, P/E, PEG Ratio, EV/Gross Profit, "
+                "EV/Sales, and the Rule of 40 using both EBITDA Margin and Net Margin.",
+                styles["body"],
+            ))
+            story.append(Paragraph(
+                "Peer Comparison — most recent data (verified, computed from reported financials)",
+                styles["table_label"]))
+            story.append(Spacer(1, 1*mm))
+            story.append(peer_table)
+            story.append(Spacer(1, 3*mm))
+
         story.append(Spacer(1, 4*mm))
         story.append(Paragraph("What's Priced In?", styles["synthesis_heading"]))
         story.append(Paragraph(
@@ -491,8 +546,8 @@ class GrowthPricingPDFGenerator:
             f"Data source: EODHD, with SEC EDGAR XBRL facts used to extend history for US "
             f"tickers and yfinance used as a fallback where EODHD data is unavailable. All "
             f"ratios and tables in this report are computed in Python from verified financial "
-            f"data; the LLM contributes narrative discussion only. Peer comparison is a "
-            f"planned future phase, not included in this report."
+            f"data; the LLM's role is limited to narrative discussion and, when the user "
+            f"supplies fewer than 5 peers, suggesting additional peer tickers."
         )
         story.append(Paragraph(
             f"<i>{disclaimer}</i>",
@@ -510,8 +565,8 @@ class GrowthPricingPDFGenerator:
             f"high-growth company, including any periods of unprofitability along the way. "
             f"Given the quality of this business, what expectations are already embedded in "
             f"today's stock price? Historical valuation tables below cover up to 10 years (or "
-            f"since IPO, if shorter). Peer comparison is a planned future phase and is not "
-            f"included in this version.",
+            f"since IPO, if shorter), followed by a peer comparison across the same current "
+            f"pricing metrics.",
             styles["body"],
         ))
         return flow

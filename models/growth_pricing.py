@@ -9,7 +9,10 @@ Every ratio in this report is computed deterministically in Python from
 verified financial data — never by the LLM. The LLM is used only to write a
 short narrative discussion per dimension (Revenue & Gross Profit, Earnings,
 Cash Flow) plus a closing synthesis, grounded in the verified tables it is
-given. Peer comparison is a planned future phase — not part of this module.
+given. The LLM's peer role is limited to suggesting peer tickers (via
+models.fisher_peers.suggest_peers) when the user hasn't supplied enough —
+the actual peer comparison metrics are computed in Python, same as
+everything else in this module.
 
 History: up to 10 years (or since IPO if shorter), sourced from the same
 EODHD-only builder used by Growth Quality / Earnings Quality Score. For US
@@ -297,6 +300,99 @@ def compute_current_snapshot(company: CompanyData) -> dict:
         "ev_sales_ttm": company.ev_sales,
         "fcf_yield_ttm": company.fcf_yield,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Peer Comparison — most-recent-data cross-sectional snapshot
+# ─────────────────────────────────────────────────────────────────────────
+
+def _sales_cagr3(company: CompanyData) -> Optional[float]:
+    """3-year Sales CAGR ending at the latest available fiscal year."""
+    years = company.sorted_years()
+    if not years:
+        return None
+    latest_y = years[0]
+    af_latest = company.annual_financials.get(latest_y)
+    af_base = company.annual_financials.get(latest_y - 3)
+    end_v = af_latest.revenue if af_latest else None
+    base_v = af_base.revenue if af_base else None
+    if end_v is None or base_v is None or base_v <= 0:
+        return None
+    return (end_v / base_v) ** (1 / 3) - 1
+
+
+def _latest_revenue_yoy(company: CompanyData) -> Optional[float]:
+    """Most recent fiscal year's Revenue Growth YoY."""
+    years = company.sorted_years()
+    if len(years) < 2:
+        return None
+    af0 = company.annual_financials.get(years[0])
+    af1 = company.annual_financials.get(years[1])
+    rev0 = af0.revenue if af0 else None
+    rev1 = af1.revenue if af1 else None
+    if rev0 is None or not rev1:
+        return None
+    return (rev0 / rev1) - 1
+
+
+def compute_peer_snapshot_row(company: CompanyData, is_subject: bool = False) -> dict:
+    """Most-recent-data row for the peer comparison table: Sales 3Y CAGR,
+    P/E, PEG, EV/Gross Profit, EV/Sales, Rule of 40 (EBITDA and Net Margin
+    variants). Every figure is computed here in Python from the company's
+    own current scalars and latest fiscal year — never by the LLM."""
+    years = company.sorted_years()
+    latest = company.annual_financials.get(years[0]) if years else None
+
+    sales_cagr3 = _sales_cagr3(company)
+    pe_ratio = company.pe_ratio
+
+    fe = company.forward_estimates
+    forward_eps_growth = fe.eps_growth_yoy if fe else None
+    peg_ratio = company.peg_ratio
+    if (peg_ratio is None and company.forward_pe is not None
+            and forward_eps_growth is not None and forward_eps_growth > 0):
+        peg_ratio = company.forward_pe / (forward_eps_growth * 100)
+
+    ev_gross_profit = None
+    if (company.enterprise_value is not None and latest
+            and latest.gross_profit and latest.gross_profit > 0):
+        ev_gross_profit = company.enterprise_value / latest.gross_profit
+
+    ev_sales = None
+    denom_revenue = company.ttm_revenue or (latest.revenue if latest else None)
+    if company.enterprise_value is not None and denom_revenue:
+        ev_sales = company.enterprise_value / denom_revenue
+
+    revenue_yoy = _latest_revenue_yoy(company)
+    ebitda_margin = latest.ebitda_margin if latest else None
+    net_margin = latest.net_margin if latest else None
+    rule40_ebitda = (revenue_yoy + ebitda_margin
+                      if revenue_yoy is not None and ebitda_margin is not None else None)
+    rule40_net = (revenue_yoy + net_margin
+                  if revenue_yoy is not None and net_margin is not None else None)
+
+    return {
+        "ticker": company.ticker,
+        "name": company.name or company.ticker,
+        "is_subject": is_subject,
+        "sales_cagr3": sales_cagr3,
+        "pe_ratio": pe_ratio,
+        "peg_ratio": peg_ratio,
+        "ev_gross_profit": ev_gross_profit,
+        "ev_sales": ev_sales,
+        "rule40_ebitda": rule40_ebitda,
+        "rule40_net": rule40_net,
+    }
+
+
+def compute_peer_comparison_table(subject: CompanyData, peers: dict) -> list[dict]:
+    """Subject + up to 5 peers, one most-recent-data snapshot row each.
+    Subject is always first; `peers` is a {ticker: CompanyData} dict in the
+    order peers should appear as columns."""
+    rows = [compute_peer_snapshot_row(subject, is_subject=True)]
+    for peer_company in peers.values():
+        rows.append(compute_peer_snapshot_row(peer_company, is_subject=False))
+    return rows
 
 
 # ─────────────────────────────────────────────────────────────────────────
