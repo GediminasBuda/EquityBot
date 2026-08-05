@@ -335,14 +335,34 @@ def _latest_revenue_yoy(company: CompanyData) -> Optional[float]:
     return (rev0 / rev1) - 1
 
 
+def _sales_ttm_growth(company: CompanyData) -> Optional[float]:
+    """TTM Sales Growth: current trailing-twelve-month revenue vs. the most
+    recently completed fiscal year's revenue. A true TTM-vs-prior-year-TTM
+    comparison would require quarterly revenue history that isn't fetched
+    for peer companies, so this is the most current growth signal available
+    from data already on hand — a faster-moving complement to the slower,
+    full-fiscal-year Sales 3Y CAGR figure."""
+    years = company.sorted_years()
+    if not years:
+        return None
+    latest = company.annual_financials.get(years[0])
+    base_rev = latest.revenue if latest else None
+    ttm_rev = company.ttm_revenue
+    if ttm_rev is None or not base_rev or base_rev <= 0:
+        return None
+    return (ttm_rev / base_rev) - 1
+
+
 def compute_peer_snapshot_row(company: CompanyData, is_subject: bool = False) -> dict:
-    """Most-recent-data row for the peer comparison table: Sales 3Y CAGR,
-    P/E, PEG, EV/Gross Profit, EV/Sales, Rule of 40 (EBITDA and Net Margin
-    variants). Every figure is computed here in Python from the company's
-    own current scalars and latest fiscal year — never by the LLM."""
+    """Most-recent-data row for the peer comparison table: Sales TTM Growth,
+    Sales 3Y CAGR, P/E, PEG, EV/Gross Profit, EV/Sales, Rule of 40 (EBITDA
+    and Net Margin variants). Every figure is computed here in Python from
+    the company's own current scalars and latest fiscal year — never by the
+    LLM."""
     years = company.sorted_years()
     latest = company.annual_financials.get(years[0]) if years else None
 
+    sales_ttm_growth = _sales_ttm_growth(company)
     sales_cagr3 = _sales_cagr3(company)
     pe_ratio = company.pe_ratio
 
@@ -375,6 +395,7 @@ def compute_peer_snapshot_row(company: CompanyData, is_subject: bool = False) ->
         "ticker": company.ticker,
         "name": company.name or company.ticker,
         "is_subject": is_subject,
+        "sales_ttm_growth": sales_ttm_growth,
         "sales_cagr3": sales_cagr3,
         "pe_ratio": pe_ratio,
         "peg_ratio": peg_ratio,
@@ -393,6 +414,74 @@ def compute_peer_comparison_table(subject: CompanyData, peers: dict) -> list[dic
     for peer_company in peers.values():
         rows.append(compute_peer_snapshot_row(peer_company, is_subject=False))
     return rows
+
+
+# Direction of "good" per peer-table metric: True = higher value scores more
+# points (growth/profitability metrics), False = lower value scores more
+# points (valuation multiples — cheaper is better).
+PEER_METRIC_DIRECTIONS = {
+    "sales_ttm_growth": True,
+    "sales_cagr3": True,
+    "pe_ratio": False,
+    "peg_ratio": False,
+    "ev_gross_profit": False,
+    "ev_sales": False,
+    "rule40_ebitda": True,
+    "rule40_net": True,
+}
+
+
+def compute_peer_scores(rows: list[dict]) -> list[int]:
+    """Composite valuation score per company, same order as `rows`. For each
+    metric, companies with a valid (non-None) value are ranked and awarded
+    points from 1 (worst) to N (best) — N being the count of companies with
+    data for that metric — where 'best' means cheaper valuation multiples or
+    stronger growth/profitability, per PEER_METRIC_DIRECTIONS. Points are
+    summed across all metrics per company. A company missing a given
+    metric simply contributes 0 points for that metric (not penalised
+    beyond forfeiting the points it could have earned)."""
+    totals = [0] * len(rows)
+    for metric, higher_is_better in PEER_METRIC_DIRECTIONS.items():
+        valid = [(i, r[metric]) for i, r in enumerate(rows) if r.get(metric) is not None]
+        if not valid:
+            continue
+        valid.sort(key=lambda pair: pair[1], reverse=higher_is_better)
+        n = len(valid)
+        for rank, (i, _v) in enumerate(valid):
+            totals[i] += n - rank
+    return totals
+
+
+def compute_valuation_verdict(subject: CompanyData) -> dict:
+    """Simple rules-based valuation verdict — Attractive / Moderate /
+    Expensive — from the subject's own most-recent-data snapshot (Sales 3Y
+    CAGR, EV/Gross Profit, Rule of 40 with EBITDA Margin):
+
+    Attractive: Sales 3Y CAGR > 15% AND EV/Gross Profit < 15x
+                AND Rule of 40 (+EBITDA Margin) > 40%
+    Expensive:  Sales 3Y CAGR > 15% AND EV/Gross Profit > 25x
+                AND Rule of 40 (+EBITDA Margin) > 40%
+    Moderate:   everything else (including insufficient data to evaluate)
+
+    This is a deterministic Python computation, not an LLM judgement."""
+    row = compute_peer_snapshot_row(subject, is_subject=True)
+    cagr = row["sales_cagr3"]
+    ev_gp = row["ev_gross_profit"]
+    r40 = row["rule40_ebitda"]
+
+    verdict = "Moderate"
+    if cagr is not None and ev_gp is not None and r40 is not None:
+        if cagr > 0.15 and ev_gp < 15 and r40 > 0.40:
+            verdict = "Attractive"
+        elif cagr > 0.15 and ev_gp > 25 and r40 > 0.40:
+            verdict = "Expensive"
+
+    return {
+        "verdict": verdict,
+        "sales_cagr3": cagr,
+        "ev_gross_profit": ev_gp,
+        "rule40_ebitda": r40,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────
