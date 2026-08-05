@@ -449,8 +449,11 @@ def compute_operating_leverage_table(company: CompanyData, max_years: int = 10) 
         af = company.annual_financials.get(y)
         rev = af.revenue if af else None
         sga = af.sga if af else None
-        rd = af.research_development if af else None
-        opex = af.total_operating_expenses if af else None
+        # getattr() defends against stale AnnualFinancials class instances
+        # still in memory from before these fields were added (see CLAUDE.md
+        # "AttributeError on ttm_revenue for cached objects").
+        rd = getattr(af, "research_development", None) if af else None
+        opex = getattr(af, "total_operating_expenses", None) if af else None
         if opex is None and (sga is not None or rd is not None):
             opex = (sga or 0) + (rd or 0)
 
