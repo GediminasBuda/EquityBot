@@ -2,16 +2,22 @@
 growth_quality.py — Growth Quality Score (GQS) model.
 
 Evaluates whether a company exhibits the structural traits of a durable
-long-term compounder — not whether it is cheap today. The full model is
-being built incrementally, one capability at a time, in two phases:
+long-term compounder — not whether it is cheap today. The model runs in two
+sequential phases, Phase 2 only ever running after Phase 1 has produced
+evidence for all 6 capabilities:
 
   Phase 1 — Build the Evidence: for each capability, construct historical
   data tables, identify long-term trends, and discuss both positive and
   negative evidence. No scoring in this phase.
 
-  Phase 2 — Scoring (not yet implemented): will assign a score per
-  capability and a composite Growth Quality Score once all 6 capabilities
-  have evidence built out.
+  Phase 2 — Scoring: a second, separate LLM call is given the full Phase 1
+  evidence (discussion Q&A + why-it-matters narrative for all 6
+  capabilities) and asked to assign a 0-100 score with a 3-5 sentence
+  justification per capability, plus an Overall Verdict synthesis. The
+  weighted composite Growth Quality Score (GQS) is never trusted to LLM
+  arithmetic — it is computed deterministically in Python from the
+  per-capability scores using GQ_PHASE2_WEIGHTS, the same "verify, don't
+  trust the model's math" pattern used throughout this codebase.
 
 There are 6 capabilities total in the final model. GQ_CAPABILITY_META below
 is the single source of truth for which capabilities are currently live —
@@ -45,6 +51,7 @@ GQ_CAPABILITY_META = {
         "number": 1,
         "title": "Demand Strength",
         "question": "Does the world increasingly want this company's products?",
+        "interpretation": "Is demand durable, broad-based, and accelerating?",
         "sub_questions": [
             "Is demand accelerating?",
             "Is growth becoming more diversified?",
@@ -62,6 +69,7 @@ GQ_CAPABILITY_META = {
         "number": 2,
         "title": "Economic Engine",
         "question": "Does each additional customer create increasing economic value?",
+        "interpretation": "Are unit economics healthy and improving?",
         "sub_questions": [
             "Are unit economics improving?",
             "Is profitability emerging naturally?",
@@ -76,6 +84,7 @@ GQ_CAPABILITY_META = {
         "number": 3,
         "title": "Operating Leverage",
         "question": "Does scale make the business stronger?",
+        "interpretation": "Is scale translating into efficiency and profitability?",
         "sub_questions": [
             "Is operating leverage emerging?",
             "Is the company becoming more efficient?",
@@ -91,6 +100,7 @@ GQ_CAPABILITY_META = {
         "number": 4,
         "title": "Capital Allocation",
         "question": "Does management allocate capital intelligently?",
+        "interpretation": "Is management investing capital intelligently and creating long-term value?",
         "sub_questions": [
             "Is management creating value?",
             "Are investments producing measurable returns?",
@@ -105,6 +115,7 @@ GQ_CAPABILITY_META = {
         "number": 5,
         "title": "Competitive Position",
         "question": "Is the competitive moat strengthening?",
+        "interpretation": "Is the company's moat strengthening or eroding?",
         "sub_questions": [
             "What evidence suggests a moat?",
             "What evidence weakens the moat?",
@@ -118,6 +129,8 @@ GQ_CAPABILITY_META = {
         "number": 6,
         "title": "Management & Governance Quality",
         "question": "Can shareholders trust management to maximize long-term intrinsic value rather than quarterly earnings?",
+        "interpretation": "Should long-term owners trust this management team to "
+                           "compound capital over decades?",
         "sub_questions": [
             "Does management think like owners?",
             "Do incentives align with shareholders?",
@@ -134,6 +147,24 @@ GQ_CAPABILITY_META = {
 
 GQ_CAPABILITY_ORDER = list(GQ_CAPABILITY_META.keys())
 GQ_CAPABILITIES_TOTAL = 6  # total planned capabilities in the final model
+
+# ── Phase 2 — Scoring weights ───────────────────────────────────────────────
+# Demand Strength and Management & Governance Quality are weighted highest
+# (20% each) per the model's explicit design: durable demand and trustworthy
+# management are treated as the two highest-conviction predictors of a
+# decades-long compounder. The remaining four capabilities are weighted
+# evenly at 15% each. Sums to exactly 1.0 — enforced by an assertion below so
+# a future edit that breaks the weighting is caught immediately, not silently.
+GQ_PHASE2_WEIGHTS = {
+    "demand_strength": 0.20,
+    "economic_engine": 0.15,
+    "operating_leverage": 0.15,
+    "capital_allocation": 0.15,
+    "competitive_position": 0.15,
+    "management_governance": 0.20,
+}
+assert abs(sum(GQ_PHASE2_WEIGHTS.values()) - 1.0) < 1e-9
+assert set(GQ_PHASE2_WEIGHTS.keys()) == set(GQ_CAPABILITY_META.keys())
 
 
 SYSTEM_PROMPT = """You are an institutional equity analyst specializing in evaluating \
@@ -1190,3 +1221,178 @@ def _validate_growth_quality(analysis: dict, subject: CompanyData) -> dict:
     analysis["capabilities_completed"] = len(GQ_CAPABILITY_META)
     analysis["capabilities_total"] = GQ_CAPABILITIES_TOTAL
     return analysis
+
+
+# ── Phase 2 — Scoring ────────────────────────────────────────────────────────
+# Runs only after Phase 1 has produced evidence for all 6 capabilities. A
+# separate LLM call is given the Phase 1 discussion/why-it-matters narrative
+# (not the raw data tables — those were only ever inputs to that narrative,
+# and re-sending them here would just burn tokens on numbers already digested
+# into the Phase 1 text) and asked to score each capability 0-100 with a
+# brief justification, then synthesize an Overall Verdict. The weighted
+# composite score is computed deterministically in Python from
+# GQ_PHASE2_WEIGHTS — never trust the model to do that arithmetic itself.
+
+PHASE2_SYSTEM_PROMPT = """You are an institutional equity analyst specializing in evaluating \
+high-growth public companies as potential long-term compounders.
+
+You are now in Phase 2 of the Growth Quality Score model: Scoring. You have \
+already been given, in the data block below, the completed Phase 1 evidence \
+base for this company — the discussion questions/answers and "why it \
+matters" synthesis for all 6 capabilities. Treat that evidence as ground \
+truth; do not contradict it, and do not re-derive or restate the underlying \
+figures it already cites.
+
+Your task is to convert that qualitative evidence into a disciplined 0-100 \
+score per capability, then synthesize an investment-oriented Overall \
+Verdict. Score honestly — a company with genuinely weak or deteriorating \
+evidence on a capability should score low on it (well below 50), even if \
+other capabilities are strong. Do not default to a narrow 60-80 "safe" \
+range; use the full 0-100 scale where the evidence warrants it. Do not \
+compute or state a composite/weighted score yourself — that is calculated \
+separately from your per-capability scores.
+"""
+
+
+def _gq_phase2_dynamic_prompt(subject: CompanyData, analysis: dict) -> str:
+    """
+    Build the Phase 2 dynamic prompt: subject identity + the Phase 1
+    discussion/why_it_matters narrative for all 6 capabilities (not the raw
+    tables — see module-level comment above) + the required JSON schema.
+    """
+    lines = [f"SUBJECT COMPANY: {subject.name or subject.ticker} ({subject.ticker})",
+             f"SECTOR: {subject.sector or 'n/a'} — {subject.industry or 'n/a'}", ""]
+
+    capabilities = analysis.get("capabilities") or {}
+    for cap_id, meta in GQ_CAPABILITY_META.items():
+        cap = capabilities.get(cap_id) or {}
+        lines.append(f"=== CAPABILITY {meta['number']} — {meta['title'].upper()} ===")
+        lines.append(f"Question: {meta['question']}")
+        for item in cap.get("discussion") or []:
+            q = item.get("question") or ""
+            a = item.get("answer") or ""
+            lines.append(f"Q: {q}\nA: {a}")
+        why = cap.get("why_it_matters") or ""
+        if why:
+            lines.append(f"Why it matters: {why}")
+        lines.append("")
+
+    schema_example = ",\n".join(
+        f'    "{cap_id}": {{"score": <0-100 integer>, "justification": "..."}}'
+        for cap_id in GQ_CAPABILITY_ORDER
+    )
+    lines.append(
+        "Return JSON in exactly this shape:\n"
+        "{\n"
+        '  "scores": {\n' + schema_example + "\n  },\n"
+        '  "verdict": {\n'
+        '    "compounder_reasons": ["...", "...", "..."],\n'
+        '    "key_risks": ["...", "...", "..."],\n'
+        '    "capability_to_monitor": "<one of: '
+        + ", ".join(GQ_CAPABILITY_ORDER) + '>",\n'
+        '    "capability_to_monitor_rationale": "...",\n'
+        '    "trajectory_paragraph": "..."\n'
+        "  }\n"
+        "}\n\n"
+        "Rules:\n"
+        "- \"score\": an integer 0-100 for each of the 6 capabilities listed above.\n"
+        "- \"justification\": exactly 3-5 sentences explaining that score, citing "
+        "specific evidence from that capability's Q&A/why-it-matters text above — "
+        "do not write generic boilerplate that could apply to any company.\n"
+        "- \"compounder_reasons\": exactly 3 strings, each 1-2 sentences, the most "
+        "compelling reasons this company could become a long-term compounder.\n"
+        "- \"key_risks\": exactly 3 strings, each 1-2 sentences, the most "
+        "significant risks that could prevent that outcome.\n"
+        "- \"capability_to_monitor\": the single capability id (from the 6 listed "
+        "in the schema above) that most deserves close monitoring over the next "
+        "3-5 years — usually the capability with the most uncertainty or the "
+        "widest range of future outcomes, not necessarily the lowest score.\n"
+        "- \"capability_to_monitor_rationale\": 1-2 sentences explaining that choice.\n"
+        "- \"trajectory_paragraph\": one paragraph (120-200 words) explaining "
+        "whether this business appears to be STRENGTHENING, PLATEAUING, or "
+        "WEAKENING as a compounding engine, synthesizing evidence across all 6 "
+        "capabilities rather than restating any single one.\n"
+        "- Write in English, professional institutional-equity-research tone. "
+        "Prose only — no markdown formatting.\n"
+        "- Do not wrap the JSON in markdown code fences.\n"
+        "- Do not include a composite/weighted score anywhere in your response — "
+        "that is computed separately."
+    )
+    return "\n".join(lines)
+
+
+def _coerce_phase2_score(raw) -> int:
+    """Clamp an LLM-returned score to a valid 0-100 integer, defaulting to 50
+    (neutral) on any parse failure — mirrors the score-coercion pattern in
+    models/fisher.py's _validate_analysis (int(round(float(...))) wrapped in
+    try/except, clamped to the valid range)."""
+    try:
+        v = int(round(float(raw)))
+    except (TypeError, ValueError):
+        return 50
+    return max(0, min(100, v))
+
+
+def _validate_growth_quality_phase2(raw: dict, analysis: dict) -> dict:
+    """
+    Defensively coerce the LLM's Phase-2 response and compute the weighted
+    composite Growth Quality Score deterministically in Python — never trust
+    the model's own arithmetic for the weighted total.
+    """
+    if not isinstance(raw, dict):
+        raw = {}
+    scores_raw = raw.get("scores")
+    scores_raw = scores_raw if isinstance(scores_raw, dict) else {}
+
+    scores = {}
+    for cap_id, meta in GQ_CAPABILITY_META.items():
+        entry = scores_raw.get(cap_id) if isinstance(scores_raw.get(cap_id), dict) else {}
+        score = _coerce_phase2_score(entry.get("score"))
+        justification = str(entry.get("justification") or "").strip() or \
+            "Insufficient data was returned by the model for this dimension."
+        scores[cap_id] = {
+            "number": meta["number"],
+            "title": meta["title"],
+            "interpretation": meta["interpretation"],
+            "score": score,
+            "justification": justification,
+            "weight": GQ_PHASE2_WEIGHTS[cap_id],
+        }
+
+    gqs = sum(scores[cap_id]["score"] * GQ_PHASE2_WEIGHTS[cap_id]
+               for cap_id in GQ_CAPABILITY_ORDER)
+
+    verdict_raw = raw.get("verdict")
+    verdict_raw = verdict_raw if isinstance(verdict_raw, dict) else {}
+
+    def _str_list(v, n: int) -> list[str]:
+        out = [str(x).strip() for x in v if str(x).strip()] if isinstance(v, list) else []
+        while len(out) < n:
+            out.append("Not provided by the model.")
+        return out[:n]
+
+    monitor_id = str(verdict_raw.get("capability_to_monitor") or "").strip()
+    if monitor_id not in GQ_CAPABILITY_META:
+        # Fall back to the lowest-scoring capability — a defensible,
+        # deterministic default when the model omits/misnames this field.
+        monitor_id = min(GQ_CAPABILITY_ORDER, key=lambda c: scores[c]["score"])
+
+    verdict = {
+        "compounder_reasons": _str_list(verdict_raw.get("compounder_reasons"), 3),
+        "key_risks": _str_list(verdict_raw.get("key_risks"), 3),
+        "capability_to_monitor": monitor_id,
+        "capability_to_monitor_title": GQ_CAPABILITY_META[monitor_id]["title"],
+        "capability_to_monitor_rationale": str(
+            verdict_raw.get("capability_to_monitor_rationale") or ""
+        ).strip() or "Not provided by the model.",
+        "trajectory_paragraph": str(verdict_raw.get("trajectory_paragraph") or "").strip()
+            or "Insufficient data was returned by the model for this section.",
+    }
+
+    return {
+        "scores": scores,
+        "weights": dict(GQ_PHASE2_WEIGHTS),
+        "gqs": round(gqs, 1),
+        "verdict": verdict,
+        "phase": "Phase 2 — Scoring",
+    }

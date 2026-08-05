@@ -5,17 +5,25 @@ Same header/footer structure, colour palette, and typography as Investment
 Memo V2 / Earnings Quality Score (agents/pdf_earnings_quality.py) — copied
 verbatim per design requirement, with only the subtitle literal changed.
 
-Phase 1 (Build the Evidence) only: renders, per capability, a verified
+Phase 1 (Build the Evidence): renders, per capability, a verified
 precomputed table (Python-derived, e.g. Revenue/YoY/CAGR, or Gross/EBITDA/
 Operating Margin), the LLM-built tables declared in that capability's own
 GQ_CAPABILITY_META["tables"] (e.g. Customers/Momentum, or Unit Economics),
 the discussion Q&A, and the "why it matters" paragraph. No scoring is
-rendered yet — that arrives in a later phase.
+rendered in this phase.
+
+Phase 2 (Scoring & Verdict): rendered only when render() is called with a
+`phase2` dict (as produced by models.growth_quality's
+_validate_growth_quality_phase2()) — a Dimension/Weight/Score summary
+table, each capability's interpretation question + score + justification,
+the weighted composite Growth Quality Score headline, and the Overall
+Verdict section (compounder reasons, key risks, capability to monitor,
+strengthening/plateauing/weakening trajectory paragraph).
 
 Rendering is capability-agnostic: it iterates models.growth_quality's
-GQ_CAPABILITY_META/GQ_CAPABILITY_ORDER, so adding capabilities 2-6 later
-requires no changes here as long as the analysis dict carries matching
-keys under "capabilities".
+GQ_CAPABILITY_META/GQ_CAPABILITY_ORDER, so adding capabilities later
+requires no changes here as long as the analysis/phase2 dicts carry
+matching keys.
 """
 
 from __future__ import annotations
@@ -153,6 +161,34 @@ def _styles() -> dict:
             fontName=BASE_FONT, fontSize=8.5, textColor=HexColor('#222222'),
             leading=13, alignment=TA_JUSTIFY,
         ),
+        "score_dim_cell": S("score_dim_cell",
+            fontName=BOLD_FONT, fontSize=8, textColor=HexColor('#222222'),
+            alignment=TA_LEFT, leading=10.5,
+        ),
+        "score_num_cell": S("score_num_cell",
+            fontName=BOLD_FONT, fontSize=9.5, alignment=TA_CENTER, leading=12,
+        ),
+        "score_interp_cell": S("score_interp_cell",
+            fontName=OBLIQUE_FONT, fontSize=7.6, textColor=MGRAY,
+            alignment=TA_LEFT, leading=10,
+        ),
+        "score_justification": S("score_justification",
+            fontName=BASE_FONT, fontSize=8, textColor=HexColor('#222222'),
+            leading=11.5, alignment=TA_JUSTIFY, spaceAfter=6,
+        ),
+        "gqs_headline": S("gqs_headline",
+            fontName=BOLD_FONT, fontSize=20, alignment=TA_CENTER,
+            spaceBefore=6, spaceAfter=10, leading=24,
+        ),
+        "verdict_heading": S("verdict_heading",
+            fontName=BOLD_FONT, fontSize=9.5, textColor=NAVY,
+            spaceBefore=8, spaceAfter=3, leading=12,
+        ),
+        "bullet_body": S("bullet_body",
+            fontName=BASE_FONT, fontSize=8.5, textColor=HexColor('#222222'),
+            leading=12.5, alignment=TA_JUSTIFY, spaceAfter=4,
+            leftIndent=10, bulletIndent=0,
+        ),
     }
 
 
@@ -218,6 +254,18 @@ def _fmt_b(v) -> str:
 
 def _pct(v) -> str:
     return f"{v*100:.1f}%" if v is not None else "n/a"
+
+
+def _score_color_hex(score: int) -> str:
+    """Green >=70, amber 40-69, red <40 — same tri-color convention used
+    elsewhere in this codebase (e.g. Earnings Quality Score grading).
+    Returns a plain #RRGGBB string for use in Paragraph XML markup — never
+    HexColor.hexval(), which returns "0xRRGGBB" and breaks ReportLab markup."""
+    if score >= 70:
+        return GREEN_HEX
+    if score >= 40:
+        return AMBER_HEX
+    return RED_HEX
 
 
 # ── Verified revenue table (Python-computed, ground truth) ──────────────
@@ -507,10 +555,96 @@ def _render_discussion(discussion: list[dict], styles: dict) -> list:
     return flow
 
 
-class GrowthQualityPDFGenerator:
-    """Renders the Growth Quality Score PDF (Phase 1 — Build the Evidence)."""
+# ── Phase 2 — Scoring & Verdict renderers ───────────────────────────────
 
-    def render(self, subject: CompanyData, analysis: dict, output_path: str) -> None:
+def _bullets(items: list[str], styles: dict) -> list:
+    if not items:
+        return [Paragraph("<i>None noted.</i>", styles["bullet_body"])]
+    return [Paragraph(f"&bull;&nbsp; {i}", styles["bullet_body"]) for i in items]
+
+
+def _phase2_scores_table(phase2: dict, styles: dict) -> Table:
+    """Dimension / Weight / Score summary table (NOT years-as-columns — this
+    is a one-off scoring grid, same layout family as _governance_snapshot_table
+    and Earnings Quality Score's _subscores_table). Score cell text colour is
+    set via inline <font> markup since TableStyle can't colour text per-cell
+    independent of the Paragraph's own style."""
+    scores = phase2["scores"]
+    header = [Paragraph("Dimension", styles["table_header"]),
+              Paragraph("Weight", styles["table_header"]),
+              Paragraph("Score", styles["table_header"])]
+    rows = [header]
+    for cap_id in GQ_CAPABILITY_ORDER:
+        entry = scores[cap_id]
+        score = entry["score"]
+        color_hex = _score_color_hex(score)
+        rows.append([
+            Paragraph(f"{entry['number']}. {entry['title']}", styles["table_label"]),
+            Paragraph(f"{entry['weight']*100:.0f}%", styles["table_cell"]),
+            Paragraph(f'<font color="{color_hex}"><b>{score}/100</b></font>', styles["table_cell"]),
+        ])
+    t = Table(rows, colWidths=[CW*0.58, CW*0.17, CW*0.25], repeatRows=1)
+    t.setStyle(_table_style())
+    return t
+
+
+def _phase2_capability_detail(phase2: dict, styles: dict) -> list:
+    """Per-capability interpretation question + score + 3-5 sentence
+    justification, in GQ_CAPABILITY_ORDER, immediately below the summary
+    scoring table."""
+    flow = []
+    scores = phase2["scores"]
+    for cap_id in GQ_CAPABILITY_ORDER:
+        entry = scores[cap_id]
+        flow.append(Paragraph(f"{entry['number']}. {entry['title']}", styles["score_dim_cell"]))
+        flow.append(Paragraph(f"<i>{entry['interpretation']}</i>", styles["score_interp_cell"]))
+        color_hex = _score_color_hex(entry["score"])
+        flow.append(Paragraph(
+            f'Score: <font color="{color_hex}"><b>{entry["score"]}/100</b></font> '
+            f'&nbsp;(weight {entry["weight"]*100:.0f}%)',
+            styles["score_num_cell"],
+        ))
+        flow.append(Paragraph(entry["justification"], styles["score_justification"]))
+    return flow
+
+
+def _gqs_headline(phase2: dict, styles: dict) -> Paragraph:
+    gqs = phase2["gqs"]
+    color_hex = _score_color_hex(int(round(gqs)))
+    return Paragraph(
+        f'Growth Quality Score: <font color="{color_hex}">{gqs:.1f} / 100</font>',
+        styles["gqs_headline"],
+    )
+
+
+def _verdict_block(phase2: dict, styles: dict) -> list:
+    verdict = phase2["verdict"]
+    flow = [section_title("Overall Verdict", styles)]
+
+    flow.append(Paragraph("Reasons This Could Become a Long-Term Compounder", styles["verdict_heading"]))
+    flow += _bullets(verdict["compounder_reasons"], styles)
+
+    flow.append(Paragraph("Most Significant Risks", styles["verdict_heading"]))
+    flow += _bullets(verdict["key_risks"], styles)
+
+    flow.append(Paragraph("Capability Deserving Closest Monitoring (Next 3-5 Years)", styles["verdict_heading"]))
+    flow.append(Paragraph(
+        f"<b>{verdict['capability_to_monitor_title']}</b> — {verdict['capability_to_monitor_rationale']}",
+        styles["score_justification"],
+    ))
+
+    flow.append(Paragraph("Strengthening, Plateauing, or Weakening?", styles["verdict_heading"]))
+    flow.append(Paragraph(verdict["trajectory_paragraph"], styles["score_justification"]))
+    return flow
+
+
+class GrowthQualityPDFGenerator:
+    """Renders the Growth Quality Score PDF: Phase 1 (Build the Evidence,
+    per-capability) followed by Phase 2 (Scoring & Verdict), when a phase2
+    dict is supplied."""
+
+    def render(self, subject: CompanyData, analysis: dict, output_path: str,
+               phase2: dict | None = None) -> None:
         report_date = datetime.utcnow().strftime("%Y-%m-%d")
         styles = _styles()
 
@@ -538,12 +672,26 @@ class GrowthQualityPDFGenerator:
             if i < len(GQ_CAPABILITY_ORDER) - 1:
                 story.append(PageBreak())
 
+        if phase2:
+            story.append(PageBreak())
+            story += self._phase2_block(subject, phase2, styles)
+
         story.append(Spacer(1, 6*mm))
-        story.append(Paragraph(
-            f"<i>Analysis generated by {LLM_MODEL} ({LLM_PROVIDER}). "
+        disclaimer = (
+            f"Analysis generated by {LLM_MODEL} ({LLM_PROVIDER}). "
+            f"Data source: EODHD, with yfinance used as a fallback where EODHD "
+            f"data is unavailable. Phase 1 — Build the Evidence assigns no "
+            f"scores; the {GQ_CAPABILITIES_TOTAL} per-capability scores, the "
+            f"weighted composite Growth Quality Score, and the Overall Verdict "
+            f"are produced in Phase 2 from that evidence."
+            if phase2 else
+            f"Analysis generated by {LLM_MODEL} ({LLM_PROVIDER}). "
             f"Data source: EODHD, with yfinance used as a fallback where EODHD "
             f"data is unavailable. Phase 1 — Build the Evidence: no scores or "
-            f"grades are assigned in this phase.</i>",
+            f"grades are assigned in this phase."
+        )
+        story.append(Paragraph(
+            f"<i>{disclaimer}</i>",
             ParagraphStyle("llm_disc", fontName=OBLIQUE_FONT, fontSize=7,
                            textColor=HexColor("#888888"), leading=9),
         ))
@@ -564,6 +712,28 @@ class GrowthQualityPDFGenerator:
             f"the objective here is solely to build and discuss the historical evidence.",
             styles["body"],
         ))
+        return flow
+
+    # ── Phase 2 — Scoring & Verdict ──────────────────────────────────────
+    def _phase2_block(self, subject: CompanyData, phase2: dict, styles: dict) -> list:
+        flow = [section_title("Growth Quality Score — Phase 2: Scoring & Verdict", styles)]
+        flow.append(Paragraph(
+            f"Building on the evidence gathered in Phase 1, each capability is now "
+            f"scored 0-100 against its interpretation question, with a "
+            f"weighted composite Growth Quality Score computed deterministically "
+            f"from those {GQ_CAPABILITIES_TOTAL} scores (Demand Strength and "
+            f"Management &amp; Governance Quality weighted 20% each; the remaining "
+            f"four dimensions weighted 15% each).",
+            styles["body"],
+        ))
+        flow.append(Spacer(1, 3*mm))
+        flow.append(_phase2_scores_table(phase2, styles))
+        flow.append(Spacer(1, 5*mm))
+        flow += _phase2_capability_detail(phase2, styles)
+        flow.append(Spacer(1, 4*mm))
+        flow.append(_gqs_headline(phase2, styles))
+        flow.append(Spacer(1, 4*mm))
+        flow += _verdict_block(phase2, styles)
         return flow
 
     # ── One capability's full block (table(s) + discussion + why it matters) ─

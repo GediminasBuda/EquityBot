@@ -3770,6 +3770,8 @@ if generate_clicked and ticker_input:
                 from models.growth_quality import (
                     _growth_quality_prompt_parts, _validate_growth_quality,
                     SYSTEM_PROMPT as SYS, GQ_CAPABILITY_META, fetch_governance_fallback,
+                    PHASE2_SYSTEM_PROMPT, _gq_phase2_dynamic_prompt,
+                    _validate_growth_quality_phase2,
                 )
 
                 _prog.progress(25, text="🌱  Fetching EODHD-only data…")
@@ -3852,6 +3854,24 @@ if generate_clicked and ticker_input:
                 analysis = _validate_growth_quality(analysis, company)
                 st.write("✓  Evidence base built — no scoring in Phase 1")
                 _show_token_usage(llm.last_usage)
+                _prog.progress(70, text="✓  Evidence base complete")
+
+                # ── Growth Quality Score — Phase 2: Scoring & Verdict ─────────
+                # Separate LLM call, given only the Phase 1 discussion/why-it-
+                # matters narrative (not the raw tables — see module comment in
+                # models/growth_quality.py). The weighted composite GQS is
+                # computed deterministically in Python, never by the LLM.
+                _prog.progress(75, text="🎯  Scoring 6 capabilities (Phase 2)…")
+                st.write("🎯  Scoring capabilities and building Overall Verdict "
+                         "(Phase 2 — Scoring)…")
+                _gq_phase2_raw = llm.generate_json(
+                    _gq_phase2_dynamic_prompt(company, analysis),
+                    PHASE2_SYSTEM_PROMPT,
+                    max_tokens=6000,
+                )
+                phase2 = _validate_growth_quality_phase2(_gq_phase2_raw, analysis)
+                st.write(f"✓  Growth Quality Score: {phase2['gqs']:.1f}/100")
+                _show_token_usage(llm.last_usage)
                 _prog.progress(85, text="✓  Analysis complete")
 
                 _prog.progress(88, text="📄  Rendering PDF…")
@@ -3863,10 +3883,11 @@ if generate_clicked and ticker_input:
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_growth_quality_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
-                GrowthQualityPDFGenerator().render(company, analysis, pdf_path)
+                GrowthQualityPDFGenerator().render(company, analysis, pdf_path, phase2=phase2)
                 extra = {"capabilities_completed": analysis.get("capabilities_completed"),
                          "capabilities_total": analysis.get("capabilities_total"),
-                         "annual_report_source": annual_report_source}
+                         "annual_report_source": annual_report_source,
+                         "growth_quality_score": phase2.get("gqs")}
 
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
@@ -4140,7 +4161,9 @@ if st.session_state.report_result:
                 f"Peers analysed: **{extra.get('peer_count', 0)}**"
             )
         elif rtype == "growth_quality":
+            _gqs = extra.get("growth_quality_score")
             st.caption(
+                f"Growth Quality Score: **{_gqs:.1f}/100**" if _gqs is not None else
                 f"Growth Quality Score — Phase 1 (Build the Evidence)  ·  "
                 f"Capabilities covered: **{extra.get('capabilities_completed','?')}/"
                 f"{extra.get('capabilities_total','?')}**  ·  No scoring yet"
