@@ -94,7 +94,11 @@ KIMI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("KIMI_REQUEST_TIMEOUT_SECONDS", "24
 # emitted zero visible JSON. Cap raised to comfortably exceed 16000*2.0 and
 # 13000*2.0 both — do this every time a new large max_tokens caller is added.
 GEMINI_MAX_TOKENS_MULTIPLIER = float(os.getenv("GEMINI_MAX_TOKENS_MULTIPLIER", "2.0"))
-GEMINI_MAX_TOKENS_CAP        = int(os.getenv("GEMINI_MAX_TOKENS_CAP", "36000"))
+# Raised 36000 -> 44000 (2026-08-05): Growth Quality Score's main call reached
+# max_tokens=20000 with capability 5 (Competitive Position); 20000*2.0=40000
+# would otherwise have been clipped by the old 36000 cap — same collapse
+# class documented below, caught proactively this time before a live test.
+GEMINI_MAX_TOKENS_CAP        = int(os.getenv("GEMINI_MAX_TOKENS_CAP", "44000"))
 GEMINI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "300"))
 
 # Raising the token ceiling above (GEMINI_MAX_TOKENS_CAP) only gives the model
