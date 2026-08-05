@@ -226,6 +226,52 @@ def compute_cash_flow_table(company: CompanyData, max_years: int = 10) -> list[d
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Rule of 40 — Growth vs. Profitability Balance
+# ─────────────────────────────────────────────────────────────────────────
+
+def compute_rule_of_40_table(company: CompanyData, max_years: int = 10) -> list[dict]:
+    """Revenue Growth Rate + Profit Margin, using three common profitability
+    measures (EBITDA Margin, FCF Margin, Net Margin) separately. Classic
+    threshold: combined result >= 40% is considered a healthy balance
+    between growth and profitability for high-growth/software companies."""
+    years = get_history_years(company, max_years=max_years)
+    rows = []
+    for i, y in enumerate(years):
+        af = company.annual_financials.get(y)
+
+        revenue_yoy = None
+        if i > 0 and af and af.revenue is not None:
+            prev = company.annual_financials.get(years[i - 1])
+            prev_rev = prev.revenue if prev else None
+            if prev_rev:
+                revenue_yoy = (af.revenue / prev_rev) - 1
+
+        ebitda_margin = af.ebitda_margin if af else None
+        net_margin = af.net_margin if af else None
+
+        fcf_margin = None
+        if af and af.fcf is not None and af.revenue and af.revenue > 0:
+            fcf_margin = af.fcf / af.revenue
+
+        def _rule40(margin):
+            if revenue_yoy is None or margin is None:
+                return None
+            return revenue_yoy + margin
+
+        rows.append({
+            "year": y,
+            "revenue_yoy": revenue_yoy,
+            "ebitda_margin": ebitda_margin,
+            "rule40_ebitda": _rule40(ebitda_margin),
+            "fcf_margin": fcf_margin,
+            "rule40_fcf": _rule40(fcf_margin),
+            "net_margin": net_margin,
+            "rule40_net": _rule40(net_margin),
+        })
+    return rows
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Current / forward-looking snapshot (not chronological)
 # ─────────────────────────────────────────────────────────────────────────
 

@@ -8,9 +8,10 @@ verbatim per design requirement, with only the subtitle literal changed.
 Renders: a current/forward-looking snapshot, then three dimensions (Revenue
 & Gross Profit, Earnings, Cash Flow) — each a verified Python-computed table
 (years as columns, never LLM output) followed by the LLM's grounded
-narrative for that dimension — and finally a closing "What's Priced In?"
-synthesis section. No scoring. Peer comparison is a planned future phase and
-is not rendered here.
+narrative for that dimension — then a verified Rule of 40 table (Revenue
+Growth vs. EBITDA/FCF/Net Margin, static explanatory text, no LLM narrative)
+— and finally a closing "What's Priced In?" synthesis section. No scoring.
+Peer comparison is a planned future phase and is not rendered here.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from config import LLM_PROVIDER, LLM_MODEL
 from data_sources.base import CompanyData
 from models.growth_pricing import (
     compute_revenue_gp_table, compute_earnings_table, compute_cash_flow_table,
-    compute_current_snapshot,
+    compute_current_snapshot, compute_rule_of_40_table,
 )
 
 logger = logging.getLogger(__name__)
@@ -331,6 +332,35 @@ def _cash_flow_table(company: CompanyData, styles: dict) -> Table | None:
     return _metric_rows_table(years, metric_rows, styles)
 
 
+def _rule_of_40_table(company: CompanyData, styles: dict) -> Table | None:
+    rows_data = compute_rule_of_40_table(company)
+    if not rows_data:
+        return None
+
+    candidates = [
+        ("Revenue Growth YoY", [_pct(r["revenue_yoy"]) for r in rows_data],
+         any(r["revenue_yoy"] is not None for r in rows_data)),
+        ("EBITDA Margin", [_pct(r["ebitda_margin"]) for r in rows_data],
+         any(r["ebitda_margin"] is not None for r in rows_data)),
+        ("Rule of 40 (Growth + EBITDA Margin)", [_pct(r["rule40_ebitda"]) for r in rows_data],
+         any(r["rule40_ebitda"] is not None for r in rows_data)),
+        ("FCF Margin", [_pct(r["fcf_margin"]) for r in rows_data],
+         any(r["fcf_margin"] is not None for r in rows_data)),
+        ("Rule of 40 (Growth + FCF Margin)", [_pct(r["rule40_fcf"]) for r in rows_data],
+         any(r["rule40_fcf"] is not None for r in rows_data)),
+        ("Net Profit Margin", [_pct(r["net_margin"]) for r in rows_data],
+         any(r["net_margin"] is not None for r in rows_data)),
+        ("Rule of 40 (Growth + Net Margin)", [_pct(r["rule40_net"]) for r in rows_data],
+         any(r["rule40_net"] is not None for r in rows_data)),
+    ]
+    metric_rows = [(label, values) for label, values, has_data in candidates if has_data]
+    if not metric_rows:
+        return None
+
+    years = [str(r["year"]) for r in rows_data]
+    return _metric_rows_table(years, metric_rows, styles)
+
+
 def _snapshot_table(company: CompanyData, styles: dict) -> Table | None:
     """Current/forward-looking snapshot — Metric/Value layout (not
     years-as-columns), since Forward P/E and standard PEG Ratio only exist
@@ -426,6 +456,27 @@ class GrowthPricingPDFGenerator:
             analysis.get("cash_flow_narrative"),
             styles,
         )
+
+        r40_table = _rule_of_40_table(subject, styles)
+        if r40_table:
+            story.append(PageBreak())
+            story.append(Paragraph("Rule of 40 — Growth vs. Profitability Balance", styles["dim_title"]))
+            story.append(Paragraph(
+                "Is management striking a sensible balance between growth and profitability? "
+                "A young company can create value either by growing quickly while sacrificing "
+                "profits, or by growing more slowly while already highly profitable — the Rule "
+                "of 40 treats either strategy as acceptable as long as the combined result is "
+                "strong: Revenue Growth Rate + Profit Margin ≥ 40%. The table below applies "
+                "this against three commonly used profitability measures for high-growth / "
+                "software companies: EBITDA Margin (the most common choice), Free Cash Flow "
+                "Margin, and Net Profit Margin.",
+                styles["body"],
+            ))
+            story.append(Paragraph(
+                "Rule of 40 (verified, computed from reported financials)", styles["table_label"]))
+            story.append(Spacer(1, 1*mm))
+            story.append(r40_table)
+            story.append(Spacer(1, 3*mm))
 
         story.append(Spacer(1, 4*mm))
         story.append(Paragraph("What's Priced In?", styles["synthesis_heading"]))
