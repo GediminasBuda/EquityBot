@@ -768,6 +768,16 @@ def _build_report_types() -> dict:
             if k == "earnings_quality":
                 reordered["growth_quality"] = gq
         result = reordered
+    # Growth Pricing & Peers sorts right after Growth Quality Score
+    # (2026-08-05 user request), same code-based-reorder pattern as above.
+    if "growth_pricing" in result and "growth_quality" in result:
+        gp = result.pop("growth_pricing")
+        reordered = {}
+        for k, v in result.items():
+            reordered[k] = v
+            if k == "growth_quality":
+                reordered["growth_pricing"] = gp
+        result = reordered
     return result
 
 REPORT_TYPES = _build_report_types()
@@ -777,7 +787,8 @@ _BUILTIN_IDS = {"fisher", "fisher_peers", "gravity",
                 "eodhd_full", "overview_v2", "index_overview",
                 "industry_analysis", "insider_transactions",
                 "valuemeter", "short_interest",
-                "fund_fundamentals", "earnings_quality", "growth_quality"}
+                "fund_fundamentals", "earnings_quality", "growth_quality",
+                "growth_pricing"}
 
 # Temporarily hidden from the Valuation Models picker — these need
 # significant adjustments before they're ready for use again. Framework
@@ -826,6 +837,9 @@ def _parse_intent_regex(q: str) -> dict:
                               "forensic accounting", "accrual", "sloan"],
         "growth_quality": ["growth quality", "growth quality score", "gqs",
                             "compounder", "demand strength"],
+        "growth_pricing": ["growth pricing", "growth pricing and peers",
+                            "priced in", "expectations priced in",
+                            "what's priced in"],
     }
     for fw_id, kws in fw_hints.items():
         if any(k in q_lo for k in kws):
@@ -3889,6 +3903,75 @@ if generate_clicked and ticker_input:
                          "annual_report_source": annual_report_source,
                          "growth_quality_score": phase2.get("gqs")}
 
+            elif report_type == "growth_pricing":
+                # ── Growth Pricing & Peers ─────────────────────────────────────
+                # Same EODHD-then-yfinance fetch pattern as Growth Quality Score,
+                # plus a fill-only SEC EDGAR history extension for US tickers.
+                # All ratios/tables are computed deterministically in Python
+                # (models/growth_pricing.py); the LLM writes narrative only.
+                from data_sources.eodhd_only_builder import (
+                    fetch_company_data_eodhd_only,
+                )
+                import importlib, models.growth_pricing as _gpmodel
+                importlib.reload(_gpmodel)
+                from models.growth_pricing import (
+                    extend_history_with_edgar, _growth_pricing_prompt_parts,
+                    _validate_growth_pricing,
+                )
+
+                _prog.progress(25, text="🎯  Fetching EODHD-only data…")
+                if _is_japan:
+                    st.write("🇯🇵  Using yfinance data for Japanese stock (EODHD not available)")
+                elif _is_baltic:
+                    st.write("🇧🇦  Using yfinance data for Baltic stock (EODHD may be incomplete)")
+                else:
+                    st.write("🎯  Fetching EODHD bundle (fundamentals + financial statements)…")
+                    _gp_company, _gp_bundle = fetch_company_data_eodhd_only(ticker_input)
+                    _gp_usable = bool(
+                        _gp_company.name
+                        and (_gp_company.market_cap or _gp_company.annual_financials)
+                    )
+                    if _gp_usable:
+                        company = _gp_company
+                        st.write(f"✓  EODHD endpoints used: {_gp_bundle.get('endpoints_used',0)}/9")
+                    else:
+                        st.write(
+                            f"⚠  EODHD has no data for **{ticker_input}**. "
+                            "Falling back to yfinance — report will be less detailed."
+                        )
+
+                _prog.progress(40, text="📚  Extending history via SEC EDGAR…")
+                try:
+                    _gp_years_added = extend_history_with_edgar(company, ticker_input)
+                    if _gp_years_added:
+                        st.write(f"✓  SEC EDGAR added {_gp_years_added} additional fiscal year(s)")
+                    else:
+                        st.write("📚  No additional SEC EDGAR history to add (non-US ticker or no gap)")
+                except Exception as _gp_edgar_err:
+                    logger.warning(f"[growth_pricing] EDGAR extension failed: {_gp_edgar_err}")
+
+                cacheable_pfx, dynamic_prompt, _gp_tables = _growth_pricing_prompt_parts(company)
+                _prog.progress(60, text="🤖  Writing pricing narrative…")
+                st.write("🤖  Analyzing what growth expectations are priced in…")
+                analysis = llm.generate_json(dynamic_prompt, "", max_tokens=8000,
+                                             cacheable_prefix=cacheable_pfx)
+                analysis = _validate_growth_pricing(analysis)
+                st.write("✓  Narrative complete")
+                _show_token_usage(llm.last_usage)
+                _prog.progress(85, text="✓  Analysis complete")
+
+                _prog.progress(88, text="📄  Rendering PDF…")
+                st.write("📄  Rendering PDF…")
+                import importlib, agents.pdf_growth_pricing as _gpmod
+                importlib.reload(_gpmod)
+                from agents.pdf_growth_pricing import GrowthPricingPDFGenerator
+                safe = ticker_input.replace(".", "_").replace("-", "_")
+                date = datetime.now().strftime("%Y-%m-%d")
+                pdf_path = str(OUTPUTS_DIR / f"{safe}_growth_pricing_{date}.pdf")
+                os.makedirs(OUTPUTS_DIR, exist_ok=True)
+                GrowthPricingPDFGenerator().render(company, analysis, pdf_path)
+                extra = {"years_covered": len(_gp_tables.get("years", []))}
+
             elif report_type not in _BUILTIN_IDS:
                 # ── User-created / custom framework ───────────────────────────
                 from models.generic_runner import GenericRunner
@@ -4167,6 +4250,12 @@ if st.session_state.report_result:
                 f"Growth Quality Score — Phase 1 (Build the Evidence)  ·  "
                 f"Capabilities covered: **{extra.get('capabilities_completed','?')}/"
                 f"{extra.get('capabilities_total','?')}**  ·  No scoring yet"
+            )
+        elif rtype == "growth_pricing":
+            st.caption(
+                f"Growth Pricing & Peers  ·  "
+                f"{extra.get('years_covered','?')} fiscal year(s) of history covered  ·  "
+                f"Peer comparison: planned future phase"
             )
         else:
             fw_label = REPORT_TYPES.get(rtype, {}).get("short", rtype)

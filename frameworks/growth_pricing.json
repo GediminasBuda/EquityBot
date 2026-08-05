@@ -1,0 +1,15 @@
+{
+  "id": "growth_pricing",
+  "name": "Growth Pricing & Peers",
+  "icon": "🎯",
+  "description": "Evaluates the relative pricing of high-growth companies (including pre-profit, high revenue-growth names) by asking: given the quality of this business, what expectations are already embedded in today's stock price? Builds historical valuation data tables (10 years or since IPO) across three dimensions — Revenue & Gross Profit, Earnings, and Cash Flow — from EODHD, SEC EDGAR and yfinance data, followed by a short narrative discussion per dimension. Peer comparison is a planned future phase.",
+  "is_builtin": true,
+  "base_id": null,
+  "version": 1,
+  "created_at": "2026-08-05T00:00:00",
+  "modified_at": "2026-08-05T00:00:00",
+  "system_prompt": "",
+  "prompt_template": "__builtin__",
+  "output_schema": [],
+  "report_sections": []
+}
