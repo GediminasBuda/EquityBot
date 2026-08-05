@@ -377,29 +377,55 @@ def _blend_color(c1: HexColor, c2: HexColor, t: float) -> Color:
 
 
 def _score_hex(t: float) -> str:
-    """t=0 -> palest (cheapest / best relative value), t=1 -> brightest red
-    (richest / highest relative valuation). Returns a plain #RRGGBB string
-    for use inside Paragraph XML markup (never HexColor.hexval() — see
-    CLAUDE.md gotcha, it returns '0xRRGGBB' not '#RRGGBB')."""
-    pale = HexColor('#F3D9D5')
-    c = _blend_color(pale, RED, t)
+    """t=1 -> highest-contrast green (best-ranked / cheapest relative
+    value), t=0 -> palest green (worst-ranked / most expensive relative
+    value). Returns a plain #RRGGBB string for use inside Paragraph XML
+    markup (never HexColor.hexval() — see CLAUDE.md gotcha, it returns
+    '0xRRGGBB' not '#RRGGBB')."""
+    pale = HexColor('#DCEEE1')
+    c = _blend_color(pale, GREEN, t)
     r = int(round(c.red * 255))
     g = int(round(c.green * 255))
     b = int(round(c.blue * 255))
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _ranks_from_scores(scores: list[int]) -> list[int]:
+    """Standard competition ranking (ties share a rank; the next distinct
+    rank skips accordingly) — rank 1 = highest score = best overall
+    (cheapest valuation multiples / strongest growth-profitability mix)."""
+    order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+    ranks = [0] * len(scores)
+    prev_score = None
+    prev_rank = 0
+    for pos, i in enumerate(order, start=1):
+        if scores[i] != prev_score:
+            prev_rank = pos
+            prev_score = scores[i]
+        ranks[i] = prev_rank
+    return ranks
+
+
 def _peer_comparison_table(subject: CompanyData, peers: dict, styles: dict) -> Table | None:
     """Subject + up to 5 peers as columns, 8 most-recent-data metrics as
     rows (Sales TTM Growth, Sales 3Y CAGR, P/E, PEG, EV/Gross Profit,
     EV/Sales, Rule of 40 with EBITDA Margin, Rule of 40 with Net Margin),
-    plus a bottom Valuation Score row: for each metric, companies are
+    plus a bottom Valuation Rank row: for each metric, companies are
     ranked and awarded points (cheaper multiples / stronger growth score
-    higher), points are summed per company, and the score is rendered in a
-    red font whose intensity scales with relative valuation richness —
-    brightest red marks the most expensively valued company, palest marks
-    the cheapest. All ranking/scoring is computed in Python
-    (models.growth_pricing.compute_peer_scores), never by the LLM."""
+    higher), points are summed per company into a composite score, and the
+    resulting overall rank (1st, 2nd, 3rd, …) is shown large and bold in a
+    green font whose contrast scales with relative standing — the most
+    saturated green marks the best-ranked (cheapest relative to growth)
+    company, palest marks the worst. All ranking/scoring is computed in
+    Python (models.growth_pricing.compute_peer_scores), never by the LLM."""
     rows_data = compute_peer_comparison_table(subject, peers)
     if not rows_data:
         return None
@@ -432,14 +458,19 @@ def _peer_comparison_table(subject: CompanyData, peers: dict, styles: dict) -> T
                            [Paragraph(v, styles["table_cell"]) for v in values])
 
     scores = compute_peer_scores(rows_data)
+    ranks = _ranks_from_scores(scores)
     max_score, min_score = max(scores), min(scores)
     spread = max_score - min_score
-    score_cells = [Paragraph("<b>Valuation Score</b>", styles["table_label"])]
-    for score in scores:
-        # t=1 -> lowest score (most expensive) -> brightest red; t=0 -> palest
-        t = (max_score - score) / spread if spread > 0 else 0.5
+    rank_style = ParagraphStyle(
+        "rank_cell", fontName=BOLD_FONT, fontSize=11, leading=13,
+        alignment=styles["table_cell"].alignment,
+    )
+    score_cells = [Paragraph("<b>Valuation Rank</b>", styles["table_label"])]
+    for score, rank in zip(scores, ranks):
+        # t=1 -> highest score (best rank) -> highest-contrast green; t=0 -> palest
+        t = (score - min_score) / spread if spread > 0 else 1.0
         score_cells.append(Paragraph(
-            f'<font color="{_score_hex(t)}"><b>{score}</b></font>', styles["table_cell"]))
+            f'<font color="{_score_hex(t)}">{_ordinal(rank)}</font>', rank_style))
     table_rows.append(score_cells)
 
     n = len(columns)
@@ -636,10 +667,11 @@ class GrowthPricingPDFGenerator:
                 "peers — selected by the user and/or suggested by the LLM — across the same "
                 "most-recent-data metrics: TTM Sales Growth, 3-year Sales CAGR, P/E, PEG Ratio, "
                 "EV/Gross Profit, EV/Sales, and the Rule of 40 using both EBITDA Margin and Net "
-                "Margin. The bottom Valuation Score row ranks every company across all metrics "
+                "Margin. The bottom Valuation Rank row ranks every company across all metrics "
                 "(cheaper multiples and stronger growth/profitability earn more points) and sums "
-                "the result — shown in a red font whose intensity scales with relative valuation "
-                "richness, brightest for the most expensively valued company.",
+                "the result into a composite score, then shows each company's overall placing "
+                "(1st, 2nd, 3rd, …) in bold green — the highest-contrast green marks the "
+                "best-ranked, most attractively valued company.",
                 styles["body"],
             ))
             story.append(Paragraph(
@@ -661,7 +693,7 @@ class GrowthPricingPDFGenerator:
             f"Analysis generated by {LLM_MODEL} ({LLM_PROVIDER}). "
             f"Data source: EODHD, with SEC EDGAR XBRL facts used to extend history for US "
             f"tickers and yfinance used as a fallback where EODHD data is unavailable. All "
-            f"ratios, tables, the peer Valuation Score, and the Valuation Verdict banner in this "
+            f"ratios, tables, the peer Valuation Rank, and the Valuation Verdict banner in this "
             f"report are computed in Python from verified financial data; the LLM's role is "
             f"limited to narrative discussion and, when the user supplies fewer than 5 peers, "
             f"suggesting additional peer tickers."
