@@ -54,6 +54,8 @@ class AnnualFinancials:
     minority_interest: Optional[float] = None        # Minority / non-controlling interest in NI
     net_income_continuing_ops: Optional[float] = None  # NI from continuing operations
     sga: Optional[float] = None                      # Selling, General & Administrative
+    research_development: Optional[float] = None     # R&D expense
+    total_operating_expenses: Optional[float] = None  # SG&A + R&D + other opex (excl. COGS)
     extraordinary_items: Optional[float] = None      # One-off items (can be negative)
 
     # Balance Sheet — extended fields

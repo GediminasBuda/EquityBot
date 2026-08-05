@@ -72,6 +72,21 @@ GQ_CAPABILITY_META = {
             "unit_economics_table": "Unit Economics",
         },
     },
+    "operating_leverage": {
+        "number": 3,
+        "title": "Operating Leverage",
+        "question": "Does scale make the business stronger?",
+        "sub_questions": [
+            "Is operating leverage emerging?",
+            "Is the company becoming more efficient?",
+            "Which expenses scale?",
+            "Which expenses do not?",
+        ],
+        "tables": ["opex_detail_table"],
+        "table_labels": {
+            "opex_detail_table": "Operating Expense Detail",
+        },
+    },
 }
 
 GQ_CAPABILITY_ORDER = list(GQ_CAPABILITY_META.keys())
@@ -217,6 +232,56 @@ above supports — or contradicts — the existence of an economic engine where 
 each additional customer creates increasing economic value for this company. \
 This is evidence-gathering only: do NOT assign a score, grade, or rating of any \
 kind.
+""",
+    "operating_leverage": """\
+CAPABILITY 3 — OPERATING LEVERAGE
+Question: Does scale make the business stronger?
+
+A verified SG&A % / R&D % / Operating Expenses % / Incremental Operating \
+Margin / Incremental EBITDA Margin / Incremental Free Cash Flow Margin table \
+(computed from the company's own reported financials) is already provided to \
+you in the data block below — treat those figures as ground truth, do not \
+recompute or contradict them, and do not repeat them in your JSON response.
+
+For the "operating_leverage" key, return the following, covering approximately \
+the last ten fiscal years (or since IPO if shorter) wherever the company \
+plausibly discloses or you can reliably derive the data, oldest fiscal year \
+first, using exactly the same fiscal years and order as the verified revenue \
+table in the data block below.
+
+Only include a row for a metric the company actually discloses, or that you can \
+reliably derive, in at least one of those years. Most companies report SG&A as \
+a single combined line item without splitting Sales & Marketing from General & \
+Administrative — only include those two rows if the company's own disclosures \
+(e.g. 10-K MD&A, investor presentations) actually break the expense out \
+separately. If a metric is never available at all across the whole history, \
+OMIT that row entirely — do not include a row filled entirely with "Data \
+unavailable". If literally none of this table's metrics are available for this \
+company, return an empty "rows" list — do not invent placeholder rows.
+
+1. "opex_detail_table": an object {"years": [...], "rows": [{"metric": "...", \
+"values": [...]}, ...]} where "years" is the same year list described above and \
+each row's "values" list has exactly one entry per year. Candidate metrics \
+(include only those disclosed or reliably derivable — never invent a figure): \
+"Sales & Marketing %", "General & Administrative %". These are the only two \
+metrics this table should ever contain — SG&A %, R&D %, Operating Expenses, and \
+the three incremental-margin metrics are already covered by the verified table \
+in the data block and must not be repeated here.
+
+2. "discussion": an array of exactly 4 objects, each {"question": "...", \
+"answer": "..."}, addressing IN THIS EXACT ORDER:
+   a. Is operating leverage emerging?
+   b. Is the company becoming more efficient?
+   c. Which expenses scale?
+   d. Which expenses do not?
+Each answer should be 60-120 words, cite specific numbers from the data \
+provided, and discuss both positive and negative evidence — do not present only \
+a bullish case.
+
+3. "why_it_matters": a single 100-180 word paragraph explaining how the evidence \
+above supports — or contradicts — the existence of operating leverage where \
+scale makes this company structurally stronger over time. This is \
+evidence-gathering only: do NOT assign a score, grade, or rating of any kind.
 """,
 }
 
@@ -367,6 +432,62 @@ def compute_profitability_table(company: CompanyData, max_years: int = 10) -> li
     return rows
 
 
+def compute_operating_leverage_table(company: CompanyData, max_years: int = 10) -> list[dict]:
+    """
+    Return a chronological (oldest-first) list of
+    {"year", "sga_pct", "rd_pct", "opex_pct", "incremental_operating_margin",
+    "incremental_ebitda_margin", "incremental_fcf_margin"} dicts computed from
+    company.annual_financials. Incremental margins are the change in EBIT /
+    EBITDA / FCF divided by the change in revenue vs. the prior year — None
+    when either figure isn't available or the revenue delta is zero. Feeds
+    capability 3 (Operating Leverage) the same way compute_profitability_table()
+    feeds capability 2 (Economic Engine).
+    """
+    years = get_history_years(company, max_years=max_years)
+    rows = []
+    for i, y in enumerate(years):
+        af = company.annual_financials.get(y)
+        rev = af.revenue if af else None
+        sga = af.sga if af else None
+        rd = af.research_development if af else None
+        opex = af.total_operating_expenses if af else None
+        if opex is None and (sga is not None or rd is not None):
+            opex = (sga or 0) + (rd or 0)
+
+        sga_pct = (sga / rev) if (sga is not None and rev) else None
+        rd_pct = (rd / rev) if (rd is not None and rev) else None
+        opex_pct = (opex / rev) if (opex is not None and rev) else None
+
+        inc_op_margin = inc_ebitda_margin = inc_fcf_margin = None
+        if i > 0 and rev is not None:
+            prev = company.annual_financials.get(years[i - 1])
+            prev_rev = prev.revenue if prev else None
+            d_rev = (rev - prev_rev) if prev_rev is not None else None
+            if d_rev:
+                ebit, prev_ebit = (af.ebit if af else None), (prev.ebit if prev else None)
+                if ebit is not None and prev_ebit is not None:
+                    inc_op_margin = (ebit - prev_ebit) / d_rev
+
+                ebitda, prev_ebitda = (af.ebitda if af else None), (prev.ebitda if prev else None)
+                if ebitda is not None and prev_ebitda is not None:
+                    inc_ebitda_margin = (ebitda - prev_ebitda) / d_rev
+
+                fcf, prev_fcf = (af.fcf if af else None), (prev.fcf if prev else None)
+                if fcf is not None and prev_fcf is not None:
+                    inc_fcf_margin = (fcf - prev_fcf) / d_rev
+
+        rows.append({
+            "year": y,
+            "sga_pct": sga_pct,
+            "rd_pct": rd_pct,
+            "opex_pct": opex_pct,
+            "incremental_operating_margin": inc_op_margin,
+            "incremental_ebitda_margin": inc_ebitda_margin,
+            "incremental_fcf_margin": inc_fcf_margin,
+        })
+    return rows
+
+
 def get_history_years(company: CompanyData, max_years: int = 10) -> list[int]:
     """Chronological (oldest-first) fiscal years used across every GQS table,
     so the Revenue table (Python-computed) and the LLM's own tables (Customers,
@@ -431,6 +552,33 @@ def format_growth_financials(company: CompanyData) -> str:
             om_s = f"{r['operating_margin']*100:.1f}%" if r["operating_margin"] is not None else "n/a"
             gg_s = f"{r['gross_profit_growth']*100:.1f}%" if r["gross_profit_growth"] is not None else "n/a"
             lines.append(f"  {r['year']:<12} {gm_s:>13} {em_s:>14} {om_s:>13} {gg_s:>11}")
+
+    opex_rows = compute_operating_leverage_table(company)
+    if opex_rows and any(
+        r["sga_pct"] is not None or r["rd_pct"] is not None or r["opex_pct"] is not None
+        or r["incremental_operating_margin"] is not None
+        or r["incremental_ebitda_margin"] is not None
+        or r["incremental_fcf_margin"] is not None
+        for r in opex_rows
+    ):
+        lines.append(f"\nVERIFIED OPERATING LEVERAGE HISTORY (oldest to newest, computed from "
+                      f"reported financials — treat as ground truth):")
+        header = (f"  {'Fiscal Year':<12} {'SG&A %':>9} {'R&D %':>8} {'Opex %':>9} "
+                  f"{'Inc.Op.Mgn':>11} {'Inc.EBITDA Mgn':>15} {'Inc.FCF Mgn':>12}")
+        lines.append(header)
+        lines.append("  " + "-" * len(header))
+        for r in opex_rows:
+            sga_s = f"{r['sga_pct']*100:.1f}%" if r["sga_pct"] is not None else "n/a"
+            rd_s = f"{r['rd_pct']*100:.1f}%" if r["rd_pct"] is not None else "n/a"
+            opex_s = f"{r['opex_pct']*100:.1f}%" if r["opex_pct"] is not None else "n/a"
+            iom_s = (f"{r['incremental_operating_margin']*100:.1f}%"
+                     if r["incremental_operating_margin"] is not None else "n/a")
+            iem_s = (f"{r['incremental_ebitda_margin']*100:.1f}%"
+                     if r["incremental_ebitda_margin"] is not None else "n/a")
+            ifm_s = (f"{r['incremental_fcf_margin']*100:.1f}%"
+                     if r["incremental_fcf_margin"] is not None else "n/a")
+            lines.append(f"  {r['year']:<12} {sga_s:>9} {rd_s:>8} {opex_s:>9} "
+                         f"{iom_s:>11} {iem_s:>15} {ifm_s:>12}")
 
     return "\n".join(lines)
 

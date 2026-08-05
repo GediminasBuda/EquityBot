@@ -62,6 +62,12 @@ KEYWORDS: list[str] = [
     "acquisition cost", "CAC", "lifetime value", "LTV",
     "contribution margin", "unit economics", "payback period",
     "gross margin", "operating leverage", "per employee",
+    # Capability 3 (Operating Leverage) — expense scaling. "sales and
+    # marketing" / "general and administrative" catch the common 10-K MD&A
+    # split even when SG&A is reported combined elsewhere in the filing.
+    "sales and marketing", "general and administrative", "research and development",
+    "operating expense", "fixed cost", "variable cost", "cost discipline",
+    "expense leverage", "scale efficienc", "margin expansion",
 ]
 
 

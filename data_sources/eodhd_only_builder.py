@@ -480,6 +480,8 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         af.minority_interest = _to_m(inc.get("minorityInterest"))
         af.net_income_continuing_ops = _to_m(inc.get("netIncomeFromContinuingOps"))
         af.sga               = _to_m(inc.get("sellingGeneralAdministrative"))
+        af.research_development = _to_m(inc.get("researchDevelopment"))
+        af.total_operating_expenses = _to_m(inc.get("totalOperatingExpenses"))
         af.extraordinary_items = _to_m(inc.get("extraordinaryItems"))
 
         # Balance Sheet

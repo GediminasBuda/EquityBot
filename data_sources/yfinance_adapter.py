@@ -646,6 +646,12 @@ class YFinanceAdapter:
             af.ebit        = _df_val(financials, "Operating Income", financials.columns.get_loc(col))
             af.ebitda      = _df_val(financials, "EBITDA", financials.columns.get_loc(col))
             af.net_income  = _df_val(financials, "Net Income", financials.columns.get_loc(col))
+            af.sga         = _df_val(financials, "Selling General And Administration",
+                                     financials.columns.get_loc(col))
+            af.research_development = _df_val(financials, "Research And Development",
+                                              financials.columns.get_loc(col))
+            af.total_operating_expenses = _df_val(financials, "Operating Expense",
+                                                  financials.columns.get_loc(col))
             af.eps_diluted = _df_val(financials, "Diluted EPS",
                                      financials.columns.get_loc(col))
 

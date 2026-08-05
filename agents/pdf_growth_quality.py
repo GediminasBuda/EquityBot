@@ -37,6 +37,7 @@ from data_sources.base import CompanyData
 from models.growth_quality import (
     GQ_CAPABILITY_META, GQ_CAPABILITY_ORDER, GQ_CAPABILITIES_TOTAL,
     compute_revenue_table, compute_profitability_table,
+    compute_operating_leverage_table,
 )
 
 logger = logging.getLogger(__name__)
@@ -316,6 +317,39 @@ def _profitability_table(company: CompanyData, styles: dict) -> Table | None:
     return _metric_rows_table(years, metric_rows, styles)
 
 
+def _operating_leverage_table(company: CompanyData, styles: dict) -> Table | None:
+    """
+    Verified SG&A % / R&D % / Operating Expenses % + the three incremental-
+    margin metrics, computed in Python from real reported financials (never
+    LLM output) — feeds Capability 3 (Operating Leverage) the same way
+    _profitability_table() feeds Capability 2 (Economic Engine).
+    """
+    rows_data = compute_operating_leverage_table(company)
+    if not rows_data:
+        return None
+
+    candidates = [
+        ("SG&A %", [_pct(r["sga_pct"]) for r in rows_data],
+         any(r["sga_pct"] is not None for r in rows_data)),
+        ("R&D %", [_pct(r["rd_pct"]) for r in rows_data],
+         any(r["rd_pct"] is not None for r in rows_data)),
+        ("Operating Expenses %", [_pct(r["opex_pct"]) for r in rows_data],
+         any(r["opex_pct"] is not None for r in rows_data)),
+        ("Incremental Operating Margin", [_pct(r["incremental_operating_margin"]) for r in rows_data],
+         any(r["incremental_operating_margin"] is not None for r in rows_data)),
+        ("Incremental EBITDA Margin", [_pct(r["incremental_ebitda_margin"]) for r in rows_data],
+         any(r["incremental_ebitda_margin"] is not None for r in rows_data)),
+        ("Incremental FCF Margin", [_pct(r["incremental_fcf_margin"]) for r in rows_data],
+         any(r["incremental_fcf_margin"] is not None for r in rows_data)),
+    ]
+    metric_rows = [(label, values) for label, values, has_data in candidates if has_data]
+    if not metric_rows:
+        return None
+
+    years = [str(r["year"]) for r in rows_data]
+    return _metric_rows_table(years, metric_rows, styles)
+
+
 # ── Generic LLM-built table renderer (customers_table / momentum_table / …) ─
 
 def _render_generic_table(table: dict, styles: dict) -> Table | None:
@@ -440,6 +474,9 @@ class GrowthQualityPDFGenerator:
         elif cap_id == "economic_engine":
             verified_table = _profitability_table(subject, styles)
             verified_label = "Profitability (verified, computed from reported financials)"
+        elif cap_id == "operating_leverage":
+            verified_table = _operating_leverage_table(subject, styles)
+            verified_label = "Operating Leverage (verified, computed from reported financials)"
         if verified_table:
             flow.append(Paragraph(verified_label, styles["table_label"]))
             flow.append(Spacer(1, 1*mm))
