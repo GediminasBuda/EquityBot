@@ -77,6 +77,14 @@ KEYWORDS: list[str] = [
     "customer retention", "renewal rate", "churn", "logo retention",
     "gross revenue retention", "ecosystem", "partner network", "developer",
     "brand recognition", "brand loyalty", "pricing power", "price increase",
+    # Capability 6 (Management & Governance Quality) — ownership, tenure,
+    "founder", "beneficial owner", "insider ownership", "insider trading",
+    "dual-class", "dual class", "super-voting", "supervoting", "voting power",
+    "named executive officer", "chief executive officer since",
+    "chief financial officer since", "guidance", "long-term target",
+    "strategic priorit", "capital allocation", "share repurchase", "buyback",
+    "related party transaction", "related-party transaction",
+    "executive compensation", "say-on-pay", "acquisition integrat",
 ]
 
 

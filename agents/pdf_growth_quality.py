@@ -13,7 +13,7 @@ the discussion Q&A, and the "why it matters" paragraph. No scoring is
 rendered yet — that arrives in a later phase.
 
 Rendering is capability-agnostic: it iterates models.growth_quality's
-GQ_CAPABILITY_META/GQ_CAPABILITY_ORDER, so adding capabilities 2-8 later
+GQ_CAPABILITY_META/GQ_CAPABILITY_ORDER, so adding capabilities 2-6 later
 requires no changes here as long as the analysis dict carries matching
 keys under "capabilities".
 """
@@ -38,7 +38,7 @@ from models.growth_quality import (
     GQ_CAPABILITY_META, GQ_CAPABILITY_ORDER, GQ_CAPABILITIES_TOTAL,
     compute_revenue_table, compute_profitability_table,
     compute_operating_leverage_table, compute_capital_allocation_table,
-    compute_competitive_position_table,
+    compute_competitive_position_table, compute_governance_snapshot,
 )
 
 logger = logging.getLogger(__name__)
@@ -414,6 +414,51 @@ def _competitive_position_table(company: CompanyData, styles: dict) -> Table | N
     return _metric_rows_table(years, metric_rows, styles)
 
 
+def _governance_snapshot_table(company: CompanyData, styles: dict) -> Table | None:
+    """
+    Verified Ownership & Governance snapshot — Metric/Value layout (NOT the
+    years-as-columns layout used by every table above), since EODHD/yfinance
+    only ever expose a CURRENT snapshot of insider/institutional ownership,
+    never a historical time series — feeds Capability 6 (Management &
+    Governance Quality). Named officers are rendered separately as a
+    paragraph (see _officers_paragraph below), not as a table row, since
+    name/title strings don't fit this metric-grid layout well.
+    """
+    gov = compute_governance_snapshot(company)
+    rows_data = []
+    if "pct_insiders" in gov:
+        rows_data.append(("Insider Ownership %", _pct(gov["pct_insiders"])))
+    if "pct_institutions" in gov:
+        rows_data.append(("Institutional Ownership %", _pct(gov["pct_institutions"])))
+    if not rows_data:
+        return None
+
+    header = [Paragraph("Metric", styles["table_header"]),
+              Paragraph("Current", styles["table_header"])]
+    rows = [header]
+    for label, value in rows_data:
+        rows.append([Paragraph(label, styles["table_label"]),
+                     Paragraph(value, styles["table_cell"])])
+
+    col_widths = [CW * 0.55, CW * 0.45]
+    t = Table(rows, colWidths=col_widths, repeatRows=1)
+    t.setStyle(_table_style())
+    return t
+
+
+def _officers_paragraph(company: CompanyData, styles: dict) -> Paragraph | None:
+    """Named executive officers, rendered as a short paragraph below the
+    Ownership & Governance snapshot table (see _governance_snapshot_table)."""
+    gov = compute_governance_snapshot(company)
+    officers = gov.get("officers")
+    if not officers:
+        return None
+    names = "; ".join(
+        f"{o.get('name', 'n/a')} ({o.get('title', 'n/a')})" for o in officers[:8]
+    )
+    return Paragraph(f"<b>Named Officers (verified):</b> {names}", styles["body_small"])
+
+
 # ── Generic LLM-built table renderer (customers_table / momentum_table / …) ─
 
 def _render_generic_table(table: dict, styles: dict) -> Table | None:
@@ -547,10 +592,18 @@ class GrowthQualityPDFGenerator:
         elif cap_id == "competitive_position":
             verified_table = _competitive_position_table(subject, styles)
             verified_label = "Competitive Position — Gross Margin Stability (verified, computed from reported financials)"
+        elif cap_id == "management_governance":
+            verified_table = _governance_snapshot_table(subject, styles)
+            verified_label = "Ownership & Governance — Verified Snapshot (current, from EODHD/yfinance)"
         if verified_table:
             flow.append(Paragraph(verified_label, styles["table_label"]))
             flow.append(Spacer(1, 1*mm))
             flow.append(verified_table)
+            if cap_id == "management_governance":
+                officers_para = _officers_paragraph(subject, styles)
+                if officers_para:
+                    flow.append(Spacer(1, 1*mm))
+                    flow.append(officers_para)
             flow.append(Spacer(1, 3*mm))
 
         # LLM-built tables — generic over whatever table names this

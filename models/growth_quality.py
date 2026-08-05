@@ -10,10 +10,10 @@ being built incrementally, one capability at a time, in two phases:
   negative evidence. No scoring in this phase.
 
   Phase 2 — Scoring (not yet implemented): will assign a score per
-  capability and a composite Growth Quality Score once all 8 capabilities
+  capability and a composite Growth Quality Score once all 6 capabilities
   have evidence built out.
 
-There are 8 capabilities total in the final model. GQ_CAPABILITY_META below
+There are 6 capabilities total in the final model. GQ_CAPABILITY_META below
 is the single source of truth for which capabilities are currently live —
 adding a new capability means adding an entry to GQ_CAPABILITY_META and a
 matching prompt block to GQ_CAPABILITY_PROMPTS; nothing else needs to
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Capability registry ─────────────────────────────────────────────────────
-# Single source of truth for which of the 8 capabilities are currently live.
+# Single source of truth for which of the 6 capabilities are currently live.
 # "sub_questions" are the specific discussion questions the LLM must answer,
 # in order, for this capability — used both to build the prompt instructions
 # and as validation defaults if the model omits one.
@@ -114,10 +114,26 @@ GQ_CAPABILITY_META = {
             "moat_table": "Moat Indicators",
         },
     },
+    "management_governance": {
+        "number": 6,
+        "title": "Management & Governance Quality",
+        "question": "Can shareholders trust management to maximize long-term intrinsic value rather than quarterly earnings?",
+        "sub_questions": [
+            "Does management think like owners?",
+            "Do incentives align with shareholders?",
+            "Are they building intrinsic value or maximizing short-term stock price?",
+            "Would you be comfortable owning this company for ten years with this management team?",
+        ],
+        "tables": ["ownership_governance_table", "guidance_execution_table"],
+        "table_labels": {
+            "ownership_governance_table": "Ownership & Governance",
+            "guidance_execution_table": "Guidance vs. Actual Execution",
+        },
+    },
 }
 
 GQ_CAPABILITY_ORDER = list(GQ_CAPABILITY_META.keys())
-GQ_CAPABILITIES_TOTAL = 8  # total planned capabilities in the final model
+GQ_CAPABILITIES_TOTAL = 6  # total planned capabilities in the final model
 
 
 SYSTEM_PROMPT = """You are an institutional equity analyst specializing in evaluating \
@@ -413,6 +429,85 @@ discuss both sides honestly — do not present only a bullish case.
 above supports — or contradicts — a strengthening competitive moat, and why moat \
 durability matters for this company's prospects as a long-term compounder. This \
 is evidence-gathering only: do NOT assign a score, grade, or rating of any kind.
+""",
+    "management_governance": """\
+CAPABILITY 6 — MANAGEMENT & GOVERNANCE QUALITY
+Question: Can shareholders trust management to maximize long-term intrinsic \
+value rather than quarterly earnings?
+
+A verified Ownership & Governance Snapshot (current insider ownership %, \
+institutional ownership %, and named executive officers, sourced from EODHD — \
+or from yfinance when EODHD/EDGAR did not have the figure) is already provided \
+to you in the data block below — treat those figures as ground truth for the \
+most recent year, do not recompute or contradict them, and do not repeat them \
+verbatim in your JSON response. Note that unlike the financial tables used by \
+earlier capabilities, this snapshot is CURRENT-YEAR ONLY — EODHD, EDGAR, and \
+yfinance do not expose a historical time series of insider or institutional \
+ownership percentages, so every earlier year in "ownership_governance_table" \
+below must come from your own general knowledge (proxy statements, 10-K \
+disclosures, investor-relations history), tilde-prefixed per the rules below. \
+If neither EODHD nor yfinance had a value and you also do not know it, rely \
+entirely on your own general knowledge for this capability, per the standard \
+"Data unavailable" rule — never leave a field blank without that marker.
+
+For the "management_governance" key, return the following, covering \
+approximately the last ten fiscal years (or since IPO if shorter) wherever you \
+can reliably determine or recall the data, oldest fiscal year first, using \
+exactly the same fiscal years and order as the verified revenue table in the \
+data block below.
+
+Only include a row for a metric you can reliably determine or recall, in at \
+least one of those years. A firm "No" (e.g. this company has never had a \
+dual-class structure) is a real, informative answer and should be kept, not \
+omitted — only omit a row if you have no reliable basis for any year at all. \
+If literally nothing about this company's governance is known to you, return \
+an empty "rows" list for that table — do not invent placeholder values.
+
+1. "ownership_governance_table": an object {"years": [...], "rows": \
+[{"metric": "...", "values": [...]}, ...]} where "years" is the same year list \
+described above and each row's "values" list has exactly one entry per year. \
+Candidate metrics (include only those you can reliably determine or recall — \
+never invent a figure): "Founder-Led (Yes/No)", "CEO Tenure (Years)", "CFO \
+Tenure (Years)", "Insider Ownership %", "Institutional Ownership %", "Net \
+Insider Buying/Selling", "Dual-Class Shares (Yes/No)", "Voting Structure". For \
+"Insider Ownership %" and "Institutional Ownership %", use the verified \
+current-year snapshot figure for the most recent year and your own recalled \
+knowledge (tilde-prefixed) for earlier years. "Voting Structure" should be a \
+short descriptor (e.g. "One share, one vote" or "Class A/B, founder \
+super-voting rights"), not a long explanation — save detail for the discussion.
+
+2. "guidance_execution_table": an object with the same shape as above. \
+Candidate metrics (include only those you can reliably recall — never invent a \
+figure): "Revenue Guidance (Company-Issued)", "Revenue Actual", "Revenue \
+Guidance Beat/Miss (%)", "Margin Guidance (Company-Issued)", "Margin Actual". \
+Populate from your own knowledge of this company's quarterly/annual guidance \
+history versus what it subsequently reported — tilde-prefix every value here, \
+since none of it is in the verified data block. If this company does not issue \
+formal forward guidance (common outside the US, and for many smaller or newer \
+companies), return an empty "rows" list for this table rather than guessing.
+
+3. "discussion": an array of exactly 4 objects, each {"question": "...", \
+"answer": "..."}, addressing IN THIS EXACT ORDER:
+   a. Does management think like owners?
+   b. Do incentives align with shareholders?
+   c. Are they building intrinsic value or maximizing short-term stock price?
+   d. Would you be comfortable owning this company for ten years with this \
+management team?
+Each answer should be 100-170 words and cite specific evidence from the tables \
+above plus qualitative evidence from 10-K/proxy disclosures, competitor \
+comparisons, and industry reports where relevant. Across the four answers, \
+collectively address whether long-term targets have been achieved, whether \
+strategy has been consistent over time, how well past M&A has been integrated, \
+whether capital allocation has shown discipline, and whether management has \
+been shareholder-friendly (buybacks/dividends vs. dilution, related-party \
+transactions, executive compensation structure) — you do not need one answer \
+per theme; weave each theme into whichever question it most naturally \
+supports. Discuss both sides honestly — do not present only a bullish case.
+
+4. "why_it_matters": a single 100-180 word paragraph explaining why management \
+and governance quality matters for whether this company can be trusted to \
+compound intrinsic value over a ten-year holding period. This is \
+evidence-gathering only: do NOT assign a score, grade, or rating of any kind.
 """,
 }
 
@@ -728,6 +823,103 @@ def compute_competitive_position_table(company: CompanyData, max_years: int = 10
     return rows
 
 
+def compute_governance_snapshot(company: CompanyData) -> dict:
+    """
+    Verified, current-year-only ownership/governance facts read directly from
+    `company` — populated by EODHD (primary; see eodhd_only_builder.py) and
+    backfilled from yfinance by fetch_governance_fallback() below when EODHD/
+    EDGAR did not have a value, per capability 6's explicit
+    "EODHD/EDGAR first, yfinance/LLM as fallback" requirement.
+
+    Unlike every other compute_*_table() function above, this is NOT a
+    chronological history — EODHD/EDGAR/yfinance only ever expose a current
+    snapshot of insider/institutional ownership, never a historical time
+    series, so it can't be built as a year-columns table. Returns only the
+    keys that have real data; never fabricates a value.
+    """
+    out = {}
+    if company.pct_insiders is not None:
+        out["pct_insiders"] = company.pct_insiders
+    if company.pct_institutions is not None:
+        out["pct_institutions"] = company.pct_institutions
+    if company.officers:
+        out["officers"] = company.officers
+    return out
+
+
+def fetch_governance_fallback(ticker: str) -> dict:
+    """
+    Best-effort yfinance fallback for ownership/governance data, used only to
+    fill in fields EODHD/EDGAR did not provide (capability 6's data-source
+    waterfall: EODHD -> EDGAR -> yfinance -> LLM general knowledge).
+
+    Never raises — any failure (bad ticker, no data, network error, missing
+    yfinance columns) is swallowed and results in an empty/partial dict, so a
+    fallback lookup can never break report generation. Caller is responsible
+    for fill-only merging the results onto an already-built CompanyData
+    object (never overwrite a value EODHD already populated).
+    """
+    out: dict = {}
+    try:
+        import yfinance as yf
+        yt = yf.Ticker(ticker)
+        info = yt.info or {}
+
+        pct_insiders = info.get("heldPercentInsiders")
+        if pct_insiders is not None:
+            out["pct_insiders"] = float(pct_insiders)
+
+        pct_institutions = info.get("heldPercentInstitutions")
+        if pct_institutions is not None:
+            out["pct_institutions"] = float(pct_institutions)
+
+        officers_raw = info.get("companyOfficers")
+        if officers_raw:
+            officers = []
+            for o in officers_raw[:10]:
+                name = o.get("name")
+                title = o.get("title")
+                if name:
+                    officers.append({"name": name, "title": title or ""})
+            if officers:
+                out["officers"] = officers
+    except Exception as e:
+        logger.warning(f"[growth_quality] yfinance governance fallback failed for {ticker}: {e}")
+        return {}
+
+    try:
+        insider_tx = yt.insider_transactions
+        if insider_tx is not None and not insider_tx.empty:
+            text_col = next(
+                (c for c in ("Transaction", "transactionText") if c in insider_tx.columns),
+                None,
+            )
+            shares_col = next(
+                (c for c in ("Shares", "shares") if c in insider_tx.columns),
+                None,
+            )
+            if text_col is not None:
+                recent = insider_tx.head(20)
+                purchases = recent[recent[text_col].astype(str).str.contains(
+                    "purchase|buy", case=False, na=False)]
+                sales = recent[recent[text_col].astype(str).str.contains(
+                    "sale|sell", case=False, na=False)]
+                n_buys, n_sells = len(purchases), len(sales)
+                if n_buys or n_sells:
+                    summary = (f"Last {len(recent)} insider transactions on record: "
+                               f"{n_buys} purchase(s), {n_sells} sale(s)")
+                    if shares_col is not None:
+                        net_shares = purchases[shares_col].astype(float).sum() \
+                            - sales[shares_col].astype(float).sum()
+                        summary += f"; net insider shares {'bought' if net_shares >= 0 else 'sold'}: " \
+                                   f"{abs(net_shares):,.0f}"
+                    out["insider_activity_summary"] = summary
+    except Exception as e:
+        logger.warning(f"[growth_quality] yfinance insider_transactions fallback failed for {ticker}: {e}")
+
+    return out
+
+
 def get_history_years(company: CompanyData, max_years: int = 10) -> list[int]:
     """Chronological (oldest-first) fiscal years used across every GQS table,
     so the Revenue table (Python-computed) and the LLM's own tables (Customers,
@@ -741,7 +933,7 @@ def _b(v) -> str:
     return f"{v/1000:.1f}B" if abs(v) >= 1000 else f"{v:.1f}M"
 
 
-def format_growth_financials(company: CompanyData) -> str:
+def format_growth_financials(company: CompanyData, insider_activity_summary: str = "") -> str:
     """Build the subject-company data block: identity + verified revenue history."""
     cur = company.currency or "USD"
     lines = []
@@ -862,6 +1054,25 @@ def format_growth_financials(company: CompanyData) -> str:
                    if r["gross_margin_3y_stdev"] is not None else "n/a")
             lines.append(f"  {r['year']:<12} {d_s:>16} {s_s:>19}")
 
+    gov = compute_governance_snapshot(company)
+    if gov or insider_activity_summary:
+        lines.append(f"\nVERIFIED OWNERSHIP & GOVERNANCE SNAPSHOT (current year only — "
+                      f"sourced from EODHD, or yfinance when EODHD/EDGAR had no value; "
+                      f"treat as ground truth for the current year; no historical time "
+                      f"series is available from these sources, so earlier years must "
+                      f"come from your own general knowledge, tilde-prefixed):")
+        if "pct_insiders" in gov:
+            lines.append(f"  Insider Ownership %: {gov['pct_insiders']*100:.1f}%")
+        if "pct_institutions" in gov:
+            lines.append(f"  Institutional Ownership %: {gov['pct_institutions']*100:.1f}%")
+        if gov.get("officers"):
+            names = "; ".join(
+                f"{o.get('name', 'n/a')} ({o.get('title', 'n/a')})" for o in gov["officers"][:8]
+            )
+            lines.append(f"  Named Officers: {names}")
+        if insider_activity_summary:
+            lines.append(f"  Recent Insider Activity: {insider_activity_summary}")
+
     return "\n".join(lines)
 
 
@@ -883,12 +1094,12 @@ def format_annual_report_excerpts(excerpt_text: str) -> str:
 
 
 def _growth_quality_prompt_parts(
-    subject: CompanyData, annual_report_excerpts: str = ""
+    subject: CompanyData, annual_report_excerpts: str = "", insider_activity_summary: str = ""
 ) -> tuple[str, str]:
     """Return (cacheable_prefix, dynamic_content) for a single-company GQS run."""
     dynamic = (
         f"SUBJECT COMPANY TICKER: {subject.ticker}\n\n"
-        + format_growth_financials(subject)
+        + format_growth_financials(subject, insider_activity_summary=insider_activity_summary)
         + format_annual_report_excerpts(annual_report_excerpts)
         + "\n\nAnalyze the capabilities listed above for this company and return the JSON."
     )

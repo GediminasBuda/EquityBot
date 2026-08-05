@@ -69,8 +69,13 @@ ADVERSARIAL_MODE = os.getenv("ADVERSARIAL_MODE", "false").lower() == "true"
 # Cap kept moderate (not the original 32000): a single un-timed-out blocking
 # call that runs many minutes can get the whole Streamlit Cloud worker killed
 # by the platform with no Python traceback at all (silent "app collapse").
+# Raised 16000 -> 64000 (2026-08-05): Growth Quality Score's main call now
+# requests max_tokens=24000, and 24000*2.5=60000 would otherwise have been
+# clipped by the old 16000 cap (same headroom fix as GEMINI/XAI above). Kimi
+# testing itself was abandoned (persistent 429 capacity errors — see
+# LLM_PROVIDER docs), so this is a latent-correctness fix, not a live-tested one.
 KIMI_MAX_TOKENS_MULTIPLIER = float(os.getenv("KIMI_MAX_TOKENS_MULTIPLIER", "2.5"))
-KIMI_MAX_TOKENS_CAP        = int(os.getenv("KIMI_MAX_TOKENS_CAP", "16000"))
+KIMI_MAX_TOKENS_CAP        = int(os.getenv("KIMI_MAX_TOKENS_CAP", "64000"))
 # Hard ceiling on how long a single Kimi API call may block. Without this the
 # openai SDK's own default (very long) lets a slow/hung "thinking" call run
 # until the hosting platform kills the process outright — this way it fails
@@ -94,11 +99,14 @@ KIMI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("KIMI_REQUEST_TIMEOUT_SECONDS", "24
 # emitted zero visible JSON. Cap raised to comfortably exceed 16000*2.0 and
 # 13000*2.0 both — do this every time a new large max_tokens caller is added.
 GEMINI_MAX_TOKENS_MULTIPLIER = float(os.getenv("GEMINI_MAX_TOKENS_MULTIPLIER", "2.0"))
-# Raised 36000 -> 44000 (2026-08-05): Growth Quality Score's main call reached
-# max_tokens=20000 with capability 5 (Competitive Position); 20000*2.0=40000
-# would otherwise have been clipped by the old 36000 cap — same collapse
-# class documented below, caught proactively this time before a live test.
-GEMINI_MAX_TOKENS_CAP        = int(os.getenv("GEMINI_MAX_TOKENS_CAP", "44000"))
+# Raised 36000 -> 44000 -> 56000 (2026-08-05): Growth Quality Score's main call
+# max_tokens grew 20000 -> 24000 when capability 6 (Management & Governance
+# Quality) was added; 24000*2.0=48000 would otherwise have been clipped by the
+# old 44000 cap — same collapse class documented below, caught proactively
+# again before a live test. Re-check this headroom every time growth_quality's
+# own max_tokens changes (see pages/report_generator.py's growth_quality
+# dispatch block).
+GEMINI_MAX_TOKENS_CAP        = int(os.getenv("GEMINI_MAX_TOKENS_CAP", "56000"))
 GEMINI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "300"))
 
 # Raising the token ceiling above (GEMINI_MAX_TOKENS_CAP) only gives the model
@@ -124,8 +132,11 @@ GEMINI_REASONING_EFFORT = os.getenv("GEMINI_REASONING_EFFORT", "low")
 # whether grok-4.5 accepts the OpenAI-style reasoning_effort param — the
 # _openai() retry loop already drops the param automatically if the API
 # rejects it, so setting this later (via env/secret) is safe either way.
+# Raised 36000 -> 56000 (2026-08-05): same headroom fix as GEMINI_MAX_TOKENS_CAP
+# above — Growth Quality Score's main call now requests max_tokens=24000, and
+# 24000*2.0=48000 would otherwise have been clipped by the old 36000 cap.
 XAI_MAX_TOKENS_MULTIPLIER = float(os.getenv("XAI_MAX_TOKENS_MULTIPLIER", "2.0"))
-XAI_MAX_TOKENS_CAP        = int(os.getenv("XAI_MAX_TOKENS_CAP", "36000"))
+XAI_MAX_TOKENS_CAP        = int(os.getenv("XAI_MAX_TOKENS_CAP", "56000"))
 XAI_REQUEST_TIMEOUT_SECONDS = int(os.getenv("XAI_REQUEST_TIMEOUT_SECONDS", "300"))
 XAI_REASONING_EFFORT = os.getenv("XAI_REASONING_EFFORT", "")
 

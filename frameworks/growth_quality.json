@@ -2,7 +2,7 @@
   "id": "growth_quality",
   "name": "Growth Quality Score",
   "icon": "🌱",
-  "description": "Evaluates whether a company exhibits the structural traits of a durable long-term compounder — not whether it is cheap today. Built in phases: Phase 1 (Build the Evidence) constructs historical data tables and discusses trends across up to 8 capabilities, starting with Demand Strength, using up to 10 years of history (or since IPO if shorter). Analysis is based on EODHD data; where data is absent, yfinance is used as a fallback source.",
+  "description": "Evaluates whether a company exhibits the structural traits of a durable long-term compounder — not whether it is cheap today. Built in phases: Phase 1 (Build the Evidence) constructs historical data tables and discusses trends across up to 6 capabilities, starting with Demand Strength, using up to 10 years of history (or since IPO if shorter). Analysis is based on EODHD data; where data is absent, yfinance is used as a fallback source.",
   "is_builtin": true,
   "base_id": null,
   "version": 1,

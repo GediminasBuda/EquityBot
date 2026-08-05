@@ -3769,7 +3769,7 @@ if generate_clicked and ticker_input:
                 importlib.reload(_gqmodel)
                 from models.growth_quality import (
                     _growth_quality_prompt_parts, _validate_growth_quality,
-                    SYSTEM_PROMPT as SYS, GQ_CAPABILITY_META,
+                    SYSTEM_PROMPT as SYS, GQ_CAPABILITY_META, fetch_governance_fallback,
                 )
 
                 _prog.progress(25, text="🌱  Fetching EODHD-only data…")
@@ -3819,13 +3819,35 @@ if generate_clicked and ticker_input:
                             "will use whatever data is otherwise available."
                         )
 
+                # Capability 6 (Management & Governance Quality) data waterfall:
+                # EODHD/EDGAR first (already populated on `company` above), then
+                # yfinance fill-only for whatever EODHD/EDGAR did not provide —
+                # never overwrites a value already present, per the standard
+                # fill-only merge semantics used throughout this codebase.
+                _gq_insider_activity_summary = ""
+                try:
+                    _gq_gov_fallback = fetch_governance_fallback(ticker_input)
+                    if _gq_gov_fallback:
+                        if company.pct_insiders is None and "pct_insiders" in _gq_gov_fallback:
+                            company.pct_insiders = _gq_gov_fallback["pct_insiders"]
+                        if company.pct_institutions is None and "pct_institutions" in _gq_gov_fallback:
+                            company.pct_institutions = _gq_gov_fallback["pct_institutions"]
+                        if not company.officers and _gq_gov_fallback.get("officers"):
+                            company.officers = _gq_gov_fallback["officers"]
+                        _gq_insider_activity_summary = _gq_gov_fallback.get(
+                            "insider_activity_summary", ""
+                        )
+                except Exception as _gq_gov_err:
+                    logger.warning(f"[growth_quality] yfinance governance fallback failed: {_gq_gov_err}")
+
                 cacheable_pfx, dynamic_prompt = _growth_quality_prompt_parts(
-                    company, annual_report_excerpts
+                    company, annual_report_excerpts,
+                    insider_activity_summary=_gq_insider_activity_summary,
                 )
                 _prog.progress(55, text="🤖  Building growth-quality evidence base…")
                 st.write(f"🤖  Analyzing {len(GQ_CAPABILITY_META)} capabilities "
                          f"(Phase 1 — Build the Evidence)…")
-                analysis = llm.generate_json(dynamic_prompt, SYS, max_tokens=20000,
+                analysis = llm.generate_json(dynamic_prompt, SYS, max_tokens=24000,
                                              cacheable_prefix=cacheable_pfx)
                 analysis = _validate_growth_quality(analysis, company)
                 st.write("✓  Evidence base built — no scoring in Phase 1")
