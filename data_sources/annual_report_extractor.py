@@ -68,6 +68,15 @@ KEYWORDS: list[str] = [
     "sales and marketing", "general and administrative", "research and development",
     "operating expense", "fixed cost", "variable cost", "cost discipline",
     "expense leverage", "scale efficienc", "margin expansion",
+    # Capability 5 (Competitive Position) — moat evidence. "market share" /
+    # "competitive advantage" / "moat" catch the "Competition" risk-factor
+    # and MD&A sections most filers use to discuss positioning; "switching
+    # cost" and "retention" stems catch both consumer and enterprise
+    # phrasing without needing separate B2B/B2C variants.
+    "market share", "competitive advantage", "moat", "switching cost",
+    "customer retention", "renewal rate", "churn", "logo retention",
+    "gross revenue retention", "ecosystem", "partner network", "developer",
+    "brand recognition", "brand loyalty", "pricing power", "price increase",
 ]
 
 
