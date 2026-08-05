@@ -101,6 +101,19 @@ GQ_CAPABILITY_META = {
             "capital_deployment_table": "Capital Deployment (SBC, Acquisitions)",
         },
     },
+    "competitive_position": {
+        "number": 5,
+        "title": "Competitive Position",
+        "question": "Is the competitive moat strengthening?",
+        "sub_questions": [
+            "What evidence suggests a moat?",
+            "What evidence weakens the moat?",
+        ],
+        "tables": ["moat_table"],
+        "table_labels": {
+            "moat_table": "Moat Indicators",
+        },
+    },
 }
 
 GQ_CAPABILITY_ORDER = list(GQ_CAPABILITY_META.keys())
@@ -345,6 +358,61 @@ a bullish case.
 above supports — or contradicts — the case that management allocates capital \
 intelligently on behalf of shareholders. This is evidence-gathering only: do NOT \
 assign a score, grade, or rating of any kind.
+""",
+    "competitive_position": """\
+CAPABILITY 5 — COMPETITIVE POSITION
+Question: Is the competitive moat strengthening?
+
+A verified Gross Margin Stability table (year-over-year gross margin change and \
+3-year rolling gross margin volatility, computed from the company's own reported \
+financials) is already provided to you in the data block below — treat those \
+figures as ground truth, do not recompute or contradict them, and do not repeat \
+them in your JSON response. A flat-to-widening margin over time is evidence of \
+pricing power / a durable moat; a narrowing or volatile margin is evidence of \
+competitive pressure.
+
+For the "competitive_position" key, return the following, covering approximately \
+the last ten fiscal years (or since IPO if shorter) wherever the company plausibly \
+discloses or you can reliably estimate the data, oldest fiscal year first, using \
+exactly the same fiscal years and order as the verified revenue table in the data \
+block below.
+
+Only include a row for a metric the company actually discloses, or that you can \
+reliably estimate from your own general knowledge (10-K disclosures, competitor \
+comparisons, industry/analyst reports), in at least one of those years. If a \
+metric is never available at all across the whole history, OMIT that row \
+entirely — do not include a row filled entirely with "Data unavailable". If \
+literally none of this table's metrics are available for this company, return an \
+empty "rows" list — do not invent placeholder rows.
+
+1. "moat_table": an object {"years": [...], "rows": [{"metric": "...", \
+"values": [...]}, ...]} where "years" is the same year list described above and \
+each row's "values" list has exactly one entry per year. Candidate metrics \
+(include only those disclosed or reliably estimable — never invent a figure): \
+"Market Share (%)", "Pricing / Average Selling Price Trend", "Customer Retention \
+Rate", "Net Revenue Retention (NRR)", "Gross Revenue Retention (GRR)", "Churn \
+Rate", "Ecosystem Partnerships (count)", "Developer / Platform Ecosystem Growth". \
+Brand Strength and Switching Costs are rarely disclosed as a time-series figure — \
+do NOT force them into this table; address them narratively in the discussion \
+and why_it_matters text instead, citing specific qualitative evidence (10-K \
+disclosures, competitor comparisons, industry reports).
+
+2. "discussion": an array of exactly 2 objects, each {"question": "...", \
+"answer": "..."}, addressing IN THIS EXACT ORDER:
+   a. What evidence suggests a moat?
+   b. What evidence weakens the moat?
+Each answer should be 120-200 words, cite specific numbers from the data \
+provided plus qualitative evidence from 10-K disclosures, competitor \
+comparisons, and industry reports where relevant (this includes Gross Margin \
+Stability, Pricing, Market Share, Customer Retention, NRR, Churn, Ecosystem \
+Expansion, Partnerships, Developer Growth, Brand Strength, and Switching Costs \
+— cover whichever of these are actually evidenced for this company), and \
+discuss both sides honestly — do not present only a bullish case.
+
+3. "why_it_matters": a single 100-180 word paragraph explaining how the evidence \
+above supports — or contradicts — a strengthening competitive moat, and why moat \
+durability matters for this company's prospects as a long-term compounder. This \
+is evidence-gathering only: do NOT assign a score, grade, or rating of any kind.
 """,
 }
 
@@ -620,6 +688,46 @@ def compute_capital_allocation_table(company: CompanyData, max_years: int = 10) 
     return rows
 
 
+def compute_competitive_position_table(company: CompanyData, max_years: int = 10) -> list[dict]:
+    """
+    Return a chronological (oldest-first) list of
+    {"year", "gross_margin_delta_yoy", "gross_margin_3y_stdev"} dicts,
+    operationalizing "Gross Margin Stability" as verified ground truth for
+    capability 5 (Competitive Position). A flat-to-widening margin over time
+    is classic evidence of pricing power / a durable moat; a narrowing or
+    volatile margin signals competitive pressure. Feeds capability 5 the same
+    way compute_capital_allocation_table() feeds capability 4.
+    """
+    years = get_history_years(company, max_years=max_years)
+    margins = []
+    for y in years:
+        af = company.annual_financials.get(y)
+        margins.append(af.gross_margin if af else None)
+
+    rows = []
+    for i, y in enumerate(years):
+        gm = margins[i]
+
+        delta = None
+        if i > 0 and gm is not None and margins[i - 1] is not None:
+            delta = gm - margins[i - 1]
+
+        stdev3 = None
+        if i >= 2:
+            window = [m for m in margins[i - 2:i + 1] if m is not None]
+            if len(window) == 3:
+                mean = sum(window) / 3
+                var = sum((m - mean) ** 2 for m in window) / 3
+                stdev3 = var ** 0.5
+
+        rows.append({
+            "year": y,
+            "gross_margin_delta_yoy": delta,
+            "gross_margin_3y_stdev": stdev3,
+        })
+    return rows
+
+
 def get_history_years(company: CompanyData, max_years: int = 10) -> list[int]:
     """Chronological (oldest-first) fiscal years used across every GQS table,
     so the Revenue table (Python-computed) and the LLM's own tables (Customers,
@@ -735,6 +843,24 @@ def format_growth_financials(company: CompanyData) -> str:
             cash_s = _b(r["cash"]) if r["cash"] is not None else "n/a"
             lines.append(f"  {r['year']:<12} {rd_s:>10} {capex_s:>10} {shares_s:>10} "
                          f"{dil_s:>9} {roic_s:>7} {fcfc_s:>10} {cash_s:>10}")
+
+    moat_rows = compute_competitive_position_table(company)
+    if moat_rows and any(
+        r["gross_margin_delta_yoy"] is not None or r["gross_margin_3y_stdev"] is not None
+        for r in moat_rows
+    ):
+        lines.append(f"\nVERIFIED COMPETITIVE POSITION HISTORY — GROSS MARGIN STABILITY "
+                      f"(oldest to newest, computed from reported financials — treat as "
+                      f"ground truth):")
+        header = f"  {'Fiscal Year':<12} {'GM Δ YoY (ppts)':>16} {'GM 3Y Stdev (ppts)':>19}"
+        lines.append(header)
+        lines.append("  " + "-" * len(header))
+        for r in moat_rows:
+            d_s = (f"{r['gross_margin_delta_yoy']*100:+.1f}"
+                   if r["gross_margin_delta_yoy"] is not None else "n/a")
+            s_s = (f"{r['gross_margin_3y_stdev']*100:.1f}"
+                   if r["gross_margin_3y_stdev"] is not None else "n/a")
+            lines.append(f"  {r['year']:<12} {d_s:>16} {s_s:>19}")
 
     return "\n".join(lines)
 

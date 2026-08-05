@@ -38,6 +38,7 @@ from models.growth_quality import (
     GQ_CAPABILITY_META, GQ_CAPABILITY_ORDER, GQ_CAPABILITIES_TOTAL,
     compute_revenue_table, compute_profitability_table,
     compute_operating_leverage_table, compute_capital_allocation_table,
+    compute_competitive_position_table,
 )
 
 logger = logging.getLogger(__name__)
@@ -388,6 +389,31 @@ def _capital_allocation_table(company: CompanyData, styles: dict) -> Table | Non
     return _metric_rows_table(years, metric_rows, styles)
 
 
+def _competitive_position_table(company: CompanyData, styles: dict) -> Table | None:
+    """
+    Verified Gross Margin Stability (YoY Δ + 3Y rolling stdev) table,
+    computed in Python from real reported financials (never LLM output) —
+    feeds Capability 5 (Competitive Position) the same way
+    _capital_allocation_table() feeds Capability 4 (Capital Allocation).
+    """
+    rows_data = compute_competitive_position_table(company)
+    if not rows_data:
+        return None
+
+    candidates = [
+        ("Gross Margin Δ YoY", [_pct(r["gross_margin_delta_yoy"]) for r in rows_data],
+         any(r["gross_margin_delta_yoy"] is not None for r in rows_data)),
+        ("Gross Margin 3Y Stdev", [_pct(r["gross_margin_3y_stdev"]) for r in rows_data],
+         any(r["gross_margin_3y_stdev"] is not None for r in rows_data)),
+    ]
+    metric_rows = [(label, values) for label, values, has_data in candidates if has_data]
+    if not metric_rows:
+        return None
+
+    years = [str(r["year"]) for r in rows_data]
+    return _metric_rows_table(years, metric_rows, styles)
+
+
 # ── Generic LLM-built table renderer (customers_table / momentum_table / …) ─
 
 def _render_generic_table(table: dict, styles: dict) -> Table | None:
@@ -518,6 +544,9 @@ class GrowthQualityPDFGenerator:
         elif cap_id == "capital_allocation":
             verified_table = _capital_allocation_table(subject, styles)
             verified_label = "Capital Allocation (verified, computed from reported financials)"
+        elif cap_id == "competitive_position":
+            verified_table = _competitive_position_table(subject, styles)
+            verified_label = "Competitive Position — Gross Margin Stability (verified, computed from reported financials)"
         if verified_table:
             flow.append(Paragraph(verified_label, styles["table_label"]))
             flow.append(Spacer(1, 1*mm))
