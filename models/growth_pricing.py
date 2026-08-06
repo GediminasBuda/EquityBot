@@ -455,19 +455,19 @@ def compute_peer_scores(rows: list[dict]) -> list[int]:
 def compute_valuation_verdict(subject: CompanyData) -> dict:
     """Simple rules-based valuation verdict — Attractive / Moderate /
     Expensive — from the subject's own most-recent-data snapshot (Sales 3Y
-    CAGR, EV/Gross Profit, Rule of 40 with EBITDA Margin):
+    CAGR, EV/Gross Profit, Rule of 40 with Net Margin):
 
     Attractive: Sales 3Y CAGR > 15% AND EV/Gross Profit < 15x
-                AND Rule of 40 (+EBITDA Margin) > 40%
+                AND Rule of 40 (+Net Margin) > 40%
     Expensive:  Sales 3Y CAGR > 15% AND EV/Gross Profit > 25x
-                AND Rule of 40 (+EBITDA Margin) > 40%
+                AND Rule of 40 (+Net Margin) > 40%
     Moderate:   everything else (including insufficient data to evaluate)
 
     This is a deterministic Python computation, not an LLM judgement."""
     row = compute_peer_snapshot_row(subject, is_subject=True)
     cagr = row["sales_cagr3"]
     ev_gp = row["ev_gross_profit"]
-    r40 = row["rule40_ebitda"]
+    r40 = row["rule40_net"]
 
     verdict = "Moderate"
     if cagr is not None and ev_gp is not None and r40 is not None:
@@ -480,7 +480,7 @@ def compute_valuation_verdict(subject: CompanyData) -> dict:
         "verdict": verdict,
         "sales_cagr3": cagr,
         "ev_gross_profit": ev_gp,
-        "rule40_ebitda": r40,
+        "rule40_net": r40,
     }
 
 

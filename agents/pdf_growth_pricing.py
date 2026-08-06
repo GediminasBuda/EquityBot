@@ -530,7 +530,7 @@ def _verdict_banner(subject: CompanyData, styles: dict) -> list:
     Moderate (amber) / Expensive (red) — computed deterministically in
     Python by models.growth_pricing.compute_valuation_verdict from the
     subject's own Sales 3Y CAGR, EV/Gross Profit, and Rule of 40
-    (+EBITDA Margin). Rendered first in the report, ahead of every other
+    (+Net Margin). Rendered first in the report, ahead of every other
     section, per design requirement."""
     v = compute_valuation_verdict(subject)
     verdict = v["verdict"]
@@ -551,7 +551,7 @@ def _verdict_banner(subject: CompanyData, styles: dict) -> list:
         Paragraph(
             f"Sales 3Y CAGR {_pct(v['sales_cagr3'])}  ·  "
             f"EV / Gross Profit {_x(v['ev_gross_profit'])}  ·  "
-            f"Rule of 40 (+ EBITDA Margin) {_pct(v['rule40_ebitda'])}",
+            f"Rule of 40 (+ Net Margin) {_pct(v['rule40_net'])}",
             detail_style,
         ),
     ]
