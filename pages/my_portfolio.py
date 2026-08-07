@@ -755,11 +755,12 @@ def _fetch_ir_announcements(company_name: str, ticker: str, website: str = "",
                 raw_items = scrape_recent_announcements(ir_url, limit=max(min_items * 2, 10))
 
         if raw_items:
-            return LLMClient().refine_scraped_announcements(
+            result = LLMClient().refine_scraped_announcements(
                 raw_items, company_name, ticker, min_items=min_items
             )
-
-        return LLMClient().find_ir_announcements(company_name, ticker, min_items=min_items)
+        else:
+            result = LLMClient().find_ir_announcements(company_name, ticker, min_items=min_items)
+        return result[:min_items]
     except Exception:
         return []
 

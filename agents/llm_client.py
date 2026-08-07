@@ -602,11 +602,11 @@ class LLMClient:
         The model is constrained to select from (and never modify) the
         supplied `link` values, so it cannot fabricate a URL here.
 
-        Returns raw_items unchanged (truncated to min_items*2) if the LLM
-        call fails or returns nothing usable — a noisy-but-real list beats
-        an empty one.
+        Returns raw_items truncated to min_items if the LLM call fails or
+        returns nothing usable — a shorter-but-real list beats an empty
+        one, and the caller only ever wants min_items shown regardless.
         """
-        fallback = raw_items[: max(min_items * 2, min_items)]
+        fallback = raw_items[:min_items]
         if not raw_items:
             return []
         try:
@@ -616,17 +616,25 @@ class LLMClient:
             )
             prompt = (
                 f"Below are links scraped directly off {company_name} ({ticker})'s own "
-                f"Investor Relations news page. Some are genuine press releases / ad hoc "
-                f"announcements / earnings releases; others are site navigation, footer "
-                f"links, or unrelated pages that the scraper couldn't filter out.\n\n"
+                f"Investor Relations news page. Some are genuine investor-relations "
+                f"disclosures — ad hoc/regulatory announcements, earnings releases, "
+                f"financial results, dividend notices, M&A or capital-markets news; "
+                f"others are site navigation, footer links, or GENERAL corporate/"
+                f"product/marketing news that the scraper couldn't filter out just "
+                f"from the page it sat on.\n\n"
                 f"{candidates_block}\n\n"
-                f"Select the {min_items} GENUINE, most recent announcements only. "
-                f"Use the numbered list's own order as your primary signal for recency "
-                f"(these were scraped in the page's own display order, newest first) — "
-                f"only reorder using the given dates when they clearly contradict that. "
-                f"You MUST reuse the exact \"link\" and \"date\" values given for each "
-                f"item you select — never alter or invent a link. You may lightly clean "
-                f"up a title's whitespace but keep it recognisably the same headline.\n\n"
+                f"Select the {min_items} GENUINE, most recent INVESTOR RELATIONS "
+                f"announcements only — explicitly EXCLUDE items that are just general "
+                f"product launches, marketing, or company-culture news even if they "
+                f"appear on the same page. Use the numbered list's own order as your "
+                f"primary signal for recency (these were scraped in the page's own "
+                f"display order, newest first) — only reorder using the given dates "
+                f"when they clearly contradict that. You MUST reuse the exact "
+                f"\"link\" and \"date\" values given for each item you select — never "
+                f"alter or invent a link. You may lightly clean up a title's "
+                f"whitespace but keep it recognisably the same headline. If fewer "
+                f"than {min_items} items are genuinely investor-relations content, "
+                f"return only those — do not pad with non-IR items.\n\n"
                 f"Respond with ONLY a JSON array, no markdown, no commentary:\n"
                 f'[{{"title": "...", "link": "...", "date": "..."}}, ...]'
             )

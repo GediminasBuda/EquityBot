@@ -56,6 +56,11 @@ _CANDIDATE_PATHS = [
     "/en/ir/news/", "/ir/news/", "/en/ir/news", "/ir/news",
     "/en/investor-relations/news/", "/investor-relations/news/",
     "/en/investors/news/", "/investors/news/",
+    "/en/investor-relations/press-releases/", "/investor-relations/press-releases/",
+    "/en/investors/press-releases/", "/investors/press-releases/",
+    "/en/investors/news-and-events/", "/investors/news-and-events/",
+    "/en/investor-relations/news-and-events/", "/investor-relations/news-and-events/",
+    "/en/ir/press-releases/", "/ir/press-releases/",
     "/en/ir/", "/ir/", "/en/investor-relations/", "/investor-relations/",
     "/en/investors/", "/investors/",
     "/en/news/", "/news/", "/en/newsroom/", "/newsroom/",
@@ -138,11 +143,17 @@ def find_ir_news_page(website: str) -> Optional[str]:
     """
     Locate the company's IR "News"/"Announcements" listing page.
 
-    Strategy: fetch the homepage, look for a nav/footer link whose anchor
-    text or href combines an IR-ish word with a news-ish word (this is how
-    real site navigation is structured, so it's far more reliable than
-    guessing). Falls back to trying a fixed list of common path patterns
-    directly. Returns None if nothing plausible is found.
+    Strategy: try the fixed list of common IR-news path patterns FIRST —
+    these are precise, unambiguous URLs (the path itself literally
+    contains "ir"/"investor"), so a 200 response here is far more
+    trustworthy than a nav-link guess that might land on a generic,
+    non-IR-scoped "Newsroom"/"News" page blending product/marketing news
+    in with real investor disclosures. Only if none of those patterns
+    resolve does this fall back to scanning the homepage nav for a link
+    whose own href (not just its visible text) carries an IR-ish word
+    combined with a news-ish word. Returns None if nothing plausible is
+    found — the caller is expected to fall back to a different source
+    rather than accept a low-confidence match.
     """
     if not website or not _HAS_BS4:
         return None
@@ -154,29 +165,6 @@ def find_ir_news_page(website: str) -> Optional[str]:
         return None
     base = f"{parsed.scheme}://{parsed.netloc}"
 
-    try:
-        resp = requests.get(base + "/", headers=_HEADERS, timeout=_TIMEOUT)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "lxml")
-        best: Optional[str] = None
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            text = a.get_text(strip=True).lower()
-            haystack = f"{href.lower()} {text}"
-            if _IR_RE.search(haystack) and _NEWS_RE.search(haystack):
-                candidate = urljoin(base, href)
-                if urlparse(candidate).netloc == parsed.netloc:
-                    # Prefer links that mention both "ir"/"investor" AND
-                    # "news" together tightly (e.g. "/ir/news/") over a
-                    # generic top-level "News" link.
-                    if _IR_RE.search(href.lower()):
-                        return candidate
-                    best = best or candidate
-        if best:
-            return best
-    except Exception as e:
-        logger.info(f"[ir_news_scraper] homepage fetch failed for {base}: {e}")
-
     for path in _CANDIDATE_PATHS:
         try:
             resp = requests.get(base + path, headers=_HEADERS, timeout=_TIMEOUT, allow_redirects=True)
@@ -184,7 +172,54 @@ def find_ir_news_page(website: str) -> Optional[str]:
                 return resp.url
         except Exception:
             continue
+
+    try:
+        resp = requests.get(base + "/", headers=_HEADERS, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml")
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            text = a.get_text(strip=True).lower()
+            haystack = f"{href.lower()} {text}"
+            # Require the IR word IN THE HREF ITSELF (not just the anchor
+            # text) — a loose text-only match (e.g. a nav item worded
+            # "Investors & News") too often points at a page that blends
+            # general corporate news in with real IR disclosures.
+            if _IR_RE.search(href.lower()) and _NEWS_RE.search(haystack):
+                candidate = urljoin(base, href)
+                if urlparse(candidate).netloc == parsed.netloc:
+                    return candidate
+    except Exception as e:
+        logger.info(f"[ir_news_scraper] homepage fetch failed for {base}: {e}")
+
     return None
+
+
+def _ir_scope_prefix(ir_url: str) -> str:
+    """
+    Derive the URL-path prefix that a genuine IR item link must fall
+    under, so the scraper doesn't pick up site-wide nav/footer links to
+    unrelated pages (Products, About, Careers, general Newsroom, etc.)
+    that happen to sit on the same IR listing page.
+
+    Prefers the path up to and including the deepest "ir"/"investor(s)"
+    segment (e.g. "/en/ir/news/" -> "/en/ir/"). If the resolved page has
+    no such segment in its own path (only possible via the homepage
+    nav-scan fallback in find_ir_news_page), scope to that page's own
+    directory only — stricter, since there's no URL evidence this page
+    is IR-specific rather than a general news page.
+    """
+    path = urlparse(ir_url).path
+    segments = [s for s in path.split("/") if s]
+    ir_idx = None
+    for i, seg in enumerate(segments):
+        if _IR_RE.search(seg):
+            ir_idx = i
+    if ir_idx is not None:
+        return "/" + "/".join(segments[: ir_idx + 1]) + "/"
+    if path.endswith("/"):
+        return path
+    return path.rsplit("/", 1)[0] + "/"
 
 
 def scrape_recent_announcements(ir_url: str, limit: int = 8) -> list[dict]:
@@ -210,6 +245,7 @@ def scrape_recent_announcements(ir_url: str, limit: int = 8) -> list[dict]:
     except Exception:
         soup = BeautifulSoup(resp.text, "html.parser")
 
+    scope = _ir_scope_prefix(ir_url)
     seen_links: set[str] = set()
     dated: list[tuple[date, dict]] = []
     undated: list[dict] = []
@@ -224,6 +260,11 @@ def scrape_recent_announcements(ir_url: str, limit: int = 8) -> list[dict]:
 
         link = urljoin(ir_url, href)
         if link in seen_links or link.rstrip("/") == ir_url.rstrip("/"):
+            continue
+        # Only keep links nested under the IR section itself — excludes
+        # site-wide nav/footer links to unrelated pages (Products, About,
+        # Careers, a general Newsroom, etc.) that sit on the same page.
+        if not urlparse(link).path.startswith(scope):
             continue
 
         # Look for a date in the anchor text itself, then widen to the
