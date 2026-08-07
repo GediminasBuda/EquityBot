@@ -585,6 +585,75 @@ class LLMClient:
             out.append({"title": title, "link": link, "date": str(it.get("date") or "").strip()})
         return out
 
+    def refine_scraped_announcements(
+        self, raw_items: list[dict], company_name: str, ticker: str, min_items: int = 5,
+    ) -> list[dict]:
+        """
+        Filter/rank a list of candidate {title, link, date} items already
+        scraped directly off a company's own IR news page (see
+        data_sources/ir_news_scraper.py) down to the genuine, most recent
+        announcements — dropping nav/footer noise the HTML-heuristic scraper
+        can't always distinguish from real articles (e.g. "Contact Us",
+        social-media links, unrelated same-domain pages).
+
+        Unlike find_ir_announcements(), this works with EVERY provider —
+        it's plain reasoning over data already fetched by this app, not a
+        live web-search tool, so no native browsing capability is required.
+        The model is constrained to select from (and never modify) the
+        supplied `link` values, so it cannot fabricate a URL here.
+
+        Returns raw_items unchanged (truncated to min_items*2) if the LLM
+        call fails or returns nothing usable — a noisy-but-real list beats
+        an empty one.
+        """
+        fallback = raw_items[: max(min_items * 2, min_items)]
+        if not raw_items:
+            return []
+        try:
+            candidates_block = "\n".join(
+                f'{i}. date="{it.get("date") or "unknown"}" title="{it.get("title", "")}" link="{it.get("link", "")}"'
+                for i, it in enumerate(raw_items)
+            )
+            prompt = (
+                f"Below are links scraped directly off {company_name} ({ticker})'s own "
+                f"Investor Relations news page. Some are genuine press releases / ad hoc "
+                f"announcements / earnings releases; others are site navigation, footer "
+                f"links, or unrelated pages that the scraper couldn't filter out.\n\n"
+                f"{candidates_block}\n\n"
+                f"Select the {min_items} GENUINE, most recent announcements only. "
+                f"Use the numbered list's own order as your primary signal for recency "
+                f"(these were scraped in the page's own display order, newest first) — "
+                f"only reorder using the given dates when they clearly contradict that. "
+                f"You MUST reuse the exact \"link\" and \"date\" values given for each "
+                f"item you select — never alter or invent a link. You may lightly clean "
+                f"up a title's whitespace but keep it recognisably the same headline.\n\n"
+                f"Respond with ONLY a JSON array, no markdown, no commentary:\n"
+                f'[{{"title": "...", "link": "...", "date": "..."}}, ...]'
+            )
+            raw = self.generate(prompt, max_tokens=1200, temperature=0.0)
+            cleaned = _strip_code_fences(raw)
+            start, end = cleaned.find('['), cleaned.rfind(']')
+            if start == -1 or end == -1 or end <= start:
+                return fallback
+            items = json.loads(cleaned[start:end + 1], strict=False)
+            if not isinstance(items, list):
+                return fallback
+
+            valid_links = {it.get("link") for it in raw_items}
+            out = []
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                link = str(it.get("link") or "").strip()
+                title = str(it.get("title") or "").strip()
+                if not link or not title or link not in valid_links:
+                    continue
+                out.append({"title": title, "link": link, "date": str(it.get("date") or "").strip()})
+            return out[:min_items] if out else fallback
+        except Exception as e:
+            logger.warning(f"[LLMClient] refine_scraped_announcements failed for {ticker}: {e}")
+            return fallback
+
     def check_configured(self) -> tuple[bool, str]:
         """
         Returns (is_ready, message) to show users in the UI.

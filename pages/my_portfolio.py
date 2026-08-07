@@ -34,6 +34,7 @@ from streamlit_searchbox import st_searchbox
 import config as _config
 from config import REQUEST_HEADERS
 from agents.llm_client import LLMClient
+from data_sources.ir_news_scraper import find_ir_news_page, scrape_recent_announcements
 # Read EODHD_API_KEY at runtime (not module-level) so secrets injected by
 # app.py are always visible, even if config was imported early by Streamlit.
 EODHD_API_KEY = os.environ.get("EODHD_API_KEY", "") or _config.EODHD_API_KEY
@@ -315,6 +316,7 @@ def _snapshot_yf(yf_ticker: str) -> dict:
         "currency": "JPY", "sector": "",
         "price": None, "market_cap": None,
         "pe": None, "roe": None, "ebit_margin": None, "ytd_pct": None,
+        "website": None,
     }
     try:
         import yfinance as _yf_pf
@@ -359,6 +361,7 @@ def _snapshot_yf(yf_ticker: str) -> dict:
         q_rev_growth = _to_float(info.get("revenueGrowth"))
         ev           = _to_float(info.get("enterpriseValue"))
         ev_ebitda    = _to_float(info.get("enterpriseToEbitda"))
+        website      = info.get("website") or None
 
         return {
             "eodhd_ticker": yf_ticker,
@@ -367,7 +370,7 @@ def _snapshot_yf(yf_ticker: str) -> dict:
             "pe": pe, "roe": roe, "ebit_margin": ebit_mg, "ytd_pct": ytd_pct,
             "week_52_high": week_52_high, "week_52_low": week_52_low,
             "forward_pe": forward_pe, "q_rev_growth": q_rev_growth,
-            "ev": ev, "ev_ebitda": ev_ebitda,
+            "ev": ev, "ev_ebitda": ev_ebitda, "website": website,
         }
     except Exception:
         return _empty
@@ -506,6 +509,8 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
                         pass
                     break
 
+    website = general.get("WebURL") or None
+
     return {
         "eodhd_ticker": eodhd_ticker,
         "name":         name,
@@ -524,6 +529,7 @@ def _fetch_snapshot(yf_ticker: str) -> dict:
         "q_rev_growth": q_rev_growth,
         "ev":           ev,
         "ev_ebitda":    ev_ebitda,
+        "website":      website,
     }
 
 
@@ -712,19 +718,47 @@ def _fetch_news(yf_ticker: str, limit: int = 15) -> list[dict]:
     return data
 
 
-# ── Investor Relations / Ad Hoc announcements (cached, LLM web search) ─────────
+# ── Investor Relations / Ad Hoc announcements (cached) ──────────────────────────
 @st.cache_data(ttl=21600, show_spinner=False)
-def _fetch_ir_announcements(company_name: str, ticker: str, min_items: int = 5) -> list[dict]:
+def _fetch_ir_announcements(company_name: str, ticker: str, website: str = "",
+                             min_items: int = 5) -> list[dict]:
     """
-    LLM-driven web search for the company's own Investor Relations press
-    releases / ad hoc announcements page — a supplement to the EODHD/
-    yfinance news feeds above, which are often too stale to be useful.
-    Cached 6h (LLM web search is far more expensive per call than the plain
-    news endpoints, and an IR page doesn't turn over within minutes anyway).
-    Returns [] silently (never raises) if the active LLM_PROVIDER has no
-    native web-search tool, or if nothing verifiable was found.
+    Most recent items straight off the company's own Investor Relations
+    news/ad-hoc-announcements page — a supplement to the EODHD/yfinance
+    news feeds above, which are both third-party aggregators that can lag
+    the company's own site by days or weeks for thinly-covered tickers.
+
+    Primary path (works with ANY LLM_PROVIDER, or none at all): scrape the
+    company's own site directly —
+      1. find_ir_news_page(website) locates the IR news listing page from
+         the company's homepage nav.
+      2. scrape_recent_announcements() parses that page's real HTML for its
+         newest items (real links, real dates — not model recall).
+      3. LLMClient.refine_scraped_announcements() (any provider) filters the
+         scraped candidates down to genuine announcements only; if that
+         call fails for any reason the raw scraped list is used as-is.
+
+    Fallback (only if no website is on file, or the scrape found nothing):
+    LLMClient.find_ir_announcements() — native web search, Claude/OpenAI
+    only, since other providers can't verify a URL is real before
+    returning it.
+
+    Cached 6h — an IR page doesn't turn over minute-to-minute, and the
+    refine step is an LLM call best not repeated on every rerun.
+    Never raises; returns [] on total failure.
     """
     try:
+        raw_items: list[dict] = []
+        if website:
+            ir_url = find_ir_news_page(website)
+            if ir_url:
+                raw_items = scrape_recent_announcements(ir_url, limit=max(min_items * 2, 10))
+
+        if raw_items:
+            return LLMClient().refine_scraped_announcements(
+                raw_items, company_name, ticker, min_items=min_items
+            )
+
         return LLMClient().find_ir_announcements(company_name, ticker, min_items=min_items)
     except Exception:
         return []
@@ -2431,7 +2465,9 @@ else:
 
                 # News
                 with st.expander("📰 Latest news", expanded=False):
-                    ir_items = _fetch_ir_announcements(name_full, ticker, min_items=5)
+                    ir_items = _fetch_ir_announcements(
+                        name_full, ticker, website=snap.get("website") or "", min_items=5,
+                    )
                     if ir_items:
                         st.markdown(
                             "<div style='color:#FFA028;font-family:monospace;"
