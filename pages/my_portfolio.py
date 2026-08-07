@@ -33,6 +33,7 @@ from streamlit_searchbox import st_searchbox
 
 import config as _config
 from config import REQUEST_HEADERS
+from agents.llm_client import LLMClient
 # Read EODHD_API_KEY at runtime (not module-level) so secrets injected by
 # app.py are always visible, even if config was imported early by Streamlit.
 EODHD_API_KEY = os.environ.get("EODHD_API_KEY", "") or _config.EODHD_API_KEY
@@ -709,6 +710,24 @@ def _fetch_news(yf_ticker: str, limit: int = 15) -> list[dict]:
     if not isinstance(data, list):
         return []
     return data
+
+
+# ── Investor Relations / Ad Hoc announcements (cached, LLM web search) ─────────
+@st.cache_data(ttl=21600, show_spinner=False)
+def _fetch_ir_announcements(company_name: str, ticker: str, min_items: int = 5) -> list[dict]:
+    """
+    LLM-driven web search for the company's own Investor Relations press
+    releases / ad hoc announcements page — a supplement to the EODHD/
+    yfinance news feeds above, which are often too stale to be useful.
+    Cached 6h (LLM web search is far more expensive per call than the plain
+    news endpoints, and an IR page doesn't turn over within minutes anyway).
+    Returns [] silently (never raises) if the active LLM_PROVIDER has no
+    native web-search tool, or if nothing verifiable was found.
+    """
+    try:
+        return LLMClient().find_ir_announcements(company_name, ticker, min_items=min_items)
+    except Exception:
+        return []
 
 
 # ── Recommendation heuristic ──────────────────────────────────────────────────
@@ -2412,9 +2431,45 @@ else:
 
                 # News
                 with st.expander("📰 Latest news", expanded=False):
+                    ir_items = _fetch_ir_announcements(name_full, ticker, min_items=5)
+                    if ir_items:
+                        st.markdown(
+                            "<div style='color:#FFA028;font-family:monospace;"
+                            "font-size:12px;font-weight:700;letter-spacing:0.5px;"
+                            "margin-bottom:6px;'>INVESTOR RELATIONS / AD HOC ANNOUNCEMENTS</div>",
+                            unsafe_allow_html=True,
+                        )
+                        for ir in ir_items:
+                            ir_title = ir.get("title") or "(no title)"
+                            ir_link  = ir.get("link") or ""
+                            ir_date  = (ir.get("date") or "")[:10]
+                            st.markdown(
+                                f"<div style='margin-bottom:6px;'>"
+                                f"<span style='color:#8a6a30;font-family:monospace;"
+                                f"font-size:12px;'>{ir_date}</span>"
+                                f" <span style='background:#0a0a0a;color:#4D9FFF;"
+                                f"padding:0px 5px;border:1px solid #1f4a70;"
+                                f"border-radius:2px;font-family:monospace;"
+                                f"font-size:10px;'>IR</span><br>"
+                                f"<a href='{ir_link}' target='_blank' "
+                                f"style='color:#FFA028;font-weight:700;"
+                                f"font-family:monospace;text-decoration:none;'>"
+                                f"{ir_title}</a></div>",
+                                unsafe_allow_html=True,
+                            )
+                        st.markdown(
+                            "<div style='color:#8a6a30;font-family:monospace;"
+                            "font-size:12px;font-weight:700;letter-spacing:0.5px;"
+                            "margin:10px 0 6px;border-top:1px solid #2a1f10;"
+                            "padding-top:8px;'>OTHER NEWS</div>",
+                            unsafe_allow_html=True,
+                        )
+
                     news_items = _fetch_news(ticker, limit=15)
-                    if not news_items:
+                    if not news_items and not ir_items:
                         st.warning("No news available for this ticker.")
+                    elif not news_items:
+                        st.caption("No additional news from EODHD/yfinance.")
                     else:
                         for n in news_items:
                             title   = n.get("title")   or "(no title)"

@@ -510,6 +510,81 @@ class LLMClient:
             reasoning_effort=_news_reasoning_effort,
         )
 
+    def find_ir_announcements(self, company_name: str, ticker: str, min_items: int = 5) -> list[dict]:
+        """
+        Search the web for the company's own Investor Relations "Press
+        Releases" / "News" / "Ad Hoc Announcements" page and return its
+        most recent entries as structured, real links.
+
+        Only providers with a native web-search tool (Claude, OpenAI) can
+        verify a URL actually exists before returning it — for every other
+        provider, fabricating plausible-looking IR links would be strictly
+        worse than showing nothing, so this returns [] immediately for them
+        (same "degrade gracefully, never invent" pattern used elsewhere in
+        this file for providers without a web-search tool).
+
+        Returns a list of {"title": str, "link": str, "date": "YYYY-MM-DD"}
+        dicts (fewer than `min_items` if that's all that was verifiably
+        found), or [] on any error.
+        """
+        if self.provider not in ("openai", "claude"):
+            return []
+
+        prompt = (
+            f'Find the official Investor Relations "Press Releases" / "News" / '
+            f'"Ad Hoc Announcements" section for {company_name} (ticker: {ticker}), '
+            f'hosted on the company\'s OWN corporate website (e.g. an investors. '
+            f'or ir. subdomain of the company\'s domain) — NOT a third-party '
+            f'aggregator like Yahoo Finance, Google Finance, MarketWatch, or a '
+            f'news portal. '
+            f'List the {min_items} most recent items published there: regulatory '
+            f'ad hoc disclosures, earnings releases, and corporate press releases. '
+            f'For each one, give the exact publish date, the exact headline as '
+            f'published, and the direct URL to that specific announcement (not '
+            f'just the IR homepage or an index page). '
+            f'Only include items you actually located via search — never invent '
+            f'a URL, a title, or a date. If you cannot verify at least '
+            f'{min_items}, return as many verified ones as you found, even if '
+            f'that is fewer.\n\n'
+            f'Respond with ONLY a JSON array, no markdown fences, no commentary:\n'
+            f'[{{"title": "...", "link": "https://...", "date": "YYYY-MM-DD"}}, ...]'
+        )
+        try:
+            if self.provider == "claude":
+                raw = self._claude_web_search(prompt)
+            else:
+                raw = self._openai_web_search(prompt)
+        except Exception as e:
+            logger.warning(f"[LLMClient] IR announcements search failed for {ticker}: {e}")
+            return []
+
+        cleaned = _strip_code_fences(raw)
+        start, end = cleaned.find('['), cleaned.rfind(']')
+        if start == -1 or end == -1 or end <= start:
+            logger.warning(
+                f"[LLMClient] IR announcements: no JSON array in response for {ticker} "
+                f"(first 300 chars): {cleaned[:300]}"
+            )
+            return []
+        try:
+            items = json.loads(cleaned[start:end + 1], strict=False)
+        except json.JSONDecodeError:
+            logger.warning(f"[LLMClient] IR announcements: JSON parse failed for {ticker}")
+            return []
+        if not isinstance(items, list):
+            return []
+
+        out = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            link = str(it.get("link") or "").strip()
+            title = str(it.get("title") or "").strip()
+            if not link or not title or not link.lower().startswith("http"):
+                continue
+            out.append({"title": title, "link": link, "date": str(it.get("date") or "").strip()})
+        return out
+
     def check_configured(self) -> tuple[bool, str]:
         """
         Returns (is_ready, message) to show users in the UI.
