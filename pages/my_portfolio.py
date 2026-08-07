@@ -10,7 +10,7 @@ Compact rendering — one card = one row by default:
 Clicking the expand toggle reveals:
   • Recommendation badge (Buy / Hold / Sell, rule-based)
   • Period-selectable price chart (1d / 1m / 6m / YTD / 5y / All)
-  • Latest news from EODHD /news
+  • Latest news from EODHD /news + LLM-sourced IR/Ad Hoc announcement links
 
 Tickers are entered in Yahoo Finance format (RHM.DE, AAPL, ^GSPC, ...) and
 converted to EODHD format via _convert_ticker(). Indices/forex without
