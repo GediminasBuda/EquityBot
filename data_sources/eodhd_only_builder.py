@@ -187,8 +187,14 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     if shares_raw is not None:
         company.shares_outstanding = shares_raw / 1_000_000
 
-    # Enterprise value
-    company.enterprise_value = _to_m(v.get("EnterpriseValue"))
+    # Enterprise value. EODHD returns the literal string "0" for tickers it
+    # can't compute EV for (e.g. some foreign ADRs) instead of null — _fz()
+    # on the raw value (before the /1e6 conversion) treats that as missing so
+    # a real fallback (market_cap + net_debt, below) can fill it instead of
+    # silently locking in a misleading 0.0 that then propagates into
+    # EV/Sales, EV/Gross Profit, etc. as "0.0x" rather than "n/a".
+    _ev_raw = _fz(v.get("EnterpriseValue"))
+    company.enterprise_value = _ev_raw / 1_000_000 if _ev_raw is not None else None
 
     # Float, % insider/inst
     company.shares_float = _to_m(ss.get("SharesFloat"))
@@ -676,6 +682,17 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         if af.net_income is not None and shares_m:
             af.eps_diluted = af.net_income / shares_m
         af.calculate_derived()
+
+    # Fallback EV = Market Cap + Net Debt when EODHD's own EnterpriseValue
+    # field is missing/zeroed-out (see _fz() note above). Mirrors
+    # CompanyData.calculate_current_ratios(), computed here directly since
+    # the eodhd-only fetch path (Growth Pricing & Peers, Investment Memo V2)
+    # does not call that method.
+    if company.enterprise_value is None and company.market_cap is not None:
+        _la = company.latest_annual()
+        _nd = _la.net_debt if _la else None
+        if _nd is not None:
+            company.enterprise_value = company.market_cap + _nd
 
     # ── Final touch: mark which scalar fields are EODHD-sourced ──────────────
     eodhd_fields_filled = [
