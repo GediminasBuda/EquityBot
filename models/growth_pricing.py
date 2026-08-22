@@ -405,9 +405,8 @@ def compute_peer_snapshot_row(company: CompanyData, is_subject: bool = False) ->
     # eodhd_only_builder.py); it's None for the overwhelming majority of
     # (non-dual-currency) companies, in which case enterprise_value is used
     # exactly as before.
-    _ev_for_ratios = (company.enterprise_value_financials_ccy
-                       if company.enterprise_value_financials_ccy is not None
-                       else company.enterprise_value)
+    _ev_ccy = getattr(company, "enterprise_value_financials_ccy", None)
+    _ev_for_ratios = _ev_ccy if _ev_ccy is not None else company.enterprise_value
 
     ev_gross_profit = None
     if (_ev_for_ratios is not None and latest
