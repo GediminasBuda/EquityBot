@@ -72,7 +72,7 @@ def fetch_company_data_eodhd_only(yf_ticker: str
     """
     fetcher = EODHDAllInOneFetcher()
     bundle = fetcher.fetch_all(yf_ticker)
-    company = build_company_data_from_bundle(yf_ticker, bundle)
+    company = build_company_data_from_bundle(yf_ticker, bundle, fetcher=fetcher)
     return company, bundle
 
 
@@ -106,11 +106,18 @@ def fetch_peers_eodhd_only(yf_tickers: list[str]
     return out
 
 
-def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
+def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
+                                    fetcher: Optional["EODHDAllInOneFetcher"] = None
+                                    ) -> CompanyData:
     """
     Project an EODHD bundle dict into a CompanyData object. Every field
     written to the company is also tracked in `company.eodhd_fields` so the
     PDF can render the green ✓ next to EODHD-sourced cells.
+
+    `fetcher` is optional — when a caller already has an EODHDAllInOneFetcher
+    instance (e.g. fetch_company_data_eodhd_only), pass it through so the
+    dual-currency FX lookup (see below) reuses it instead of constructing a
+    fresh one. A fresh one is created lazily if omitted and actually needed.
     """
     company = CompanyData(
         ticker=yf_ticker,
@@ -416,6 +423,45 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     bs_a  = (fin.get("Balance_Sheet")    or {}).get("yearly") or {}
     cf_a  = (fin.get("Cash_Flow")        or {}).get("yearly") or {}
 
+    # ── Dual-currency ADR detection ───────────────────────────────────────────
+    # Some foreign ADRs (e.g. KSPI — Kaspi.kz, Nasdaq-listed) quote price,
+    # market cap and EPS in the trading currency (General.CurrencyCode, USD
+    # for a US listing) while EODHD's Financials.*.currency_symbol shows the
+    # underlying statements (revenue, gross profit, net debt, etc.) are
+    # reported in the company's home currency (KZT for KSPI). Dividing a
+    # trading-currency EV by a reporting-currency Sales/Gross Profit figure
+    # produces a meaningless ratio (observed as "0.0x" or wildly-wrong
+    # historical Enterprise Value). See CLAUDE.md for the KSPI case history.
+    _stmt_ccy = (
+        (fin.get("Income_Statement") or {}).get("currency_symbol")
+        or (fin.get("Balance_Sheet") or {}).get("currency_symbol")
+        or (fin.get("Cash_Flow") or {}).get("currency_symbol")
+    ) or None
+    _trading_ccy = company.currency_price
+    _dual_currency = bool(_stmt_ccy and _trading_ccy
+                          and str(_stmt_ccy).upper() != str(_trading_ccy).upper())
+    _fx_rate: Optional[float] = None
+    if _dual_currency:
+        company.currency_financials = _stmt_ccy
+        try:
+            _fetcher_for_fx = fetcher or EODHDAllInOneFetcher()
+            _fx_rate = _fetcher_for_fx.fetch_forex_rate(_trading_ccy, _stmt_ccy)
+        except Exception as e:
+            logger.warning(f"[eodhd-only] {yf_ticker}: forex fetch failed: {e}")
+            _fx_rate = None
+        company.fx_rate_price_to_financials = _fx_rate
+        if _fx_rate:
+            logger.info(f"[eodhd-only] {yf_ticker}: dual-currency ADR detected "
+                        f"(price/mcap in {_trading_ccy}, statements in {_stmt_ccy}); "
+                        f"FX rate {_trading_ccy}->{_stmt_ccy} = {_fx_rate}")
+        else:
+            logger.warning(f"[eodhd-only] {yf_ticker}: dual-currency ADR detected "
+                           f"({_trading_ccy} vs {_stmt_ccy}) but FX rate unavailable — "
+                           f"price-derived historical ratios (Market Cap, EV, P/E, "
+                           f"FCF Yield) will be left as n/a rather than currency-mismatched")
+    else:
+        company.currency_financials = _trading_ccy
+
     bs_by_year = {_year_from_date(k): v for k, v in bs_a.items()
                   if _year_from_date(k)}
     cf_by_year = {_year_from_date(k): v for k, v in cf_a.items()
@@ -669,19 +715,52 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
     # consistent with what a data provider like Bloomberg/FactSet would show.
     # Fall back to the income-statement eps only when NI or shares are absent.
     for af in company.annual_financials.values():
-        if (af.market_cap is None and af.price_year_end
+        # af.price_year_end (from /eod) is in the TRADING currency. For a
+        # dual-currency ADR that's a different currency than af.gross_profit/
+        # af.revenue/af.net_debt (reporting currency, from Financials.yearly)
+        # — combining them directly (as calculate_derived() does) produces
+        # nonsense (huge/negative Enterprise Value, near-zero P/E). Convert
+        # the price into reporting-currency terms first when an FX rate is
+        # available; when it isn't, deliberately leave the price-derived
+        # fields as n/a rather than silently mixing currencies.
+        _price_for_calc = af.price_year_end
+        if _dual_currency:
+            _price_for_calc = (af.price_year_end * _fx_rate
+                                if (_fx_rate and af.price_year_end is not None)
+                                else None)
+
+        if (af.market_cap is None and _price_for_calc
                 and af.shares_outstanding):
             shares_m = (af.shares_outstanding / 1_000_000
                         if af.shares_outstanding > 1_000_000
                         else af.shares_outstanding)
-            af.market_cap = af.price_year_end * shares_m
-        # Recompute EPS from NI / shares (split-adjusted, consistent units)
+            af.market_cap = _price_for_calc * shares_m
+        # Recompute EPS from NI / shares (split-adjusted, consistent units).
+        # Currency-neutral: both NI and shares are already in reporting
+        # currency / share-count units regardless of price currency.
         shares_m = (af.shares_outstanding / 1_000_000
                     if af.shares_outstanding and af.shares_outstanding > 1_000_000
                     else af.shares_outstanding)
         if af.net_income is not None and shares_m:
             af.eps_diluted = af.net_income / shares_m
-        af.calculate_derived()
+        # P/E needs price and EPS in the same currency — precompute it here
+        # from the (possibly FX-converted) price so calculate_derived()'s own
+        # price_year_end-based P/E (which would use the raw, mismatched price)
+        # never fires for dual-currency companies.
+        if (_dual_currency and af.pe_ratio is None and _price_for_calc
+                and af.eps_diluted and af.eps_diluted > 0):
+            af.pe_ratio = _price_for_calc / af.eps_diluted
+        if _dual_currency:
+            # Temporarily blank the raw (trading-currency) price so
+            # calculate_derived()'s market-cap/P-E/div-yield fallbacks can't
+            # combine it with reporting-currency fields; restore afterward
+            # since the raw year-end price is still legitimate to display.
+            _raw_price = af.price_year_end
+            af.price_year_end = None
+            af.calculate_derived()
+            af.price_year_end = _raw_price
+        else:
+            af.calculate_derived()
 
     # Fallback EV = Market Cap + Net Debt when EODHD's own EnterpriseValue
     # field is missing/zeroed-out (see _fz() note above). Mirrors
@@ -694,9 +773,29 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict) -> CompanyData:
         if _nd is not None:
             company.enterprise_value = company.market_cap + _nd
 
+    # ── Dual-currency current/TTM Enterprise Value (reporting currency) ──────
+    # company.enterprise_value/market_cap stay in the TRADING currency — that
+    # matches EODHD's own EnterpriseValueRevenue/EnterpriseValueEbitda ratios
+    # (company.ev_sales/ev_ebitda), which are already internally currency-
+    # consistent on EODHD's side and should NOT be recomputed. But there is no
+    # EODHD-native EV/Gross-Profit ratio, so a reporting-currency EV is built
+    # here specifically for ratios that must divide by a statement-currency
+    # figure (EV/Gross Profit, and EV/Sales as a fallback if EODHD's own
+    # ev_sales is ever missing) — see compute_peer_snapshot_row() in
+    # models/growth_pricing.py.
+    if (_dual_currency and _fx_rate and company.shares_outstanding
+            and company.current_price):
+        _mc_financials = (company.shares_outstanding * company.current_price
+                           * _fx_rate)
+        _la2 = company.latest_annual()
+        _nd_financials = _la2.net_debt if _la2 else None
+        if _nd_financials is not None:
+            company.enterprise_value_financials_ccy = _mc_financials + _nd_financials
+
     # ── Final touch: mark which scalar fields are EODHD-sourced ──────────────
     eodhd_fields_filled = [
-        "name", "exchange", "currency", "currency_price", "sector",
+        "name", "exchange", "currency", "currency_price", "currency_financials",
+        "fx_rate_price_to_financials", "enterprise_value_financials_ccy", "sector",
         "industry", "country", "isin", "description", "website",
         "ipo_date", "fiscal_year_end", "address", "phone", "employees",
         "officers", "cik",

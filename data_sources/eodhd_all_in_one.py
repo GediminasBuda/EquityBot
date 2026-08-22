@@ -95,6 +95,31 @@ class EODHDAllInOneFetcher:
     def fetch_realtime(self, eodhd_ticker: str) -> Optional[dict]:
         return self._get(f"/real-time/{eodhd_ticker}")
 
+    def fetch_forex_rate(self, base_ccy: str, quote_ccy: str) -> Optional[float]:
+        """
+        Current spot rate for 1 unit of base_ccy in quote_ccy (e.g.
+        base_ccy="USD", quote_ccy="KZT" → how many KZT per USD).
+
+        Used for dual-currency ADRs (e.g. KSPI: price/market-cap quoted in
+        USD, financial statements reported in KZT) where EV must be
+        converted into the statements' reporting currency before dividing
+        by revenue/gross profit. Returns None on any failure — callers must
+        treat a missing rate as "cannot convert, skip the derived ratio"
+        rather than guessing.
+        """
+        if not base_ccy or not quote_ccy or base_ccy == quote_ccy:
+            return None
+        result = self._get(f"/real-time/{base_ccy}{quote_ccy}.FOREX")
+        if isinstance(result, dict):
+            rate = result.get("close") or result.get("previousClose")
+            try:
+                rate_f = float(rate)
+                if rate_f > 0:
+                    return rate_f
+            except (TypeError, ValueError):
+                pass
+        return None
+
     def fetch_eod_history(self, eodhd_ticker: str, years_back: int = 5
                           ) -> Optional[list]:
         """Daily OHLCV for the past N years, ascending chronological order."""

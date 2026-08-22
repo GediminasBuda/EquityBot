@@ -271,6 +271,22 @@ class CompanyData:
     enterprise_value: Optional[float] = None    # In millions
     as_of_date: Optional[str] = None        # Date of market data snapshot
 
+    # ── Dual-currency ADR support ─────────────────────────────────────────────
+    # Some foreign ADRs (e.g. KSPI — Kaspi.kz, Nasdaq-listed, financials in
+    # KZT) quote price/market cap/EPS in the trading currency (`currency_price`)
+    # while the underlying financial statements (revenue, gross profit, net
+    # debt, etc.) are reported in a different, native currency. When these
+    # differ, `currency_financials` holds the statements' currency and
+    # `fx_rate_price_to_financials` holds the spot rate to convert 1 unit of
+    # `currency_price` into `currency_financials` — used to build a
+    # currency-consistent Enterprise Value for ratios that must be divided by
+    # a statement-currency figure (EV/Sales, EV/Gross Profit, etc.). Both are
+    # None for the overwhelming majority of companies where the two
+    # currencies match.
+    currency_financials: Optional[str] = None
+    fx_rate_price_to_financials: Optional[float] = None
+    enterprise_value_financials_ccy: Optional[float] = None  # In millions of currency_financials
+
     # ── Current Valuation Multiples ───────────────────────────────────────────
     pe_ratio: Optional[float] = None        # Price / Earnings (TTM)
     forward_pe: Optional[float] = None

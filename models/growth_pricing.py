@@ -85,6 +85,25 @@ def _cagr(company: CompanyData, years: list[int], i: int, field: str, lookback: 
     return (end_v / base_v) ** (1 / lookback) - 1
 
 
+def _peg_fallback_from_history(company: CompanyData, pe_ratio: Optional[float]) -> Optional[float]:
+    """PEG using trailing P/E over trailing 3-year EPS CAGR, for companies
+    where EODHD has no forward-consensus EPS growth estimate (a common gap
+    for thinly-covered foreign ADRs). eps_diluted is a per-share figure in
+    whatever currency net_income/shares happen to be in for that company —
+    since this is a ratio of two same-currency EPS values, the CAGR itself
+    is currency-invariant, so this is safe to use even for dual-currency
+    ADRs where the price-based ratios need special handling."""
+    if pe_ratio is None or pe_ratio <= 0:
+        return None
+    years = get_history_years(company, max_years=10)
+    if len(years) < 4:
+        return None
+    eps_cagr3 = _cagr(company, years, len(years) - 1, "eps_diluted", 3)
+    if eps_cagr3 is None or eps_cagr3 <= 0:
+        return None
+    return pe_ratio / (eps_cagr3 * 100)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Dimension 1 — Revenue & Gross Profit
 # ─────────────────────────────────────────────────────────────────────────
@@ -289,6 +308,8 @@ def compute_current_snapshot(company: CompanyData) -> dict:
     if (peg_ratio is None and company.forward_pe is not None
             and forward_eps_growth is not None and forward_eps_growth > 0):
         peg_ratio = company.forward_pe / (forward_eps_growth * 100)
+    if peg_ratio is None:
+        peg_ratio = _peg_fallback_from_history(company, company.pe_ratio)
 
     return {
         "market_cap": company.market_cap,
@@ -372,16 +393,37 @@ def compute_peer_snapshot_row(company: CompanyData, is_subject: bool = False) ->
     if (peg_ratio is None and company.forward_pe is not None
             and forward_eps_growth is not None and forward_eps_growth > 0):
         peg_ratio = company.forward_pe / (forward_eps_growth * 100)
+    if peg_ratio is None:
+        peg_ratio = _peg_fallback_from_history(company, pe_ratio)
+
+    # For dual-currency ADRs (price/market cap in the trading currency,
+    # financial statements in a different reporting currency — e.g. KSPI),
+    # company.enterprise_value is in the TRADING currency and cannot be
+    # divided by latest.gross_profit/revenue (reporting currency) without
+    # producing a meaningless ratio. enterprise_value_financials_ccy is a
+    # currency-consistent EV built specifically for this (see
+    # eodhd_only_builder.py); it's None for the overwhelming majority of
+    # (non-dual-currency) companies, in which case enterprise_value is used
+    # exactly as before.
+    _ev_for_ratios = (company.enterprise_value_financials_ccy
+                       if company.enterprise_value_financials_ccy is not None
+                       else company.enterprise_value)
 
     ev_gross_profit = None
-    if (company.enterprise_value is not None and latest
+    if (_ev_for_ratios is not None and latest
             and latest.gross_profit and latest.gross_profit > 0):
-        ev_gross_profit = company.enterprise_value / latest.gross_profit
+        ev_gross_profit = _ev_for_ratios / latest.gross_profit
 
-    ev_sales = None
-    denom_revenue = company.ttm_revenue or (latest.revenue if latest else None)
-    if company.enterprise_value is not None and denom_revenue:
-        ev_sales = company.enterprise_value / denom_revenue
+    # EV/Sales: prefer EODHD's own precomputed ratio (company.ev_sales) —
+    # it's already currency-consistent on EODHD's side even for dual-currency
+    # ADRs, so recomputing it ourselves would be redundant and riskier for
+    # the TTM-revenue currency ambiguity noted above. Only fall back to a
+    # manual calc when EODHD didn't provide one.
+    ev_sales = company.ev_sales
+    if ev_sales is None:
+        denom_revenue = company.ttm_revenue or (latest.revenue if latest else None)
+        if _ev_for_ratios is not None and denom_revenue:
+            ev_sales = _ev_for_ratios / denom_revenue
 
     revenue_yoy = _latest_revenue_yoy(company)
     ebitda_margin = latest.ebitda_margin if latest else None
