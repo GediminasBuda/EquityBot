@@ -429,8 +429,23 @@ class CompanyData:
         if la:
             la.calculate_derived()
 
+        # Dual-currency guard: for a foreign-private-issuer ADR where the
+        # trading currency (self.currency_price, e.g. USD) differs from the
+        # financial-statement reporting currency (self.currency_financials,
+        # e.g. KZT for KSPI), self.market_cap/self.enterprise_value are in
+        # the TRADING currency while la.ebit/ebitda/revenue/fcf are in the
+        # REPORTING currency. None of the fallbacks below may mix the two —
+        # a currency-consistent value must come from an upstream pre-populate
+        # (see eodhd_only_builder.py's enterprise_value_financials_ccy/
+        # ev_ebit/fcf_yield block) instead; if that didn't run, "n/a" (None)
+        # is correct, not a silently wrong cross-currency number.
+        _dual = bool(
+            self.currency_financials and self.currency_price
+            and str(self.currency_financials).upper() != str(self.currency_price).upper()
+        )
+
         # Enterprise Value = Market Cap + Net Debt
-        if self.enterprise_value is None and self.market_cap is not None:
+        if self.enterprise_value is None and self.market_cap is not None and not _dual:
             nd = self.net_debt if self.net_debt is not None else (la.net_debt if la else None)
             if nd is not None:
                 self.enterprise_value = self.market_cap + nd
@@ -438,19 +453,19 @@ class CompanyData:
         ev = self.enterprise_value
 
         # EV/EBIT
-        if self.ev_ebit is None and ev and la and la.ebit and la.ebit > 0:
+        if self.ev_ebit is None and ev and la and la.ebit and la.ebit > 0 and not _dual:
             self.ev_ebit = ev / la.ebit
 
         # EV/EBITDA
-        if self.ev_ebitda is None and ev and la and la.ebitda and la.ebitda > 0:
+        if self.ev_ebitda is None and ev and la and la.ebitda and la.ebitda > 0 and not _dual:
             self.ev_ebitda = ev / la.ebitda
 
         # EV/Sales
-        if self.ev_sales is None and ev and la and la.revenue and la.revenue > 0:
+        if self.ev_sales is None and ev and la and la.revenue and la.revenue > 0 and not _dual:
             self.ev_sales = ev / la.revenue
 
         # FCF Yield
-        if self.fcf_yield is None and self.market_cap and la and la.fcf and self.market_cap > 0:
+        if self.fcf_yield is None and self.market_cap and la and la.fcf and self.market_cap > 0 and not _dual:
             self.fcf_yield = la.fcf / self.market_cap
 
         # Gearing (Net Debt / EBITDA)

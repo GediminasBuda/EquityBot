@@ -763,11 +763,17 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
             af.calculate_derived()
 
     # Fallback EV = Market Cap + Net Debt when EODHD's own EnterpriseValue
-    # field is missing/zeroed-out (see _fz() note above). Mirrors
-    # CompanyData.calculate_current_ratios(), computed here directly since
-    # the eodhd-only fetch path (Growth Pricing & Peers, Investment Memo V2)
-    # does not call that method.
-    if company.enterprise_value is None and company.market_cap is not None:
+    # field is missing/zeroed-out (see _fz() note above). company.market_cap
+    # is always in the TRADING currency, while la.net_debt is a raw balance-
+    # sheet figure in the REPORTING currency — for a dual-currency ADR these
+    # must not be added together (same class of bug already fixed for EV/
+    # Sales, EV/Gross-Profit, EV/EBIT, FCF Yield below). Skipped here when
+    # dual-currency; company.calculate_current_ratios() (called at the end
+    # of this function) carries the identical currency-aware guard, so
+    # company.enterprise_value correctly stays None ("n/a") rather than a
+    # silently wrong cross-currency figure, unless the dual-currency block
+    # below successfully pre-populates enterprise_value_financials_ccy.
+    if company.enterprise_value is None and company.market_cap is not None and not _dual_currency:
         _la = company.latest_annual()
         _nd = _la.net_debt if _la else None
         if _nd is not None:

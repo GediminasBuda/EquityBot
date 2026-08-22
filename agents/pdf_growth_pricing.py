@@ -498,9 +498,13 @@ def _snapshot_table(company: CompanyData, styles: dict) -> Table | None:
     years-as-columns), since Forward P/E and standard PEG Ratio only exist
     for the current moment (next-FY consensus), not as a historical series."""
     snap = compute_current_snapshot(company)
+    mcap_ccy = snap.get("market_cap_currency") or ""
+    ev_ccy = snap.get("enterprise_value_currency") or ""
+    mcap_label = f"Market Capitalization (current, {mcap_ccy})" if mcap_ccy else "Market Capitalization (current)"
+    ev_label = f"Enterprise Value (current, {ev_ccy})" if ev_ccy else "Enterprise Value (current)"
     candidates = [
-        ("Market Capitalization (current)", _fmt_b(snap["market_cap"])),
-        ("Enterprise Value (current)", _fmt_b(snap["enterprise_value"])),
+        (mcap_label, _fmt_b(snap["market_cap"])),
+        (ev_label, _fmt_b(snap["enterprise_value"])),
         ("P/E (TTM)", _x(snap["pe_ratio_ttm"])),
         ("Forward P/E", _x(snap["forward_pe"])),
         ("PEG Ratio", _num(snap["peg_ratio"])),

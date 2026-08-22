@@ -311,9 +311,25 @@ def compute_current_snapshot(company: CompanyData) -> dict:
     if peg_ratio is None:
         peg_ratio = _peg_fallback_from_history(company, company.pe_ratio)
 
+    # Dual-currency ADRs (e.g. KSPI: USD trading currency, KZT statement
+    # currency): company.market_cap stays in the TRADING currency (it's a
+    # pure price x shares figure, fine to show as-is as long as it's
+    # labeled). company.enterprise_value is also trading-currency, but EV
+    # has no meaning without a currency-consistent net-debt add-on for a
+    # dual-currency company — enterprise_value_financials_ccy is the
+    # reporting-currency-consistent EV built for exactly this (see
+    # eodhd_only_builder.py); prefer it whenever it's available so the
+    # snapshot table shows a currency-correct EV instead of a mismatched one.
+    cur_price = company.currency_price or company.currency or ""
+    cur_fin = getattr(company, "currency_financials", None) or cur_price
+    _ev_ccy = getattr(company, "enterprise_value_financials_ccy", None)
+    enterprise_value = _ev_ccy if _ev_ccy is not None else company.enterprise_value
+
     return {
         "market_cap": company.market_cap,
-        "enterprise_value": company.enterprise_value,
+        "market_cap_currency": cur_price,
+        "enterprise_value": enterprise_value,
+        "enterprise_value_currency": cur_fin if _ev_ccy is not None else cur_price,
         "pe_ratio_ttm": company.pe_ratio,
         "forward_pe": company.forward_pe,
         "peg_ratio": peg_ratio,
