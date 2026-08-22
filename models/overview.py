@@ -319,7 +319,22 @@ def _calculate_checklist(company: CompanyData) -> list[dict]:
     })
 
     # 4. FCF Yield > 10%
+    # company.fcf_yield can be stale/wrong for a dual-currency ADR (e.g. KSPI)
+    # if it was ever set from la.fcf (reporting currency) / company.market_cap
+    # (trading currency). Whenever a reporting-currency market cap is
+    # derivable (enterprise_value_financials_ccy - net_debt, both already
+    # reporting-currency — see eodhd_only_builder.py), recompute FCF Yield
+    # locally against TTM FCF so this checklist row can't mix currencies
+    # regardless of what upstream set company.fcf_yield to. No-op for the
+    # overwhelming majority of companies where trading/reporting currency
+    # match, since enterprise_value_financials_ccy is None there.
     fcfy = company.fcf_yield
+    _ev_ccy = getattr(company, "enterprise_value_financials_ccy", None)
+    _ttm_fcf = getattr(company, "ttm_fcf", None)
+    if _ev_ccy is not None and company.net_debt is not None and _ttm_fcf:
+        _mc_ccy = _ev_ccy - company.net_debt
+        if _mc_ccy and _mc_ccy > 0:
+            fcfy = _ttm_fcf / _mc_ccy
     checks.append({
         "criterion": "FCF Yield > 10.0%",
         "threshold": 10.0,

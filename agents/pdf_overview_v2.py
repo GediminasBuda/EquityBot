@@ -409,8 +409,25 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     _ttm_fcf = getattr(company, 'ttm_fcf', None)
     add_row(f"FCF ({cur}M)", lambda a: a.fcf, "M",
             ttm_val=_ttm_fcf)
+
+    # FCF Yield TTM: company.fcf_yield can be stale/wrong for a dual-currency
+    # ADR (e.g. KSPI) if it was ever set from la.fcf / company.market_cap —
+    # la.fcf is in the REPORTING currency while company.market_cap is in the
+    # TRADING currency (see CompanyData.calculate_current_ratios()). Whenever
+    # a reporting-currency market cap is derivable here (_mc_ttm, computed
+    # below and reused for the Mkt Cap row), recompute FCF Yield locally as
+    # TTM FCF / that market cap so this row can never mix currencies
+    # regardless of what upstream set company.fcf_yield to. No-op (uses
+    # company.fcf_yield unchanged) for the overwhelming majority of companies
+    # where trading and reporting currency match, since _ev_ccy is None there.
+    _mc_ttm = company.market_cap
+    if _ev_ccy is not None and company.net_debt is not None:
+        _mc_ttm = _ev_ccy - company.net_debt
+    _fcf_yield_ttm = company.fcf_yield
+    if _ev_ccy is not None and _ttm_fcf and _mc_ttm and _mc_ttm > 0:
+        _fcf_yield_ttm = _ttm_fcf / _mc_ttm
     add_row("FCF Yield", lambda a: a.fcf_yield, "%",
-            ttm_val=company.fcf_yield)
+            ttm_val=_fcf_yield_ttm)
 
     # EV — only show historical when balance sheet data is available.
     # If net_debt is None, the annual EV was computed as just market_cap
@@ -441,13 +458,10 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     # years) is computed from the FX-converted price (see eodhd_only_builder.py)
     # and is therefore in the REPORTING currency — while company.market_cap
     # (TTM) is always in the TRADING currency. Showing them side-by-side with
-    # no label would silently mix currencies across one row. Derive a TTM
-    # market cap in the reporting currency (EV_financials_ccy - net_debt, both
-    # already reporting-currency) so the row is internally consistent, and
-    # label it like Sales/FCF above.
-    _mc_ttm = company.market_cap
-    if _ev_ccy is not None and company.net_debt is not None:
-        _mc_ttm = _ev_ccy - company.net_debt
+    # no label would silently mix currencies across one row. _mc_ttm (the
+    # reporting-currency TTM market cap, EV_financials_ccy - net_debt) was
+    # already computed above for the FCF Yield row — reuse it here so both
+    # rows stay consistent, and label it like Sales/FCF above.
     add_row(f"Mkt Cap ({cur}M)", lambda a: a.market_cap, "M",
             ttm_val=_mc_ttm)
     # For TTM shares, prefer latest annual (more reliable than info["sharesOutstanding"]

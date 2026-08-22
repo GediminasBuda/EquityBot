@@ -808,13 +808,19 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
             # guard skips it.
             if _la2 and _la2.ebit and _la2.ebit > 0:
                 company.ev_ebit = company.enterprise_value_financials_ccy / _la2.ebit
-        # FCF Yield = FCF (reporting currency) / Market Cap also has no
+        # FCF Yield = TTM FCF (reporting currency) / Market Cap also has no
         # currency-consistent EODHD-native equivalent — CompanyData's own
         # fallback divides `la.fcf` by the TRADING-currency `market_cap`,
         # which is likewise wrong for a dual-currency ADR. Pre-populate
-        # using the reporting-currency market cap computed above.
-        if _la2 and _la2.fcf and _mc_financials > 0:
-            company.fcf_yield = _la2.fcf / _mc_financials
+        # using the reporting-currency market cap computed above. Prefer
+        # company.ttm_fcf (actual trailing-twelve-month FCF) over the latest
+        # FISCAL YEAR's la.fcf — this is a "TTM" scalar (paired with TTM
+        # price/shares in _mc_financials), so it must be divided by TTM FCF,
+        # not last-fiscal-year FCF, or the ratio mixes periods as well as
+        # nearly-matching-but-different currencies.
+        _fcf_for_yield = getattr(company, "ttm_fcf", None) or (_la2.fcf if _la2 else None)
+        if _fcf_for_yield and _mc_financials > 0:
+            company.fcf_yield = _fcf_for_yield / _mc_financials
 
     # ── Final touch: mark which scalar fields are EODHD-sourced ──────────────
     eodhd_fields_filled = [
