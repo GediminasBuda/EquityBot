@@ -416,7 +416,7 @@ def _ranks_from_scores(scores: list[int]) -> list[int]:
 
 def _peer_comparison_table(subject: CompanyData, peers: dict, styles: dict) -> Table | None:
     """Subject + up to 5 peers as columns, 8 most-recent-data metrics as
-    rows (Sales TTM Growth, Sales 3Y CAGR, P/E, PEG, EV/Gross Profit,
+    rows (Sales YoY Growth, Sales 3Y CAGR, P/E, PEG, EV/Gross Profit,
     EV/Sales, Rule of 40 with EBITDA Margin, Rule of 40 with Net Margin),
     plus a bottom Valuation Rank row: for each metric, companies are
     ranked and awarded points (cheaper multiples / stronger growth score
@@ -431,7 +431,7 @@ def _peer_comparison_table(subject: CompanyData, peers: dict, styles: dict) -> T
         return None
 
     candidates = [
-        ("sales_ttm_growth", "Sales TTM Growth", _pct),
+        ("sales_yoy_growth", "Sales YoY Growth", _pct),
         ("sales_cagr3", "Sales 3Y CAGR", _pct),
         ("pe_ratio", "P/E", _x),
         ("peg_ratio", "PEG Ratio", _num),
@@ -669,7 +669,7 @@ class GrowthPricingPDFGenerator:
                 "How does this pricing compare to peers of similar scale and business model? "
                 "The table below places the subject company (marked *) alongside up to five "
                 "peers — selected by the user and/or suggested by the LLM — across the same "
-                "most-recent-data metrics: TTM Sales Growth, 3-year Sales CAGR, P/E, PEG Ratio, "
+                "most-recent-data metrics: Sales YoY Growth, 3-year Sales CAGR, P/E, PEG Ratio, "
                 "EV/Gross Profit, EV/Sales, and the Rule of 40 using both EBITDA Margin and Net "
                 "Margin. The bottom Valuation Rank row ranks every company across all metrics "
                 "(cheaper multiples and stronger growth/profitability earn more points) and sums "

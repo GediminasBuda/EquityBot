@@ -372,26 +372,8 @@ def _latest_revenue_yoy(company: CompanyData) -> Optional[float]:
     return (rev0 / rev1) - 1
 
 
-def _sales_ttm_growth(company: CompanyData) -> Optional[float]:
-    """TTM Sales Growth: current trailing-twelve-month revenue vs. the most
-    recently completed fiscal year's revenue. A true TTM-vs-prior-year-TTM
-    comparison would require quarterly revenue history that isn't fetched
-    for peer companies, so this is the most current growth signal available
-    from data already on hand — a faster-moving complement to the slower,
-    full-fiscal-year Sales 3Y CAGR figure."""
-    years = company.sorted_years()
-    if not years:
-        return None
-    latest = company.annual_financials.get(years[0])
-    base_rev = latest.revenue if latest else None
-    ttm_rev = company.ttm_revenue
-    if ttm_rev is None or not base_rev or base_rev <= 0:
-        return None
-    return (ttm_rev / base_rev) - 1
-
-
 def compute_peer_snapshot_row(company: CompanyData, is_subject: bool = False) -> dict:
-    """Most-recent-data row for the peer comparison table: Sales TTM Growth,
+    """Most-recent-data row for the peer comparison table: Sales YoY Growth,
     Sales 3Y CAGR, P/E, PEG, EV/Gross Profit, EV/Sales, Rule of 40 (EBITDA
     and Net Margin variants). Every figure is computed here in Python from
     the company's own current scalars and latest fiscal year — never by the
@@ -399,7 +381,6 @@ def compute_peer_snapshot_row(company: CompanyData, is_subject: bool = False) ->
     years = company.sorted_years()
     latest = company.annual_financials.get(years[0]) if years else None
 
-    sales_ttm_growth = _sales_ttm_growth(company)
     sales_cagr3 = _sales_cagr3(company)
     pe_ratio = company.pe_ratio
 
@@ -452,7 +433,7 @@ def compute_peer_snapshot_row(company: CompanyData, is_subject: bool = False) ->
         "ticker": company.ticker,
         "name": company.name or company.ticker,
         "is_subject": is_subject,
-        "sales_ttm_growth": sales_ttm_growth,
+        "sales_yoy_growth": revenue_yoy,
         "sales_cagr3": sales_cagr3,
         "pe_ratio": pe_ratio,
         "peg_ratio": peg_ratio,
@@ -477,7 +458,7 @@ def compute_peer_comparison_table(subject: CompanyData, peers: dict) -> list[dic
 # points (growth/profitability metrics), False = lower value scores more
 # points (valuation multiples — cheaper is better).
 PEER_METRIC_DIRECTIONS = {
-    "sales_ttm_growth": True,
+    "sales_yoy_growth": True,
     "sales_cagr3": True,
     "pe_ratio": False,
     "peg_ratio": False,
