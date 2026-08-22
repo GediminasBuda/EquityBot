@@ -243,7 +243,15 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     Build the annual financial table.
     Columns: label | (up to 10 most recent fiscal years) | TTM | forward estimate
     """
-    cur = company.currency or ""
+    # Row labels for statement-derived figures (Sales, FCF) must show the
+    # currency those figures are actually IN — for dual-currency ADRs (e.g.
+    # KSPI: price/mcap in USD, financial statements in KZT) company.currency
+    # is the TRADING currency and would mislabel KZT figures as "USDM".
+    # currency_financials is set (in eodhd_only_builder.py) to the statement
+    # currency for dual-currency companies and mirrors company.currency
+    # otherwise, so it's always the correct label. getattr() defensively —
+    # older cached CompanyData instances may not have this field yet.
+    cur = getattr(company, "currency_financials", None) or company.currency or ""
     all_years = company.sorted_years()
 
     hist_years = all_years[:10]          # most recent 10 years (descending)
@@ -333,7 +341,18 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
 
     # EV/Sales TTM: compute from actual EV + TTM revenue (avoids stale cached
     # yfinance enterpriseToRevenue scalar which can be wildly wrong for TSE stocks)
-    _ev = company.enterprise_value
+    # For dual-currency ADRs (price/mcap in trading ccy, statements in a
+    # different reporting ccy — e.g. KSPI), company.enterprise_value is in
+    # the TRADING currency and cannot be divided by a reporting-currency
+    # revenue figure without producing a meaningless ratio.
+    # enterprise_value_financials_ccy (built in eodhd_only_builder.py) is a
+    # parallel EV already converted into the reporting currency for exactly
+    # this purpose; it's None for the overwhelming majority of companies
+    # where the two currencies match, in which case enterprise_value is used
+    # exactly as before. getattr() defensively — older cached CompanyData
+    # instances may not have this field yet.
+    _ev_ccy = getattr(company, "enterprise_value_financials_ccy", None)
+    _ev = _ev_ccy if _ev_ccy is not None else company.enterprise_value
     if _ev is None and company.market_cap is not None and company.net_debt is not None:
         _ev = company.market_cap + company.net_debt
     # EV/Sales TTM: use ttm_revenue when available, otherwise fall back to
@@ -407,16 +426,30 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
             return a.market_cap + (a.total_debt - a.cash)
         return None
 
-    add_row("EV", _annual_ev, "M",
-            ttm_val=company.enterprise_value)
+    # TTM EV: use the reporting-currency figure (_ev, computed above) so this
+    # row is consistent with the historical EV column and with Sales/FCF/Net
+    # Fin. Debt, which are all in the statement currency.
+    add_row(f"EV ({cur}M)", _annual_ev, "M",
+            ttm_val=_ev)
     add_row("EV/EBIT", lambda a: a.ev_ebit, "x",
             ttm_val=company.ev_ebit)
     add_row("EV/Sales", lambda a: a.ev_sales, "x",
             ttm_val=ttm_ev_sales,
             est_val=fe.ev_sales if fe else None)
 
-    add_row("Mkt Cap (M)", lambda a: a.market_cap, "M",
-            ttm_val=company.market_cap)
+    # Mkt Cap: for dual-currency ADRs, AnnualFinancials.market_cap (historical
+    # years) is computed from the FX-converted price (see eodhd_only_builder.py)
+    # and is therefore in the REPORTING currency — while company.market_cap
+    # (TTM) is always in the TRADING currency. Showing them side-by-side with
+    # no label would silently mix currencies across one row. Derive a TTM
+    # market cap in the reporting currency (EV_financials_ccy - net_debt, both
+    # already reporting-currency) so the row is internally consistent, and
+    # label it like Sales/FCF above.
+    _mc_ttm = company.market_cap
+    if _ev_ccy is not None and company.net_debt is not None:
+        _mc_ttm = _ev_ccy - company.net_debt
+    add_row(f"Mkt Cap ({cur}M)", lambda a: a.market_cap, "M",
+            ttm_val=_mc_ttm)
     # For TTM shares, prefer latest annual (more reliable than info["sharesOutstanding"]
     # which can be the float-adjusted count and differs from total issued shares).
     _la_raw = _latest_af.shares_outstanding if _latest_af and _latest_af.shares_outstanding else None
@@ -496,7 +529,14 @@ def _build_peer_table(
     company: CompanyData, peers: dict[str, CompanyData], styles: dict
 ) -> Table:
     """Build the peer comparison table (Page 3)."""
-    cur = company.currency or "USD"
+    # Mkt Cap is a trading-currency figure; Annual Sales is a statement
+    # (reporting-currency) figure. For dual-currency ADRs (e.g. KSPI: price/
+    # mcap in USD, statements in KZT) these two anchors differ, so each
+    # column needs its own currency-suffix comparison rather than a single
+    # shared "cur". getattr() defensively — older cached CompanyData
+    # instances may not have currency_financials yet.
+    cur = company.currency_price or company.currency or "USD"
+    cur_fin = getattr(company, "currency_financials", None) or cur
 
     headers = [
         "Company", "Ticker", "Annual Sales", "Mkt Cap",
@@ -508,21 +548,28 @@ def _build_peer_table(
         st = styles["table_cell"] if right else styles["table_label"]
         return Paragraph(str(text), st)
 
-    def _fmt_with_ccy(value, peer_ccy: str) -> str:
+    def _fmt_with_ccy(value, peer_ccy: str, anchor_ccy: str) -> str:
         """Format a monetary value; append currency suffix when it differs from anchor."""
         if value is None:
             return "n/a"
         base = _fmt_b(value)
-        if peer_ccy and peer_ccy != cur:
+        if peer_ccy and peer_ccy != anchor_ccy:
             return f"{base} {peer_ccy}"
         return base
 
     def make_row(c: CompanyData, is_anchor=False):
         la = c.latest_annual()
-        peer_ccy = (c.currency or c.currency_price or "").strip().upper()
+        peer_ccy = (c.currency_price or c.currency or "").strip().upper()
+        peer_ccy_fin = (getattr(c, "currency_financials", None)
+                         or c.currency or c.currency_price or "").strip().upper()
         # Recompute EV/Sales from EV + latest-annual revenue to bypass stale cached
         # yfinance enterpriseToRevenue scalars (especially wrong for TSE stocks).
-        _peer_ev = c.enterprise_value
+        # For dual-currency ADRs, enterprise_value_financials_ccy is EV already
+        # converted into the statement currency so it can be safely divided by
+        # la.revenue (also statement currency) — plain enterprise_value is in
+        # the trading currency and would produce a meaningless ratio.
+        _peer_ev_ccy = getattr(c, "enterprise_value_financials_ccy", None)
+        _peer_ev = _peer_ev_ccy if _peer_ev_ccy is not None else c.enterprise_value
         if _peer_ev is None and c.market_cap is not None and c.net_debt is not None:
             _peer_ev = c.market_cap + c.net_debt
         _peer_evsales = None
@@ -536,8 +583,8 @@ def _build_peer_table(
                 styles["table_label"]
             ),
             p_cell(c.ticker),
-            p_cell(_fmt_with_ccy(la.revenue if la else None, peer_ccy), right=True),
-            p_cell(_fmt_with_ccy(c.market_cap, peer_ccy), right=True),
+            p_cell(_fmt_with_ccy(la.revenue if la else None, peer_ccy_fin, cur_fin), right=True),
+            p_cell(_fmt_with_ccy(c.market_cap, peer_ccy, cur), right=True),
             p_cell(_fmt_pct(c.roe),         right=True),
             p_cell(_fmt_x(c.price_to_book), right=True),
             p_cell(_fmt_x(c.pe_ratio),      right=True),
@@ -1067,6 +1114,24 @@ class OverviewV2PDFGenerator:
             ("Shares Float",    (_v(company.shares_float, "int") + "M") if company.shares_float else "—"),
         ]
         el.append(_kv2(trading_pairs))
+
+        # Dual-currency ADRs (e.g. KSPI: USD price/mcap, KZT financial
+        # statements): this page's Market Cap/EV are raw EODHD scalars in
+        # the trading currency (cur) and are NOT currency-consistent with
+        # net debt/EBIT/etc. — see the Financial Summary table (page 1) and
+        # eodhd_only_builder.py's enterprise_value_financials_ccy for the
+        # currency-consistent figures used in this report's actual ratios.
+        _cur_fin_p4 = getattr(company, "currency_financials", None)
+        if _cur_fin_p4 and _cur_fin_p4 != cur:
+            el.append(Paragraph(
+                f"Note: this company reports financial statements in "
+                f"{_cur_fin_p4} while price/market data is quoted in {cur}. "
+                f"Market Cap/Enterprise Value above are raw EODHD figures in "
+                f"{cur} — see the Financial Summary table for currency-consistent "
+                f"ratios.",
+                ParagraphStyle("p4fx", fontName=BASE_FONT, fontSize=6.5,
+                               textColor=MGRAY, spaceBefore=2, leading=8),
+            ))
         el.append(Spacer(1, 6))
 
         # ── SECTION 3: Technical Levels ───────────────────────────────────────

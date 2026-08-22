@@ -67,21 +67,32 @@ SYSTEM_PROMPT = _load_system_prompt()
 
 def _format_financials_for_llm(company: CompanyData) -> str:
     """Build a clean financial summary string to include in the LLM prompt."""
-    cur = company.currency or "USD"
+    cur = company.currency_price or company.currency or "USD"
+    # currency_financials is the currency financial STATEMENTS are reported
+    # in (revenue, EBITDA, net income, net debt, FCF, ...). For most
+    # companies this equals `cur` (the trading/quote currency). For dual-
+    # currency ADRs (e.g. KSPI: price/market-cap quoted in USD, statements
+    # reported in KZT) it differs — labeling statement-derived figures with
+    # `cur` would silently misstate their currency to the LLM. getattr()
+    # defensively — older cached CompanyData instances may lack the field.
+    cur_fin = getattr(company, "currency_financials", None) or cur
+    _ev_ccy = getattr(company, "enterprise_value_financials_ccy", None)
+    ev_for_prompt = _ev_ccy if _ev_ccy is not None else company.enterprise_value
     lines = []
 
     lines.append(f"COMPANY: {company.name or company.ticker} ({company.ticker})")
     lines.append(f"SECTOR:  {company.sector or 'n/a'} — {company.industry or 'n/a'}")
-    lines.append(f"COUNTRY: {company.country or 'n/a'} | CURRENCY: {cur}")
+    lines.append(f"COUNTRY: {company.country or 'n/a'} | CURRENCY: {cur}"
+                 + (f" (financial statements reported in {cur_fin})" if cur_fin != cur else ""))
     lines.append(f"EXCHANGE: {company.exchange or 'n/a'}")
     if company.description:
         desc = company.description[:600]
         lines.append(f"\nBUSINESS: {desc}{'...' if len(company.description) > 600 else ''}")
 
     lines.append(f"\nMARKET DATA (as of {company.as_of_date or 'n/a'}):")
-    lines.append(f"  Current Price:   {company.current_price} {company.currency_price or cur}")
+    lines.append(f"  Current Price:   {company.current_price} {cur}")
     lines.append(f"  Market Cap:      {_b(company.market_cap)} {cur}M")
-    lines.append(f"  Enterprise Value:{_b(company.enterprise_value)} {cur}M")
+    lines.append(f"  Enterprise Value:{_b(ev_for_prompt)} {cur_fin}M")
     lines.append(f"  Shares Out.:     {_m(company.shares_outstanding)} M")
 
     lines.append(f"\nVALUATION MULTIPLES (current):")
@@ -99,11 +110,11 @@ def _format_financials_for_llm(company: CompanyData) -> str:
     lines.append(f"  ROE:           {_pct(company.roe)}")
     lines.append(f"  ROA:           {_pct(company.roa)}")
     lines.append(f"  Gearing:       {_x(company.gearing)} (Net Debt/EBITDA)")
-    lines.append(f"  Net Debt:      {_b(company.net_debt)} {cur}M")
+    lines.append(f"  Net Debt:      {_b(company.net_debt)} {cur_fin}M")
 
     years = company.sorted_years()[:6]
     if years:
-        lines.append(f"\nANNUAL FINANCIALS ({cur} millions, most recent first):")
+        lines.append(f"\nANNUAL FINANCIALS ({cur_fin} millions, most recent first):")
         header = f"  {'':22} " + " ".join(f"{y:>10}" for y in years)
         lines.append(header)
         lines.append("  " + "-" * (22 + 11 * len(years)))
@@ -144,13 +155,13 @@ def _format_financials_for_llm(company: CompanyData) -> str:
             f" [THESE ARE FUTURE FORECASTS — NOT REPORTED ACTUALS]:"
         )
         if fe.revenue is not None:
-            lines.append(f"  Revenue {fe.year}E:  {_b(fe.revenue)} {cur}M"
+            lines.append(f"  Revenue {fe.year}E:  {_b(fe.revenue)} {cur_fin}M"
                          + (f"  (growth: {_pct(fe.revenue_growth_yoy)})" if fe.revenue_growth_yoy else ""))
         if fe.eps_diluted is not None:
             lines.append(f"  EPS {fe.year}E:      {fe.eps_diluted:.2f}"
                          + (f"  (growth: {_pct(fe.eps_growth_yoy)})" if fe.eps_growth_yoy else ""))
         if fe.net_income is not None:
-            lines.append(f"  Net Income {fe.year}E: {_b(fe.net_income)} {cur}M")
+            lines.append(f"  Net Income {fe.year}E: {_b(fe.net_income)} {cur_fin}M")
         if fe.pe_ratio is not None:
             lines.append(f"  Forward P/E:   {_x(fe.pe_ratio)}")
         if fe.ev_sales is not None:
@@ -238,7 +249,8 @@ def _overview_prompt_parts(
     dynamic_content   — company-specific financials, macro, news.
     """
     fin_data = _format_financials_for_llm(company)
-    cur = company.currency or "USD"
+    cur = company.currency_price or company.currency or "USD"
+    cur_fin = getattr(company, "currency_financials", None) or cur
 
     from data_sources.fred_adapter import get_macro_block
     macro_block = get_macro_block()
@@ -246,9 +258,18 @@ def _overview_prompt_parts(
     news_section = f"\n\n{news_block}" if news_block else ""
     country_macro_section = f"\n\n{macro_country_block}" if macro_country_block else ""
 
+    _currency_note = (
+        f"Currency is {cur} throughout."
+        if cur_fin == cur else
+        f"NOTE — dual currency: price and market cap are quoted in {cur}, "
+        f"while financial statement figures (revenue, EBITDA, EBIT, net income, "
+        f"FCF, net debt, and Enterprise Value) are reported in {cur_fin}. "
+        f"Do not mix the two when computing or discussing ratios — each figure "
+        f"above is already labeled with its correct currency."
+    )
     dynamic = (
         f"{fin_data}{macro_section}{news_section}{country_macro_section}\n\n"
-        f"Currency is {cur} throughout.\n"
+        f"{_currency_note}\n"
         f"Analyze the company data above and return the JSON."
     )
     return _OVERVIEW_CACHEABLE, dynamic

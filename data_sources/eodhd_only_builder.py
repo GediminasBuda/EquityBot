@@ -791,6 +791,24 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
         _nd_financials = _la2.net_debt if _la2 else None
         if _nd_financials is not None:
             company.enterprise_value_financials_ccy = _mc_financials + _nd_financials
+            # EV/EBIT has no EODHD-native precomputed equivalent (unlike
+            # EV/Sales, EV/EBITDA — see comment above), so it is always left
+            # for CompanyData.calculate_current_ratios()'s fallback to fill
+            # in later (`if self.ev_ebit is None: ev / la.ebit`), which would
+            # divide the TRADING-currency `enterprise_value` by a reporting-
+            # currency EBIT for a dual-currency ADR — the same class of bug
+            # fixed for EV/Gross Profit and EV/Sales. Pre-populate it here
+            # with the currency-consistent EV so that fallback's `is None`
+            # guard skips it.
+            if _la2 and _la2.ebit and _la2.ebit > 0:
+                company.ev_ebit = company.enterprise_value_financials_ccy / _la2.ebit
+        # FCF Yield = FCF (reporting currency) / Market Cap also has no
+        # currency-consistent EODHD-native equivalent — CompanyData's own
+        # fallback divides `la.fcf` by the TRADING-currency `market_cap`,
+        # which is likewise wrong for a dual-currency ADR. Pre-populate
+        # using the reporting-currency market cap computed above.
+        if _la2 and _la2.fcf and _mc_financials > 0:
+            company.fcf_yield = _la2.fcf / _mc_financials
 
     # ── Final touch: mark which scalar fields are EODHD-sourced ──────────────
     eodhd_fields_filled = [
