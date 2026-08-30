@@ -54,13 +54,16 @@ def report_file_stem(ticker: str, company_name: str | None = None) -> str:
     """
     Build the ticker portion of a report filename.
 
-    Letter tickers keep the existing '.'/'-' -> '_' behavior (e.g.
-    'RHM.DE' -> 'RHM_DE'). Pure-numeric tickers (Japan, Korea, China,
-    Taiwan, Hong Kong, etc.) additionally append a short form of the
-    company name so the file is identifiable at a glance, e.g.
-    '7974.T' + 'Nintendo Co Ltd' -> '7974_T_Nintendo'.
+    The '.' between a ticker root and its exchange suffix (e.g. 'RHM.DE',
+    'CNQ.TO', '7974.T', 'TEP.PA') is kept as a literal '.' in the filename
+    rather than converted to '_' — it reads more naturally and matches how
+    the ticker is written everywhere else in the app. Hyphens (e.g. share
+    classes like 'BRK-B') still become '_'. Pure-numeric tickers (Japan,
+    Korea, China, Taiwan, Hong Kong, etc.) additionally append a short form
+    of the company name so the file is identifiable at a glance, e.g.
+    '7974.T' + 'Nintendo Co Ltd' -> '7974.T_Nintendo'.
     """
-    safe_ticker = (ticker or "").replace(".", "_").replace("-", "_")
+    safe_ticker = (ticker or "").replace("-", "_")
     if is_numeric_ticker(ticker) and company_name:
         short = sanitize_for_filename(short_company_name(company_name))
         if short:
