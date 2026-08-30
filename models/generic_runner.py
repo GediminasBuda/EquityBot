@@ -152,7 +152,8 @@ class GenericRunner:
 
         # ── Save ──────────────────────────────────────────────────────────────
         if not output_path:
-            safe     = ticker.replace(".", "_").replace("-", "_")
+            from utils.report_naming import report_file_stem
+            safe     = report_file_stem(ticker, company.name)
             fw_slug  = re.sub(r"[^a-z0-9]+", "_", framework.name.lower()).strip("_")[:20]
             date_str = datetime.now().strftime("%Y-%m-%d")
             fname    = f"{safe}_{fw_slug}_{date_str}.html"

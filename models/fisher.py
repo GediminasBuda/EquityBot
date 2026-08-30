@@ -387,7 +387,8 @@ class FisherModel:
         from agents.pdf_fisher import FisherPDFGenerator
 
         if output_path is None:
-            safe  = ticker.replace(".", "_").replace("-", "_")
+            from utils.report_naming import report_file_stem
+            safe  = report_file_stem(ticker, company.name)
             date  = datetime.now().strftime("%Y-%m-%d")
             fname = f"{safe}_fisher_{date}.pdf"
             output_path = os.path.join(OUTPUTS_DIR, fname)

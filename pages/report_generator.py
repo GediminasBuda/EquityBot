@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # ── Auth guard — must be first, blocks unauthenticated direct URL access ──────
 from utils.auth import require_auth
+from utils.report_naming import report_file_stem
 require_auth()
 
 from config import LLM_PROVIDER, LLM_MODEL, OUTPUTS_DIR, ADVERSARIAL_MODE as _CFG_ADV_MODE
@@ -2566,9 +2567,9 @@ if generate_clicked and ticker_input:
                 # pick it up without changing the render() signature.
                 setattr(company, "_eod_data_v2", _v2_bundle.get("eod") or [])
                 setattr(company, "_rt_data_v2",  _v2_bundle.get("realtime") or {})
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
-                pdf_path = str(OUTPUTS_DIR / f"{safe}_overview_v2_{date}.pdf")
+                pdf_path = str(OUTPUTS_DIR / f"{safe}_overview_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
                 OverviewV2PDFGenerator().render(company, analysis, peers,
                                                  checklist, pdf_path,
@@ -2651,7 +2652,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(88, text="📄  Rendering PDF…")
                 st.write("📄  Rendering PDF...")
                 from agents.pdf_fisher import FisherPDFGenerator
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_fisher_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -2822,7 +2823,7 @@ if generate_clicked and ticker_input:
                 import importlib, agents.pdf_fisher_peers as _fprmod
                 importlib.reload(_fprmod)
                 from agents.pdf_fisher_peers import FisherPeersPDFGenerator
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_fisher_peers_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -3016,7 +3017,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(90, text="📄  Rendering Industry Analysis PDF…")
                 st.write("📄  Rendering Industry Analysis PDF…")
                 from agents.pdf_industry_analysis import IndustryAnalysisPDFGenerator
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_industry_analysis_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -3057,7 +3058,7 @@ if generate_clicked and ticker_input:
                          + (f" — missing: {', '.join(bundle['errors'])}" if bundle['errors'] else ""))
                 _prog.progress(85, text="📄  Rendering EODHD Full PDF…")
                 st.write("📄  Rendering EODHD Full PDF…")
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_eodhd_full_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -3220,7 +3221,7 @@ if generate_clicked and ticker_input:
 
                 _prog.progress(88, text="📄  Rendering Insider PDF…")
                 st.write("📄  Rendering Insider PDF…")
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(
                     OUTPUTS_DIR
@@ -3366,7 +3367,7 @@ if generate_clicked and ticker_input:
                 # ── Step 6: Render PDF ─────────────────────────────────────────
                 _prog.progress(88, text="📄  Rendering ValueMeter PDF…")
                 st.write("📄  Rendering ValueMeter PDF…")
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_valuemeter_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -3538,7 +3539,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(85, text="📄  Rendering Short Interest PDF…")
                 st.write("📄  Rendering Short Interest PDF…")
 
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_short_interest_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -3586,7 +3587,7 @@ if generate_clicked and ticker_input:
 
                 _prog.progress(82, text="📄  Rendering Fund Fundamentals PDF…")
                 st.write("📄  Rendering Fund Fundamentals PDF…")
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_fund_fundamentals_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -3763,7 +3764,7 @@ if generate_clicked and ticker_input:
                 import importlib, agents.pdf_earnings_quality as _eqmod
                 importlib.reload(_eqmod)
                 from agents.pdf_earnings_quality import EarningsQualityPDFGenerator
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_earnings_quality_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -3893,7 +3894,7 @@ if generate_clicked and ticker_input:
                 import importlib, agents.pdf_growth_quality as _gqmod
                 importlib.reload(_gqmod)
                 from agents.pdf_growth_quality import GrowthQualityPDFGenerator
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_growth_quality_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -4036,7 +4037,7 @@ if generate_clicked and ticker_input:
                 import importlib, agents.pdf_growth_pricing as _gpmod
                 importlib.reload(_gpmod)
                 from agents.pdf_growth_pricing import GrowthPricingPDFGenerator
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_growth_pricing_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
@@ -4056,7 +4057,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(25, text=f"🤖  Running '{fw_config.name}' AI analysis — typically 30–90 s…")
                 st.write(f"🤖  Running '{fw_config.name}' analysis (Claude)…")
                 runner = GenericRunner()
-                safe   = ticker_input.replace(".", "_").replace("-", "_")
+                safe   = report_file_stem(ticker_input, company.name)
                 import re as _re
                 fw_slug = _re.sub(r"[^a-z0-9]+", "_", fw_config.name.lower()).strip("_")[:20]
                 date   = datetime.now().strftime("%Y-%m-%d")
@@ -4153,7 +4154,7 @@ if generate_clicked and ticker_input:
                 _prog.progress(88, text="📄  Rendering PDF…")
                 st.write("📄  Rendering PDF...")
                 from agents.pdf_gravity import GravityPDFGenerator
-                safe = ticker_input.replace(".", "_").replace("-", "_")
+                safe = report_file_stem(ticker_input, company.name)
                 date = datetime.now().strftime("%Y-%m-%d")
                 pdf_path = str(OUTPUTS_DIR / f"{safe}_gravity_{date}.pdf")
                 os.makedirs(OUTPUTS_DIR, exist_ok=True)
