@@ -31,6 +31,57 @@ from config import EODHD_API_KEY, REQUEST_HEADERS
 
 logger = logging.getLogger(__name__)
 
+
+def _sum_ttm_flow(sorted_dates: list, row_lookup: dict, value_fn) -> Optional[float]:
+    """Sum a period-flow metric (revenue, EBITDA, ...) over the trailing ~12
+    months from EODHD's quarterly statements.
+
+    EODHD sometimes reports quarterly (3-month) periods for a company's older
+    history but switches to half-yearly (6-month) periods for its more recent
+    filings (confirmed for Frequentis AG / FQT.DE). Blindly summing "the last
+    4 period entries" then sums ~24 months of data while believing it covers
+    12, roughly doubling the TTM figure. Instead, walk backward tracking each
+    period's actual length in months (from the calendar gap to the
+    next-older period's end date) and stop once coverage reaches ~12 months.
+
+    `sorted_dates` must be period-end date strings sorted newest-first.
+    Returns None if there isn't enough contiguous data to cover ~12 months.
+    """
+    if not sorted_dates:
+        return None
+
+    def _period_len_months(newer: str, older: str) -> Optional[float]:
+        try:
+            d1 = datetime.strptime(str(newer)[:10], "%Y-%m-%d")
+            d0 = datetime.strptime(str(older)[:10], "%Y-%m-%d")
+            days = (d1 - d0).days
+            return days / 30.44 if days > 0 else None
+        except (ValueError, TypeError):
+            return None
+
+    total = 0.0
+    months_covered = 0.0
+    used = 0
+    for i, d in enumerate(sorted_dates):
+        if months_covered >= 11.5:
+            break
+        val = value_fn(row_lookup.get(d) or {})
+        if val is None:
+            break  # gap in the data — stop rather than mis-measure coverage
+        pm = None
+        if i + 1 < len(sorted_dates):
+            pm = _period_len_months(d, sorted_dates[i + 1])
+        if pm is None or pm <= 0:
+            pm = 3.0  # oldest usable entry / unknown gap — assume quarterly
+        total += val
+        months_covered += pm
+        used += 1
+
+    if used == 0 or months_covered < 9.0:
+        return None
+    return total * (12.0 / months_covered)
+
+
 EODHD_BASE = "https://eodhistoricaldata.com/api"
 EODHD_DELAY = 0.5  # seconds between calls
 
@@ -729,42 +780,32 @@ class EODHDAdapter:
         if not income_q:
             return
 
-        # Sort quarterly dates descending to find the most recent 4 quarters
+        # Sort quarterly dates descending (newest first)
         sorted_dates = sorted(income_q.keys(), reverse=True)
         if sorted_dates:
             latest = sorted_dates[0]
             company.ttm_last_quarter_date = latest[:10] if len(latest) >= 10 else latest
 
-        # Fallback: compute TTM revenue/EBITDA by summing last 4 quarters
-        recent_4 = sorted_dates[:4]
-        if company.ttm_revenue is None and recent_4:
-            total = 0.0
-            count = 0
-            for d in recent_4:
-                v = self._to_m(income_q[d].get("totalRevenue") or income_q[d].get("revenue"))
-                if v is not None:
-                    total += v
-                    count += 1
-            if count > 0:
-                company.ttm_revenue = total * 4 / count  # annualise if partial
+        # Fallback: sum trailing ~12 months of quarterly data when Highlights TTM
+        # is missing. Uses _sum_ttm_flow() rather than a fixed "last 4 entries"
+        # count so a switch to half-yearly reporting doesn't silently double
+        # the result (see _sum_ttm_flow docstring).
+        if company.ttm_revenue is None:
+            company.ttm_revenue = _sum_ttm_flow(
+                sorted_dates, income_q,
+                lambda r: self._to_m(r.get("totalRevenue") or r.get("revenue")),
+            )
 
-        if company.ttm_ebitda is None and recent_4:
-            total = 0.0
-            count = 0
-            for d in recent_4:
-                row = income_q[d]
+        if company.ttm_ebitda is None:
+            def _ebitda_val(row):
                 v = self._to_m(row.get("ebitda") or row.get("EBITDA"))
                 if v is None:
-                    # derive: EBIT + D&A
                     ebit = self._to_m(row.get("ebit") or row.get("operatingIncome"))
                     da   = self._to_m(row.get("depreciationAndAmortization") or row.get("dAndA"))
                     if ebit is not None and da is not None:
                         v = ebit + da
-                if v is not None:
-                    total += v
-                    count += 1
-            if count > 0:
-                company.ttm_ebitda = total * 4 / count
+                return v
+            company.ttm_ebitda = _sum_ttm_flow(sorted_dates, income_q, _ebitda_val)
 
     # ──────────────────────────────────────────────────────────────────────────
     # Actual EPS from Earnings.Annual

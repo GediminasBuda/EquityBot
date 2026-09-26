@@ -58,6 +58,65 @@ def _year_from_date(s) -> Optional[int]:
         return None
 
 
+def _sum_ttm_flow(sorted_dates: list, row_lookup: dict, value_fn) -> Optional[float]:
+    """Sum a period-flow metric (revenue, EBITDA, net income, FCF, ...) over the
+    trailing ~12 months from EODHD's quarterly statements.
+
+    EODHD sometimes reports quarterly (3-month) periods for a company's older
+    history but switches to half-yearly (6-month) periods for its more recent
+    filings — confirmed for Frequentis AG (FQT.DE), whose quarterly Income
+    Statement is genuinely 3-month periods through 2024-06 and then 6-month
+    periods from 2024-06 onward. Blindly summing "the last 4 period entries"
+    (the old behaviour) then sums ~24 months of data while believing it
+    covers 12, roughly doubling TTM net income/FCF/revenue.
+
+    Instead, walk backward from the most recent period, tracking each
+    period's actual length in months (from the calendar gap to the
+    next-older period's end date), and stop accumulating once coverage
+    reaches ~12 months. This handles quarterly, semi-annual, or a mix of
+    both without needing to know the period type in advance.
+
+    `sorted_dates` must be period-end date strings sorted newest-first.
+    Returns None if there isn't enough contiguous data to cover ~12 months.
+    """
+    if not sorted_dates:
+        return None
+
+    def _period_len_months(newer: str, older: str) -> Optional[float]:
+        try:
+            d1 = datetime.strptime(str(newer)[:10], "%Y-%m-%d")
+            d0 = datetime.strptime(str(older)[:10], "%Y-%m-%d")
+            days = (d1 - d0).days
+            return days / 30.44 if days > 0 else None
+        except (ValueError, TypeError):
+            return None
+
+    total = 0.0
+    months_covered = 0.0
+    used = 0
+    for i, d in enumerate(sorted_dates):
+        if months_covered >= 11.5:
+            break
+        val = value_fn(row_lookup.get(d) or {})
+        if val is None:
+            break  # gap in the data — stop rather than mis-measure coverage
+        pm = None
+        if i + 1 < len(sorted_dates):
+            pm = _period_len_months(d, sorted_dates[i + 1])
+        if pm is None or pm <= 0:
+            pm = 3.0  # oldest usable entry / unknown gap — assume quarterly
+        total += val
+        months_covered += pm
+        used += 1
+
+    if used == 0 or months_covered < 9.0:
+        return None
+    # Small date-arithmetic rounding (e.g. 11.8 or 12.3 months) is corrected
+    # back to an exact 12-month figure; this is a no-op when periods already
+    # sum to ~12 months (2 half-years, 4 quarters, or any real mix).
+    return total * (12.0 / months_covered)
+
+
 def fetch_company_data_eodhd_only(yf_ticker: str
                                   ) -> tuple[CompanyData, dict]:
     """
@@ -268,44 +327,37 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
             company.ttm_last_quarter_date = (
                 _latest_q[:10] if len(_latest_q) >= 10 else _latest_q
             )
-        # Fallback: sum last 4 quarters when Highlights TTM is missing
+        # Fallback: sum trailing ~12 months of quarterly data when Highlights
+        # TTM is missing. Uses _sum_ttm_flow() rather than a fixed "last 4
+        # entries" count so a switch to half-yearly reporting (see docstring)
+        # doesn't silently double the result.
         if company.ttm_revenue is None:
-            _rev_sum, _rev_n = 0.0, 0
-            for _qd in _sorted_q[:4]:
-                _rv = _to_m(_q_inc[_qd].get("totalRevenue") or _q_inc[_qd].get("revenue"))
-                if _rv is not None:
-                    _rev_sum += _rv; _rev_n += 1
-            if _rev_n:
-                company.ttm_revenue = _rev_sum * 4 / _rev_n
+            company.ttm_revenue = _sum_ttm_flow(
+                _sorted_q, _q_inc,
+                lambda r: _to_m(r.get("totalRevenue") or r.get("revenue")),
+            )
         if company.ttm_ebitda is None:
-            _ebi_sum, _ebi_n = 0.0, 0
-            for _qd in _sorted_q[:4]:
-                _row = _q_inc[_qd]
-                _eb = _to_m(_row.get("ebitda") or _row.get("EBITDA"))
-                if _eb is None:
-                    _ebit = _to_m(_row.get("ebit") or _row.get("operatingIncome"))
-                    _da   = _to_m(_row.get("depreciationAndAmortization"))
-                    if _ebit is not None and _da is not None:
-                        _eb = _ebit + _da
-                if _eb is not None:
-                    _ebi_sum += _eb; _ebi_n += 1
-            if _ebi_n:
-                company.ttm_ebitda = _ebi_sum * 4 / _ebi_n
+            def _ebitda_val(r):
+                eb = _to_m(r.get("ebitda") or r.get("EBITDA"))
+                if eb is None:
+                    ebit_v = _to_m(r.get("ebit") or r.get("operatingIncome"))
+                    da_v   = _to_m(r.get("depreciationAndAmortization"))
+                    if ebit_v is not None and da_v is not None:
+                        eb = ebit_v + da_v
+                return eb
+            company.ttm_ebitda = _sum_ttm_flow(_sorted_q, _q_inc, _ebitda_val)
 
     # ── TTM Net Income ───────────────────────────────────────────────────────
-    # Primary: sum last 4 quarterly net income rows directly from EODHD
-    # quarterly income statement — reported figures, no derivation needed.
+    # Primary: sum trailing ~12 months of quarterly net income rows directly
+    # from EODHD's quarterly income statement — reported figures, no
+    # derivation needed. Uses _sum_ttm_flow(), not a fixed "last 4 entries"
+    # count, so a switch to half-yearly reporting doesn't double the result.
     # Fallback: ProfitMargin × RevenueTTM only when quarterly data is absent.
     if _q_inc:
-        _ni_sum, _ni_n = 0.0, 0
-        for _qd in _sorted_q[:4]:
-            _row = _q_inc[_qd]
-            _ni = (_to_m(_row.get("netIncomeApplicableToCommonShares"))
-                   or _to_m(_row.get("netIncome")))
-            if _ni is not None:
-                _ni_sum += _ni; _ni_n += 1
-        if _ni_n:
-            company.ttm_net_income = _ni_sum * 4 / _ni_n
+        def _ni_val(r):
+            return (_to_m(r.get("netIncomeApplicableToCommonShares"))
+                    or _to_m(r.get("netIncome")))
+        company.ttm_net_income = _sum_ttm_flow(_sorted_q, _q_inc, _ni_val)
     if company.ttm_net_income is None and company.ttm_revenue and company.net_margin is not None:
         company.ttm_net_income = company.ttm_revenue * company.net_margin
 
@@ -318,19 +370,15 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
              .get("quarter") or {})
     if _q_cf:
         _sorted_qcf = sorted(_q_cf.keys(), reverse=True)
-        _fcf_sum, _fcf_n = 0.0, 0
-        for _qd in _sorted_qcf[:4]:
-            _row = _q_cf[_qd]
-            _fcf_q = _to_m(_row.get("freeCashFlow"))
-            if _fcf_q is None:
-                _ocf = _to_m(_row.get("totalCashFromOperatingActivities"))
-                _cap = _to_m(_row.get("capitalExpenditures"))
-                if _ocf is not None and _cap is not None:
-                    _fcf_q = _ocf - abs(_cap)
-            if _fcf_q is not None:
-                _fcf_sum += _fcf_q; _fcf_n += 1
-        if _fcf_n:
-            company.ttm_fcf = _fcf_sum * 4 / _fcf_n
+        def _fcf_val(r):
+            fcf_q = _to_m(r.get("freeCashFlow"))
+            if fcf_q is None:
+                ocf = _to_m(r.get("totalCashFromOperatingActivities"))
+                cap = _to_m(r.get("capitalExpenditures"))
+                if ocf is not None and cap is not None:
+                    fcf_q = ocf - abs(cap)
+            return fcf_q
+        company.ttm_fcf = _sum_ttm_flow(_sorted_qcf, _q_cf, _fcf_val)
 
     company.book_value_per_share = _f(h.get("BookValue"))
     company.revenue_per_share    = _f(h.get("RevenuePerShareTTM"))
