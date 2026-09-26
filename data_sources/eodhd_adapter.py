@@ -770,8 +770,8 @@ class EODHDAdapter:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _parse_quarterly_ttm(self, company: "CompanyData", financials_block: dict) -> None:
-        """Set ttm_last_quarter_date and fill ttm_revenue/ttm_ebitda from quarters
-        if the Highlights block did not provide them."""
+        """Fill ttm_last_quarter_date/ttm_revenue/ttm_ebitda, preferring the
+        date-gap-aware quarterly sum over whatever the Highlights block set."""
         def _quarterly(block_key: str) -> dict:
             blk = financials_block.get(block_key) or {}
             return blk.get("quarterly") or blk.get("quarter") or {}
@@ -786,26 +786,32 @@ class EODHDAdapter:
             latest = sorted_dates[0]
             company.ttm_last_quarter_date = latest[:10] if len(latest) >= 10 else latest
 
-        # Fallback: sum trailing ~12 months of quarterly data when Highlights TTM
-        # is missing. Uses _sum_ttm_flow() rather than a fixed "last 4 entries"
-        # count so a switch to half-yearly reporting doesn't silently double
-        # the result (see _sum_ttm_flow docstring).
-        if company.ttm_revenue is None:
-            company.ttm_revenue = _sum_ttm_flow(
-                sorted_dates, income_q,
-                lambda r: self._to_m(r.get("totalRevenue") or r.get("revenue")),
-            )
+        # Prefer the date-gap-aware quarterly sum (_sum_ttm_flow) over
+        # Highlights.RevenueTTM/EBITDA whenever it can be computed —
+        # Highlights TTM figures are EODHD's own precomputed values and are
+        # NOT guaranteed to be date-gap-aware internally; they've been
+        # observed wrong (non-null but stale/inconsistent) for a company
+        # whose quarterly cadence switched from 3-month to 6-month periods
+        # (Frequentis AG / FQT.DE, 2026-09-26). Only fall back to whatever
+        # Highlights already set when the quarterly sum can't be computed.
+        _calc_revenue = _sum_ttm_flow(
+            sorted_dates, income_q,
+            lambda r: self._to_m(r.get("totalRevenue") or r.get("revenue")),
+        )
+        if _calc_revenue is not None:
+            company.ttm_revenue = _calc_revenue
 
-        if company.ttm_ebitda is None:
-            def _ebitda_val(row):
-                v = self._to_m(row.get("ebitda") or row.get("EBITDA"))
-                if v is None:
-                    ebit = self._to_m(row.get("ebit") or row.get("operatingIncome"))
-                    da   = self._to_m(row.get("depreciationAndAmortization") or row.get("dAndA"))
-                    if ebit is not None and da is not None:
-                        v = ebit + da
-                return v
-            company.ttm_ebitda = _sum_ttm_flow(sorted_dates, income_q, _ebitda_val)
+        def _ebitda_val(row):
+            v = self._to_m(row.get("ebitda") or row.get("EBITDA"))
+            if v is None:
+                ebit = self._to_m(row.get("ebit") or row.get("operatingIncome"))
+                da   = self._to_m(row.get("depreciationAndAmortization") or row.get("dAndA"))
+                if ebit is not None and da is not None:
+                    v = ebit + da
+            return v
+        _calc_ebitda = _sum_ttm_flow(sorted_dates, income_q, _ebitda_val)
+        if _calc_ebitda is not None:
+            company.ttm_ebitda = _calc_ebitda
 
     # ──────────────────────────────────────────────────────────────────────────
     # Actual EPS from Earnings.Annual

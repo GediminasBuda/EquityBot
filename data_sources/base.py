@@ -464,9 +464,17 @@ class CompanyData:
         if self.ev_sales is None and ev and la and la.revenue and la.revenue > 0 and not _dual:
             self.ev_sales = ev / la.revenue
 
-        # FCF Yield
-        if self.fcf_yield is None and self.market_cap and la and la.fcf and self.market_cap > 0 and not _dual:
-            self.fcf_yield = la.fcf / self.market_cap
+        # FCF Yield  =  TTM FCF / market cap. Prefer the true trailing-twelve-
+        # month FCF (self.ttm_fcf, summed from quarterly cash flow — see
+        # eodhd_only_builder.py) over la.fcf (latest ANNUAL fiscal year FCF)
+        # whenever it's available: la.fcf can differ substantially from the
+        # real TTM figure (e.g. FQT.DE showed 4.0% here vs 5.8% actual TTM
+        # yield, 2026-09-26), since a fiscal year's FCF is not the same period
+        # as "trailing twelve months from today".
+        if self.fcf_yield is None and self.market_cap and self.market_cap > 0 and not _dual:
+            _fcf_for_yield = self.ttm_fcf if self.ttm_fcf is not None else (la.fcf if la else None)
+            if _fcf_for_yield is not None:
+                self.fcf_yield = _fcf_for_yield / self.market_cap
 
         # Gearing (Net Debt / EBITDA)
         if self.gearing is None:

@@ -286,10 +286,13 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
     company.roa           = _f(h.get("ReturnOnAssetsTTM"))
 
     # ── TTM absolute P&L figures ─────────────────────────────────────────────
-    # RevenueTTM is in full units (not millions) — convert with _to_m().
-    # EBITDA from Highlights is also full units.
-    company.ttm_revenue = _to_m(h.get("RevenueTTM"))
-    company.ttm_ebitda  = _to_m(h.get("EBITDA"))
+    # RevenueTTM/EBITDA from Highlights are read here as a fallback only —
+    # see the quarterly-sum priority block below, which now takes precedence
+    # whenever quarterly data is available.
+    _h_ttm_revenue = _to_m(h.get("RevenueTTM"))
+    _h_ttm_ebitda  = _to_m(h.get("EBITDA"))
+    company.ttm_revenue = _h_ttm_revenue
+    company.ttm_ebitda  = _h_ttm_ebitda
     # Next earnings date: try Highlights first, fall back to Earnings.History
     _ned = h.get("NextEarningsDate")
     if _ned and str(_ned).strip() not in ("", "0000-00-00", "None"):
@@ -327,25 +330,32 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
             company.ttm_last_quarter_date = (
                 _latest_q[:10] if len(_latest_q) >= 10 else _latest_q
             )
-        # Fallback: sum trailing ~12 months of quarterly data when Highlights
-        # TTM is missing. Uses _sum_ttm_flow() rather than a fixed "last 4
-        # entries" count so a switch to half-yearly reporting (see docstring)
-        # doesn't silently double the result.
-        if company.ttm_revenue is None:
-            company.ttm_revenue = _sum_ttm_flow(
-                _sorted_q, _q_inc,
-                lambda r: _to_m(r.get("totalRevenue") or r.get("revenue")),
-            )
-        if company.ttm_ebitda is None:
-            def _ebitda_val(r):
-                eb = _to_m(r.get("ebitda") or r.get("EBITDA"))
-                if eb is None:
-                    ebit_v = _to_m(r.get("ebit") or r.get("operatingIncome"))
-                    da_v   = _to_m(r.get("depreciationAndAmortization"))
-                    if ebit_v is not None and da_v is not None:
-                        eb = ebit_v + da_v
-                return eb
-            company.ttm_ebitda = _sum_ttm_flow(_sorted_q, _q_inc, _ebitda_val)
+        # Prefer the date-gap-aware quarterly sum (_sum_ttm_flow) over
+        # EODHD's own Highlights.RevenueTTM/EBITDA whenever it can be
+        # computed. Highlights TTM figures are EODHD's own precomputed
+        # values and are NOT guaranteed to be date-gap-aware internally —
+        # they've been observed wrong (non-null but stale/inconsistent, not
+        # just missing) for a company whose quarterly cadence switched from
+        # 3-month to 6-month periods, e.g. Frequentis AG (FQT.DE, 2026-09-26):
+        # Highlights.EBITDA = 74.03M vs the correct quarterly-summed 82.3M
+        # (57.2M + 25.1M across the two most recent half-yearly periods).
+        # Only fall back to the Highlights figure when the quarterly sum
+        # can't be computed (insufficient/gapped quarterly coverage).
+        _calc_revenue = _sum_ttm_flow(
+            _sorted_q, _q_inc,
+            lambda r: _to_m(r.get("totalRevenue") or r.get("revenue")),
+        )
+        def _ebitda_val(r):
+            eb = _to_m(r.get("ebitda") or r.get("EBITDA"))
+            if eb is None:
+                ebit_v = _to_m(r.get("ebit") or r.get("operatingIncome"))
+                da_v   = _to_m(r.get("depreciationAndAmortization"))
+                if ebit_v is not None and da_v is not None:
+                    eb = ebit_v + da_v
+            return eb
+        _calc_ebitda = _sum_ttm_flow(_sorted_q, _q_inc, _ebitda_val)
+        company.ttm_revenue = _calc_revenue if _calc_revenue is not None else _h_ttm_revenue
+        company.ttm_ebitda  = _calc_ebitda if _calc_ebitda is not None else _h_ttm_ebitda
 
     # ── TTM Net Income ───────────────────────────────────────────────────────
     # Primary: sum trailing ~12 months of quarterly net income rows directly
