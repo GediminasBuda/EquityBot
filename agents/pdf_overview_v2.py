@@ -378,6 +378,25 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     add_row(f"Sales ({cur}M)", lambda a: a.revenue,
             ttm_val=ttm_revenue,
             est_val=fe.revenue if fe else None)
+
+    # Sales Growth: plain annual YoY (fiscal year Y revenue vs Y-1). TTM is
+    # left n/a — a true TTM YoY would need a TTM figure from a year earlier,
+    # and TTM vs last fiscal year is not a YoY rate. Estimate column compares
+    # consensus revenue with the preceding fiscal year's actual revenue.
+    def _sales_growth(a):
+        prev = af(a.year - 1)
+        if a.revenue is None or prev is None or not prev.revenue or prev.revenue <= 0:
+            return None
+        return a.revenue / prev.revenue - 1
+    _est_sales_growth = None
+    if fe is not None:
+        _prev_est = af(fe.year - 1)
+        if fe.revenue and _prev_est and _prev_est.revenue and _prev_est.revenue > 0:
+            _est_sales_growth = fe.revenue / _prev_est.revenue - 1
+        else:
+            _est_sales_growth = fe.revenue_growth_yoy
+    add_row("Sales Growth", _sales_growth, "%",
+            est_val=_est_sales_growth)
     add_row("Gross Margin", lambda a: a.gross_margin, "%",
             ttm_val=company.gross_margin)
     # EBITDA Margin TTM: derive from the TTM EBITDA / TTM revenue sums shown
@@ -436,8 +455,6 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         _fcf_yield_ttm = _ttm_fcf / _mc_ttm
     add_row("FCF Yield", lambda a: a.fcf_yield, "%",
             ttm_val=_fcf_yield_ttm)
-    add_row("Net Fin. Debt", lambda a: a.net_debt,
-            ttm_val=company.net_debt)
 
     # EV — only show historical when balance sheet data is available.
     # If net_debt is None, the annual EV was computed as just market_cap
@@ -452,6 +469,22 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         if a.total_debt is not None and a.cash is not None:
             return a.market_cap + (a.total_debt - a.cash)
         return None
+
+    # FCF (EV) Yield = FCF / EV. Uses the same EV figures as the EV row below
+    # (_annual_ev per year, reporting-currency _ev for TTM), so numerator and
+    # denominator are always in the same currency. n/a when EV is <= 0.
+    def _fcf_ev_yield(a):
+        ev = _annual_ev(a)
+        if a.fcf is None or ev is None or ev <= 0:
+            return None
+        return a.fcf / ev
+    _fcf_ev_yield_ttm = (
+        _ttm_fcf / _ev if (_ttm_fcf is not None and _ev and _ev > 0) else None
+    )
+    add_row("FCF (EV) Yield", _fcf_ev_yield, "%",
+            ttm_val=_fcf_ev_yield_ttm)
+    add_row("Net Fin. Debt", lambda a: a.net_debt,
+            ttm_val=company.net_debt)
 
     # TTM EV: use the reporting-currency figure (_ev, computed above) so this
     # row is consistent with the historical EV column and with Sales/FCF/Net
