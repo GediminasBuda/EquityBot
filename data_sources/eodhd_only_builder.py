@@ -481,6 +481,37 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
     bs_a  = (fin.get("Balance_Sheet")    or {}).get("yearly") or {}
     cf_a  = (fin.get("Cash_Flow")        or {}).get("yearly") or {}
 
+    # ── Point-in-time net debt: latest available balance-sheet period ────────
+    # Net debt (and other balance-sheet "stock"/snapshot items) must come from
+    # the single most recent reported period-end — quarterly, half-yearly, or
+    # annual, whichever is chronologically newest — never summed like a flow
+    # item (revenue/EBITDA/FCF, handled above via _sum_ttm_flow()). Using the
+    # latest ANNUAL fiscal year here (the previous behavior, via base.py's
+    # calculate_current_ratios() fallback) understates how current the figure
+    # is whenever a fresher quarterly/half-yearly balance sheet exists — e.g.
+    # PLUS.L (Plus500), 2026-09-26: annual net debt was -779.49 vs the correct
+    # -842.6 from the latest half-year snapshot. EODHD's quarterly Balance_
+    # Sheet block uses the same field names as .yearly (already parsed above).
+    bs_q = (fin.get("Balance_Sheet") or {}).get("quarterly") or {}
+    _bs_period_candidates = [
+        (str(_d), _row) for _d, _row in list(bs_a.items()) + list(bs_q.items())
+        if isinstance(_row, dict)
+    ]
+    if _bs_period_candidates:
+        _bs_period_candidates.sort(key=lambda x: x[0], reverse=True)
+        _latest_bs_date, _latest_bs = _bs_period_candidates[0]
+        _nd_latest = (_to_m(_latest_bs.get("netDebt"))
+                      if _f(_latest_bs.get("netDebt")) is not None else None)
+        if _nd_latest is None:
+            _td_latest = (_to_m(_latest_bs.get("shortLongTermDebtTotal"))
+                          or _to_m(_latest_bs.get("shortLongTermDebt"))
+                          or _to_m(_latest_bs.get("longTermDebt")))
+            _cash_latest = _to_m(_latest_bs.get("cashAndEquivalents") or _latest_bs.get("cash"))
+            if _td_latest is not None and _cash_latest is not None:
+                _nd_latest = _td_latest - _cash_latest
+        if _nd_latest is not None:
+            company.net_debt = _nd_latest
+
     # ── Dual-currency ADR detection ───────────────────────────────────────────
     # Some foreign ADRs (e.g. KSPI — Kaspi.kz, Nasdaq-listed) quote price,
     # market cap and EPS in the trading currency (General.CurrencyCode, USD
@@ -694,6 +725,34 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
             elif after:
                 af.shares_outstanding = _known_shares[after[0]]
 
+    # ── Point-in-time shares outstanding: latest quarterly OR annual entry ───
+    # Same "stock, not flow" principle as net debt above: the TTM/current
+    # shares figure should reflect the single most recent reported count
+    # (quarterly/half-yearly if EODHD has one newer than the latest annual
+    # entry), not be left at whatever the latest fiscal year-end showed.
+    # company.shares_outstanding is otherwise set earlier from SharesStats.
+    # SharesOutstanding — that's usually fresh too, but outstandingShares'
+    # own dated entries let us confirm/override with an explicit date compare.
+    shares_q = (fund.get("outstandingShares") or {}).get("quarterly") or {}
+    _shares_period_candidates = []
+    for _block in (shares_block, shares_q):
+        if not isinstance(_block, dict):
+            continue
+        for _row in _block.values():
+            if not isinstance(_row, dict):
+                continue
+            _d = _row.get("dateFormatted") or _row.get("date")
+            if not _d:
+                continue
+            _sh = _f(_row.get("shares"))
+            _sh_in_m = _sh / 1_000_000 if _sh is not None else _f(_row.get("sharesMln"))
+            if _sh_in_m is None:
+                continue
+            _shares_period_candidates.append((str(_d), _sh_in_m))
+    if _shares_period_candidates:
+        _shares_period_candidates.sort(key=lambda x: x[0], reverse=True)
+        company.shares_outstanding = _shares_period_candidates[0][1]
+
     # (EPS from Earnings.Annual is now applied inline during income-statement
     # parsing above via eps_by_year lookup — no post-hoc override needed.)
 
@@ -832,8 +891,9 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
     # silently wrong cross-currency figure, unless the dual-currency block
     # below successfully pre-populates enterprise_value_financials_ccy.
     if company.enterprise_value is None and company.market_cap is not None and not _dual_currency:
-        _la = company.latest_annual()
-        _nd = _la.net_debt if _la else None
+        _nd = company.net_debt if company.net_debt is not None else (
+            company.latest_annual().net_debt if company.latest_annual() else None
+        )
         if _nd is not None:
             company.enterprise_value = company.market_cap + _nd
 

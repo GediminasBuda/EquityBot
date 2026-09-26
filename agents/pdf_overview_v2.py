@@ -464,12 +464,14 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     # rows stay consistent, and label it like Sales/FCF above.
     add_row(f"Mkt Cap ({cur}M)", lambda a: a.market_cap, "M",
             ttm_val=_mc_ttm)
-    # For TTM shares, prefer latest annual (more reliable than info["sharesOutstanding"]
-    # which can be the float-adjusted count and differs from total issued shares).
-    _la_raw = _latest_af.shares_outstanding if _latest_af and _latest_af.shares_outstanding else None
-    _ttm_shares = (
-        _la_raw / 1_000_000 if _la_raw and _la_raw > 1_000_000 else _la_raw
-    ) if _la_raw else company.shares_outstanding
+    # For TTM shares, use company.shares_outstanding directly — eodhd_only_builder.py
+    # now sets this to the single most recent point-in-time snapshot (latest
+    # quarterly/half-yearly outstandingShares entry if newer than the latest
+    # annual one, else the latest annual), so it's already the freshest figure
+    # available. Previously this preferred the latest ANNUAL fiscal year's
+    # count unconditionally, understating share count when a fresher
+    # quarterly/half-yearly figure existed (e.g. PLUS.L, 2026-09-26).
+    _ttm_shares = company.shares_outstanding
     add_row("Shares Out. (M)", lambda a: (
         a.shares_outstanding / 1_000_000
         if a.shares_outstanding and a.shares_outstanding > 1_000_000
