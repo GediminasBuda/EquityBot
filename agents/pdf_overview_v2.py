@@ -1442,7 +1442,7 @@ class OverviewV2PDFGenerator:
             _note_bold_ttm,
         ))
         el.append(Paragraph(
-            "TTM Sales Growth is last quarter's YoY Growth Rate.",
+            "TTM Sales Growth is last quarter's (or half-year's) YoY Growth Rate.",
             _note_style,
         ))
 
