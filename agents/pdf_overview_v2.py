@@ -1441,6 +1441,10 @@ class OverviewV2PDFGenerator:
             f"Next earnings report: {_next_ed}",
             _note_bold_ttm,
         ))
+        el.append(Paragraph(
+            "TTM Sales Growth is last quarter's YoY Growth Rate.",
+            _note_style,
+        ))
 
         el.append(Spacer(1, 6))
 
