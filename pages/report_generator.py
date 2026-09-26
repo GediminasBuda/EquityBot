@@ -2537,7 +2537,22 @@ if generate_clicked and ticker_input:
                          f"{', '.join(peers.keys()) or 'none'}")
                 _prog.progress(78, text=f"✓  {len(peers)} peers")
 
-                checklist = _calculate_checklist(company)
+                # Insider buying (last 6M): EODHD → openinsider → Yahoo → insidertrades.info
+                _insider_buying = None
+                try:
+                    from data_sources.insider_data import check_insider_buying
+                    _insider_buying = check_insider_buying(
+                        ticker_input, company.name or "", months_back=6
+                    )
+                    st.write(
+                        f"✓  Insider buying (6M): "
+                        f"{'Yes' if _insider_buying['buying'] else 'No'} "
+                        f"[{_insider_buying['source']}]"
+                    )
+                except Exception as _ie:
+                    st.write(f"⚠  Insider buying check skipped: {_ie}")
+
+                checklist = _calculate_checklist(company, insider_buying=_insider_buying)
                 passed = sum(1 for c in checklist if c["pass"])
                 st.write(f"✓  Checklist: {passed}/{len(checklist)} criteria met")
                 _prog.progress(84)

@@ -283,9 +283,12 @@ def _build_overview_prompt(company: CompanyData, news_block: str = "", macro_cou
 
 # ── Checklist calculator ──────────────────────────────────────────────────────
 
-def _calculate_checklist(company: CompanyData) -> list[dict]:
+def _calculate_checklist(company: CompanyData,
+                         insider_buying: Optional[dict] = None) -> list[dict]:
     """
     Compute the investment checklist criteria.
+    `insider_buying` is the dict from data_sources.insider_data.check_insider_buying()
+    (fetched by the caller so this function stays network-free); None → row skipped.
     Returns list of {criterion, threshold, actual, pass} dicts.
     """
     la = company.latest_annual()
@@ -396,6 +399,17 @@ def _calculate_checklist(company: CompanyData) -> list[dict]:
         "actual": actual_str,
         "pass": founder_on_board,
     })
+
+    # 9. Insider buying in the last 6 months (open-market purchases only;
+    #    selling-only or no activity → "No")
+    if insider_buying is not None:
+        _buying = bool(insider_buying.get("buying"))
+        checks.append({
+            "criterion": "Insider Buying (last 6M)",
+            "threshold": None,
+            "actual": "Yes" if _buying else "No",
+            "pass": _buying,
+        })
 
     return checks
 
