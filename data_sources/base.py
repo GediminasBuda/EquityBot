@@ -358,6 +358,9 @@ class CompanyData:
     eps_ttm: Optional[float] = None
     quarterly_revenue_growth_yoy: Optional[float] = None
     quarterly_earnings_growth_yoy: Optional[float] = None
+    # Latest reported period (quarter OR half-year) revenue vs the same-length
+    # period ~12 months earlier, self-computed from EODHD quarterly statements
+    latest_period_revenue_growth_yoy: Optional[float] = None
 
     # ── TTM P&L (sum of last 4 reported quarters) ─────────────────────────────
     ttm_revenue: Optional[float] = None      # millions

@@ -379,9 +379,11 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
             ttm_val=ttm_revenue,
             est_val=fe.revenue if fe else None)
 
-    # Sales Growth: plain annual YoY (fiscal year Y revenue vs Y-1). TTM is
-    # left n/a — a true TTM YoY would need a TTM figure from a year earlier,
-    # and TTM vs last fiscal year is not a YoY rate. Estimate column compares
+    # Sales Growth: plain annual YoY (fiscal year Y revenue vs Y-1). TTM column
+    # shows the latest reported period's YoY (latest quarter, or latest
+    # half-year for half-yearly filers) — self-computed like-for-like in
+    # eodhd_only_builder.py; falls back to EODHD/yfinance's quarterly revenue
+    # growth scalar (e.g. Japan/Baltic yfinance path). Estimate column compares
     # consensus revenue with the preceding fiscal year's actual revenue.
     def _sales_growth(a):
         prev = af(a.year - 1)
@@ -395,7 +397,11 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
             _est_sales_growth = fe.revenue / _prev_est.revenue - 1
         else:
             _est_sales_growth = fe.revenue_growth_yoy
+    _ttm_sales_growth = getattr(company, "latest_period_revenue_growth_yoy", None)
+    if _ttm_sales_growth is None:
+        _ttm_sales_growth = getattr(company, "quarterly_revenue_growth_yoy", None)
     add_row("Sales Growth", _sales_growth, "%",
+            ttm_val=_ttm_sales_growth,
             est_val=_est_sales_growth)
     add_row("Gross Margin", lambda a: a.gross_margin, "%",
             ttm_val=company.gross_margin)

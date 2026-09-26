@@ -117,6 +117,56 @@ def _sum_ttm_flow(sorted_dates: list, row_lookup: dict, value_fn) -> Optional[fl
     return total * (12.0 / months_covered)
 
 
+def _latest_period_yoy(sorted_dates: list, row_lookup: dict, value_fn) -> Optional[float]:
+    """YoY growth of the most recent reported period (quarter OR half-year)
+    vs the period of the same length ending ~12 months earlier.
+
+    Period length is measured from the date gap to the next-older entry, so a
+    half-yearly filer (e.g. FQT.DE) is compared H-vs-H and a quarterly filer
+    Q-vs-Q. Returns None when no comparable prior-year period exists (e.g.
+    the company switched cadence within the last year) rather than comparing
+    a 6-month period against a 3-month one.
+
+    `sorted_dates` must be period-end date strings sorted newest-first.
+    """
+    def _d(s):
+        try:
+            return datetime.strptime(str(s)[:10], "%Y-%m-%d")
+        except (ValueError, TypeError):
+            return None
+
+    def _len_days(i):
+        if i + 1 >= len(sorted_dates):
+            return None
+        a, b = _d(sorted_dates[i]), _d(sorted_dates[i + 1])
+        return (a - b).days if (a and b and a > b) else None
+
+    if len(sorted_dates) < 3:
+        return None
+    d0 = _d(sorted_dates[0])
+    len0 = _len_days(0)
+    cur = value_fn(row_lookup.get(sorted_dates[0]) or {})
+    if d0 is None or len0 is None or cur is None:
+        return None
+    for j in range(1, len(sorted_dates)):
+        dj = _d(sorted_dates[j])
+        if dj is None:
+            continue
+        gap = (d0 - dj).days
+        if gap < 345:
+            continue
+        if gap > 385:
+            break
+        lenj = _len_days(j)
+        if lenj is None or abs(lenj - len0) > 20:
+            return None   # cadence differs — not a like-for-like comparison
+        prev = value_fn(row_lookup.get(sorted_dates[j]) or {})
+        if prev is None or prev <= 0:
+            return None
+        return cur / prev - 1
+    return None
+
+
 def fetch_company_data_eodhd_only(yf_ticker: str
                                   ) -> tuple[CompanyData, dict]:
     """
@@ -356,6 +406,10 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
         _calc_ebitda = _sum_ttm_flow(_sorted_q, _q_inc, _ebitda_val)
         company.ttm_revenue = _calc_revenue if _calc_revenue is not None else _h_ttm_revenue
         company.ttm_ebitda  = _calc_ebitda if _calc_ebitda is not None else _h_ttm_ebitda
+        company.latest_period_revenue_growth_yoy = _latest_period_yoy(
+            _sorted_q, _q_inc,
+            lambda r: _to_m(r.get("totalRevenue") or r.get("revenue")),
+        )
 
     # ── TTM Net Income ───────────────────────────────────────────────────────
     # Primary: sum trailing ~12 months of quarterly net income rows directly
@@ -954,6 +1008,7 @@ def build_company_data_from_bundle(yf_ticker: str, bundle: dict,
         "net_margin", "ebit_margin", "roe", "roa",
         "book_value_per_share", "revenue_per_share", "eps_ttm",
         "quarterly_revenue_growth_yoy", "quarterly_earnings_growth_yoy",
+        "latest_period_revenue_growth_yoy",
         "ttm_revenue", "ttm_ebitda", "ttm_ebit", "ttm_fcf", "ttm_last_quarter_date",
         "shares_short", "shares_short_prior_month", "short_ratio", "short_percent_of_float",
         "beta", "week_52_high", "week_52_low", "ma_50", "ma_200",
