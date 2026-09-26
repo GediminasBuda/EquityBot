@@ -401,14 +401,14 @@ def _calculate_checklist(company: CompanyData,
     })
 
     # 9. Insider buying in the last 6 months (open-market purchases only;
-    #    selling-only or no activity → "No")
+    #    selling-only or no activity → "No"; no source covers the company → "n/a")
     if insider_buying is not None:
-        _buying = bool(insider_buying.get("buying"))
+        _buying = insider_buying.get("buying")
         checks.append({
             "criterion": "Insider Buying (last 6M)",
             "threshold": None,
-            "actual": "Yes" if _buying else "No",
-            "pass": _buying,
+            "actual": "n/a" if _buying is None else ("Yes" if _buying else "No"),
+            "pass": bool(_buying),
         })
 
     return checks

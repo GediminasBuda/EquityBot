@@ -2544,9 +2544,10 @@ if generate_clicked and ticker_input:
                     _insider_buying = check_insider_buying(
                         ticker_input, company.name or "", months_back=6
                     )
+                    _ib = _insider_buying["buying"]
                     st.write(
                         f"✓  Insider buying (6M): "
-                        f"{'Yes' if _insider_buying['buying'] else 'No'} "
+                        f"{'n/a — no source covers this company' if _ib is None else ('Yes' if _ib else 'No')} "
                         f"[{_insider_buying['source']}]"
                     )
                 except Exception as _ie:

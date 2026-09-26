@@ -296,6 +296,7 @@ def check_insider_buying(
     yf_ticker: str,
     company_name: str = "",
     months_back: int = 6,
+    coverage_months: int = 24,
 ) -> dict:
     """
     Did any insider make an open-market PURCHASE in the last `months_back`
@@ -311,29 +312,32 @@ def check_insider_buying(
 
     Returns:
         {
-            "buying":  True | False,
+            "buying":  True | False | None  (None = no source covers the company),
             "source":  source that showed the buy, or the sources that
                        returned data ("none" if no source had any rows),
             "buys":    purchase count in the window (from the deciding source),
             "sells":   sale count across sources consulted,
         }
-    A missing ticker in every source yields buying=False ("No"): the
-    checklist only answers "Yes" on positive evidence of buying.
+    Coverage vs. activity: each source is queried over a longer
+    `coverage_months` window. A source that has ANY insider rows for the
+    company in that window counts as covering it, and the answer is then
+    Yes/No based on the last `months_back` months only. If no source has
+    any rows at all, buying=None (checklist shows "n/a").
     """
     cutoff = (datetime.utcnow() - timedelta(days=months_back * 31)).strftime("%Y-%m-%d")
 
     def _eodhd() -> list[dict]:
         code = _yf_to_eodhd(yf_ticker)
-        rows = _fetch_eodhd_insider(code, months_back)
+        rows = _fetch_eodhd_insider(code, coverage_months)
         if not rows and code.endswith(".US"):
-            rows = _fetch_eodhd_insider(code[:-3], months_back)
+            rows = _fetch_eodhd_insider(code[:-3], coverage_months)
         return rows
 
     sources = [("eodhd", _eodhd)]
     if _openinsider_supports(yf_ticker):
-        sources.append(("openinsider.com", lambda: _scrape_openinsider(yf_ticker, months_back)))
-    sources.append(("yahoo", lambda: _fetch_yahoo_insider(yf_ticker, months_back)))
-    sources.append(("insidertrades.info", lambda: _scrape_insider(yf_ticker, company_name, months_back)))
+        sources.append(("openinsider.com", lambda: _scrape_openinsider(yf_ticker, coverage_months)))
+    sources.append(("yahoo", lambda: _fetch_yahoo_insider(yf_ticker, coverage_months)))
+    sources.append(("insidertrades.info", lambda: _scrape_insider(yf_ticker, company_name, coverage_months)))
 
     sells = 0
     with_data: list[str] = []
@@ -343,10 +347,10 @@ def check_insider_buying(
         except Exception as e:
             logger.warning(f"[insider-buying] {name} failed for {yf_ticker}: {e}")
             continue
-        rows = [r for r in rows if (r.get("transactionDate") or "") >= cutoff]
         if not rows:
             continue
-        with_data.append(name)
+        with_data.append(name)          # source covers this company
+        rows = [r for r in rows if (r.get("transactionDate") or "") >= cutoff]
         buys = sum(1 for r in rows if r.get("transactionCode") == "P")
         sells += sum(1 for r in rows if r.get("transactionCode") == "S")
         if buys:
@@ -358,7 +362,7 @@ def check_insider_buying(
         f"(sources with data: {with_data or 'none'}, sells={sells})"
     )
     return {
-        "buying": False,
+        "buying": False if with_data else None,
         "source": ", ".join(with_data) or "none",
         "buys":   0,
         "sells":  sells,
