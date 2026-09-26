@@ -378,8 +378,18 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
     add_row(f"Sales ({cur}M)", lambda a: a.revenue,
             ttm_val=ttm_revenue,
             est_val=fe.revenue if fe else None)
-    add_row("EBITDA", lambda a: a.ebitda,
-            ttm_val=ttm_ebitda)
+    add_row("Gross Margin", lambda a: a.gross_margin, "%",
+            ttm_val=company.gross_margin)
+    # EBITDA Margin TTM: derive from the TTM EBITDA / TTM revenue sums shown
+    # in this same column so the row stays internally consistent; fall back
+    # to the company.ebitda_margin scalar only when either TTM sum is missing.
+    ttm_ebitda_margin = (
+        ttm_ebitda / ttm_revenue
+        if (ttm_ebitda is not None and ttm_revenue and ttm_revenue > 0)
+        else company.ebitda_margin
+    )
+    add_row("EBITDA Margin", lambda a: a.ebitda_margin, "%",
+            ttm_val=ttm_ebitda_margin)
 
     _fe_ni = None
     if fe and fe.eps_diluted and company.shares_outstanding:
@@ -388,8 +398,6 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
             ttm_val=ttm_ni_ifrs,
             est_val=_fe_ni)
 
-    add_row("Net Fin. Debt", lambda a: a.net_debt,
-            ttm_val=company.net_debt)
     add_row("Net Margin", lambda a: a.net_margin, "%",
             ttm_val=company.net_margin,
             est_val=fe.net_margin if fe else None)
@@ -428,6 +436,8 @@ def _build_financial_table(company: CompanyData, styles: dict) -> Table:
         _fcf_yield_ttm = _ttm_fcf / _mc_ttm
     add_row("FCF Yield", lambda a: a.fcf_yield, "%",
             ttm_val=_fcf_yield_ttm)
+    add_row("Net Fin. Debt", lambda a: a.net_debt,
+            ttm_val=company.net_debt)
 
     # EV — only show historical when balance sheet data is available.
     # If net_debt is None, the annual EV was computed as just market_cap
