@@ -1445,6 +1445,17 @@ class OverviewV2PDFGenerator:
             "TTM Sales Growth is last quarter's (or half-year's) YoY Growth Rate.",
             _note_style,
         ))
+        # Currency note — always shown, so a dual-currency ADR (e.g. KSPI:
+        # USD quote, KZT statements) is immediately visible to the reader.
+        _px_ccy = (getattr(company, "currency_price", None)
+                   or company.currency or "n/a")
+        _rep_ccy = (getattr(company, "currency_financials", None)
+                    or company.currency or "n/a")
+        el.append(Paragraph(
+            f'Stock price quoted currency: "{_px_ccy}"; '
+            f'Reporting Currency: "{_rep_ccy}"',
+            _note_style,
+        ))
 
         el.append(Spacer(1, 6))
 
